@@ -1,3 +1,5 @@
 export default defineBackground(() => {
-	console.log("Hello background!", { id: browser.runtime.id });
+	browser.runtime.onInstalled.addListener(() => {
+		browser.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
+	});
 });
