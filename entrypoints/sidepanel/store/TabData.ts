@@ -7,4 +7,6 @@ export interface TabData {
 	active?: boolean;
 	windowId?: number;
 	index?: number;
+	splitViewId?: number;
+	frozen?: boolean;
 }

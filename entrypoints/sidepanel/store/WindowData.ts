@@ -5,4 +5,5 @@ export type WindowData = {
 	windowId: number;
 	tabAtoms: PrimitiveAtom<TabAtomValue>[];
 	activeTabId?: number;
+	focused: boolean;
 };

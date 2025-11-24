@@ -1,65 +1,46 @@
 import { type PrimitiveAtom, useAtomValue } from "jotai";
-import {
-	ChevronDown,
-	ChevronsDown,
-	ChevronsUp,
-	ChevronUp,
-	Puzzle,
-	Volume2,
-} from "lucide-react";
-import { useCallback, useMemo } from "react";
+import { Info, Puzzle, SplitSquareHorizontal, Volume2, X } from "lucide-react";
+import { useCallback, useMemo, useState } from "react";
 import type { TabAtomValue } from "../store/TabAtomValue";
 
 export function TabCard({ tabAtom }: { tabAtom: PrimitiveAtom<TabAtomValue> }) {
-	const { tab, windowAtom } = useAtomValue(tabAtom);
-	const window = useAtomValue(windowAtom);
+	const { tab } = useAtomValue(tabAtom);
 	const { id, audible, favIconUrl, title, url } = tab;
+	const [showInfo, setShowInfo] = useState(false);
 
 	const handleTabClick = useCallback(() => {
-		if (id) {
+		if (id && tab.windowId) {
+			// Activate the tab
 			browser.tabs.update(id, { active: true });
+			// Focus the window (in case it's not focused)
+			browser.windows.update(tab.windowId, { focused: true });
 		}
-	}, [id]);
+	}, [id, tab.windowId]);
 
-	const handleMoveUp = useCallback(
-		(e: React.MouseEvent) => {
-			e.stopPropagation();
-			if (id !== undefined && tab.index !== undefined && tab.index > 0) {
-				browser.tabs.move(id, { index: tab.index - 1 });
+	const handleKeyDown = useCallback(
+		(e: React.KeyboardEvent) => {
+			if (e.key === "Enter" || e.key === " ") {
+				e.preventDefault();
+				handleTabClick();
 			}
 		},
-		[id, tab.index],
+		[handleTabClick],
 	);
 
-	const handleMoveUp2 = useCallback(
+	const handleClose = useCallback(
 		(e: React.MouseEvent) => {
 			e.stopPropagation();
-			if (id !== undefined && tab.index !== undefined && tab.index > 1) {
-				browser.tabs.move(id, { index: tab.index - 2 });
+			if (id !== undefined) {
+				browser.tabs.remove(id);
 			}
 		},
-		[id, tab.index],
+		[id],
 	);
 
-	const handleMoveDown = useCallback(
-		(e: React.MouseEvent) => {
-			e.stopPropagation();
-			if (id !== undefined && tab.index !== undefined) {
-				browser.tabs.move(id, { index: tab.index + 1 });
-			}
-		},
-		[id, tab.index],
-	);
-
-	const handleMoveDown2 = useCallback(
-		(e: React.MouseEvent) => {
-			e.stopPropagation();
-			if (id !== undefined && tab.index !== undefined) {
-				browser.tabs.move(id, { index: tab.index + 2 });
-			}
-		},
-		[id, tab.index],
-	);
+	const handleToggleInfo = useCallback((e: React.MouseEvent) => {
+		e.stopPropagation();
+		setShowInfo((prev) => !prev);
+	}, []);
 
 	// Filter out chrome-extension:// URLs since we can't load them due to cross-extension security
 	const isExtensionUrl = useMemo(
@@ -73,87 +54,86 @@ export function TabCard({ tabAtom }: { tabAtom: PrimitiveAtom<TabAtomValue> }) {
 
 	return (
 		<div
-			className={`flex items-center gap-2 rounded-lg overflow-hidden ${
+			className={`flex flex-col rounded-md overflow-hidden ${
 				tab.active
 					? "bg-blue-500/15 dark:bg-blue-500/30 border-2 border-blue-500/50 dark:border-blue-500/60 shadow-[0_0_0_1px_rgba(59,130,246,0.1)] dark:shadow-[0_0_0_1px_rgba(59,130,246,0.2)]"
-					: "bg-black/5 dark:bg-white/5"
+					: tab.frozen
+						? "bg-cyan-500/10 dark:bg-cyan-500/10"
+						: "bg-black/5 dark:bg-white/5"
 			}`}
 		>
-			<button
-				type="button"
-				className="flex-1 min-w-0 flex items-center gap-3 p-3 bg-transparent border-none text-inherit cursor-pointer transition-colors hover:bg-black/10 dark:hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-black/30 dark:focus-visible:outline-white/30 focus-visible:-outline-offset-2 text-left"
+			{/* biome-ignore lint/a11y/useSemanticElements: Cannot use button element due to nested close button */}
+			<div
+				className="flex items-center gap-2 cursor-pointer transition-colors hover:bg-black/10 dark:hover:bg-white/10 group"
 				onClick={handleTabClick}
+				onKeyDown={handleKeyDown}
+				role="button"
+				tabIndex={0}
+				aria-label={`Switch to tab: ${title || "Untitled"}`}
 			>
-				<div className="shrink-0 w-4 h-4 flex items-center justify-center">
-					{audible ? (
-						<Volume2
-							size={16}
-							className="text-green-500 dark:text-green-400 animate-pulse"
-						/>
-					) : isLoadableFavicon ? (
-						<img src={favIconUrl} alt="" className="w-4 h-4 object-contain" />
-					) : isExtensionUrl ? (
-						<Puzzle
-							size={16}
-							className="text-purple-500 dark:text-purple-400"
-						/>
-					) : (
-						<div className="w-4 h-4 bg-black/10 dark:bg-white/10 rounded-sm" />
-					)}
-				</div>
-				<div className="flex-1 min-w-0 flex flex-col gap-1">
-					<div className="text-sm font-medium whitespace-nowrap overflow-hidden text-ellipsis">
+				<div className="flex-1 min-w-0 flex items-center gap-2 px-2 py-1.5">
+					<div className="shrink-0 w-4 h-4 flex items-center justify-center">
+						{audible ? (
+							<Volume2
+								size={16}
+								className="text-green-500 dark:text-green-400 animate-pulse"
+							/>
+						) : isLoadableFavicon ? (
+							<img src={favIconUrl} alt="" className="w-4 h-4 object-contain" />
+						) : isExtensionUrl ? (
+							<Puzzle
+								size={16}
+								className="text-purple-500 dark:text-purple-400"
+							/>
+						) : (
+							<div className="w-4 h-4 bg-black/10 dark:bg-white/10 rounded-sm" />
+						)}
+					</div>
+					<div className="text-sm font-medium whitespace-nowrap overflow-hidden text-ellipsis shrink">
 						{title || "Untitled"}
 					</div>
+					{tab.splitViewId !== undefined && tab.splitViewId !== -1 && (
+						<div
+							className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-orange-500/20 text-orange-600 dark:text-orange-400 text-xs font-medium shrink-0"
+							title={`Split view ID: ${tab.splitViewId}`}
+						>
+							<SplitSquareHorizontal size={10} />
+						</div>
+					)}
 					{url && (
-						<div className="text-xs text-black/50 dark:text-white/50 whitespace-nowrap overflow-hidden text-ellipsis">
+						<div className="text-xs text-black/40 dark:text-white/40 whitespace-nowrap overflow-hidden text-ellipsis shrink-[999]">
 							{new URL(url).hostname || url}
 						</div>
 					)}
 				</div>
-			</button>
-			<div className="flex flex-row gap-1 p-2">
-				<button
-					type="button"
-					className="flex items-center justify-center p-1 bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 rounded text-black/60 dark:text-white/70 cursor-pointer transition-all hover:bg-black/10 dark:hover:bg-white/15 hover:text-black/90 dark:hover:text-white/90 hover:border-black/20 dark:hover:border-white/20 active:scale-90 disabled:opacity-50 disabled:cursor-not-allowed"
-					onClick={handleMoveUp2}
-					title="Move 2 up"
-					disabled={tab.index === undefined || tab.index < 2}
-				>
-					<ChevronsUp size={14} />
-				</button>
-				<button
-					type="button"
-					className="flex items-center justify-center p-1 bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 rounded text-black/60 dark:text-white/70 cursor-pointer transition-all hover:bg-black/10 dark:hover:bg-white/15 hover:text-black/90 dark:hover:text-white/90 hover:border-black/20 dark:hover:border-white/20 active:scale-90 disabled:opacity-50 disabled:cursor-not-allowed"
-					onClick={handleMoveUp}
-					title="Move up"
-					disabled={tab.index === undefined || tab.index < 1}
-				>
-					<ChevronUp size={14} />
-				</button>
-				<button
-					type="button"
-					className="flex items-center justify-center p-1 bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 rounded text-black/60 dark:text-white/70 cursor-pointer transition-all hover:bg-black/10 dark:hover:bg-white/15 hover:text-black/90 dark:hover:text-white/90 hover:border-black/20 dark:hover:border-white/20 active:scale-90 disabled:opacity-50 disabled:cursor-not-allowed"
-					onClick={handleMoveDown}
-					title="Move down"
-					disabled={
-						tab.index === undefined || tab.index >= window.tabAtoms.length - 1
-					}
-				>
-					<ChevronDown size={14} />
-				</button>
-				<button
-					type="button"
-					className="flex items-center justify-center p-1 bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 rounded text-black/60 dark:text-white/70 cursor-pointer transition-all hover:bg-black/10 dark:hover:bg-white/15 hover:text-black/90 dark:hover:text-white/90 hover:border-black/20 dark:hover:border-white/20 active:scale-90 disabled:opacity-50 disabled:cursor-not-allowed"
-					onClick={handleMoveDown2}
-					title="Move 2 down"
-					disabled={
-						tab.index === undefined || tab.index >= window.tabAtoms.length - 2
-					}
-				>
-					<ChevronsDown size={14} />
-				</button>
+				<div className="flex items-center">
+					<button
+						type="button"
+						className={`shrink-0 flex items-center justify-center p-1.5 hover:bg-blue-500/10 dark:hover:bg-blue-500/10 hover:text-blue-600 dark:hover:text-blue-400 text-black/50 dark:text-white/50 transition-all ${
+							showInfo ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+						}`}
+						onClick={handleToggleInfo}
+						title="Toggle debug info"
+					>
+						<Info size={14} />
+					</button>
+					<button
+						type="button"
+						className="shrink-0 flex items-center justify-center p-1.5 hover:bg-red-500/10 dark:hover:bg-red-500/10 hover:text-red-600 dark:hover:text-red-400 text-black/50 dark:text-white/50 transition-colors"
+						onClick={handleClose}
+						title="Close tab"
+					>
+						<X size={14} />
+					</button>
+				</div>
 			</div>
+			{showInfo && (
+				<div className="p-2 bg-black/5 dark:bg-white/5 border-t border-black/10 dark:border-white/10">
+					<pre className="text-xs text-black/70 dark:text-white/70 overflow-x-auto">
+						{JSON.stringify(tab, null, 2)}
+					</pre>
+				</div>
+			)}
 		</div>
 	);
 }
