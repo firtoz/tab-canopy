@@ -1,6 +1,7 @@
 import { type PrimitiveAtom, useAtomValue } from "jotai";
 import { Info, Puzzle, SplitSquareHorizontal, Volume2, X } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
+import { cn } from "../lib/cn";
 import type { TabAtomValue } from "../store/TabAtomValue";
 
 export function TabCard({ tabAtom }: { tabAtom: PrimitiveAtom<TabAtomValue> }) {
@@ -54,13 +55,13 @@ export function TabCard({ tabAtom }: { tabAtom: PrimitiveAtom<TabAtomValue> }) {
 
 	return (
 		<div
-			className={`flex flex-col rounded-md overflow-hidden ${
-				tab.active
-					? "bg-blue-500/15 dark:bg-blue-500/30 border-2 border-blue-500/50 dark:border-blue-500/60 shadow-[0_0_0_1px_rgba(59,130,246,0.1)] dark:shadow-[0_0_0_1px_rgba(59,130,246,0.2)]"
-					: tab.frozen
-						? "bg-cyan-500/10 dark:bg-cyan-500/10"
-						: "bg-black/5 dark:bg-white/5"
-			}`}
+			className={cn("flex flex-col rounded-md overflow-hidden", {
+				"bg-blue-500/15 dark:bg-blue-500/30 border-2 border-blue-500/50 dark:border-blue-500/60 shadow-[0_0_0_1px_rgba(59,130,246,0.1)] dark:shadow-[0_0_0_1px_rgba(59,130,246,0.2)]":
+					tab.active,
+				"bg-cyan-500/10 dark:bg-cyan-500/10": tab.frozen && !tab.active,
+				"bg-black/5 dark:bg-white/5 border-2 border-transparent":
+					!tab.active && !tab.frozen,
+			})}
 		>
 			{/* biome-ignore lint/a11y/useSemanticElements: Cannot use button element due to nested close button */}
 			<div
@@ -72,7 +73,7 @@ export function TabCard({ tabAtom }: { tabAtom: PrimitiveAtom<TabAtomValue> }) {
 				aria-label={`Switch to tab: ${title || "Untitled"}`}
 			>
 				<div className="flex-1 min-w-0 flex items-center gap-2 px-2 py-1.5">
-					<div className="shrink-0 w-4 h-4 flex items-center justify-center">
+					<div className="shrink-0 size-4 flex items-center justify-center">
 						{audible ? (
 							<Volume2
 								size={16}
@@ -86,10 +87,10 @@ export function TabCard({ tabAtom }: { tabAtom: PrimitiveAtom<TabAtomValue> }) {
 								className="text-purple-500 dark:text-purple-400"
 							/>
 						) : (
-							<div className="w-4 h-4 bg-black/10 dark:bg-white/10 rounded-sm" />
+							<div className="size-4 bg-black/10 dark:bg-white/10 rounded-sm" />
 						)}
 					</div>
-					<div className="text-sm font-medium whitespace-nowrap overflow-hidden text-ellipsis shrink">
+					<div className="text-xs font-medium whitespace-nowrap overflow-hidden text-ellipsis shrink h-full">
 						{title || "Untitled"}
 					</div>
 					{tab.splitViewId !== undefined && tab.splitViewId !== -1 && (
@@ -101,17 +102,18 @@ export function TabCard({ tabAtom }: { tabAtom: PrimitiveAtom<TabAtomValue> }) {
 						</div>
 					)}
 					{url && (
-						<div className="text-xs text-black/40 dark:text-white/40 whitespace-nowrap overflow-hidden text-ellipsis shrink-[999]">
+						<div className="text-xs text-black/40 dark:text-white/40 whitespace-nowrap overflow-hidden text-ellipsis shrink-999">
 							{new URL(url).hostname || url}
 						</div>
 					)}
 				</div>
-				<div className="flex items-center">
+				<div className=" items-center hidden group-hover:flex">
 					<button
 						type="button"
-						className={`shrink-0 flex items-center justify-center p-1.5 hover:bg-blue-500/10 dark:hover:bg-blue-500/10 hover:text-blue-600 dark:hover:text-blue-400 text-black/50 dark:text-white/50 transition-all ${
-							showInfo ? "opacity-100" : "opacity-0 group-hover:opacity-100"
-						}`}
+						className={cn(
+							"shrink-0 flex items-center justify-center p-1.5 hover:bg-blue-500/10 dark:hover:bg-blue-500/10 hover:text-blue-600 dark:hover:text-blue-400 text-black/50 dark:text-white/50 transition-all",
+							{ "opacity-100": showInfo },
+						)}
 						onClick={handleToggleInfo}
 						title="Toggle debug info"
 					>

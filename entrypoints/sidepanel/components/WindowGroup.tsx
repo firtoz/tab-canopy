@@ -23,7 +23,7 @@ export function WindowGroup({
 	return (
 		<div className="flex flex-col gap-2">
 			<div className="flex items-center gap-2 px-1">
-				<div className="text-sm font-semibold text-black/50 dark:text-white/60 uppercase tracking-wider">
+				<div className="text-sm font-semibold text-black/50 dark:text-white/60 uppercase tracking-wider overflow-hidden text-ellipsis whitespace-nowrap">
 					Window {window.windowId} ({window.tabAtoms.length} tabs)
 				</div>
 				<div className="flex items-center gap-1 flex-1">
