@@ -4,25 +4,51 @@ import { useCallback, useMemo, useState } from "react";
 import { cn } from "../lib/cn";
 import type { TabAtomValue } from "../store/TabAtomValue";
 
-export function TabCard({ tabAtom }: { tabAtom: PrimitiveAtom<TabAtomValue> }) {
+interface TabCardProps {
+	tabAtom: PrimitiveAtom<TabAtomValue>;
+	isSelected: boolean;
+	onSelect: (
+		tabId: number,
+		options: { ctrlKey: boolean; shiftKey: boolean },
+	) => void;
+	lastSelectedTabId: number | undefined;
+}
+
+export function TabCard({
+	tabAtom,
+	isSelected,
+	onSelect,
+	lastSelectedTabId,
+}: TabCardProps) {
 	const { tab } = useAtomValue(tabAtom);
 	const { id, audible, favIconUrl, title, url } = tab;
 	const [showInfo, setShowInfo] = useState(false);
 
-	const handleTabClick = useCallback(() => {
-		if (id && tab.windowId) {
-			// Activate the tab
-			browser.tabs.update(id, { active: true });
-			// Focus the window (in case it's not focused)
-			browser.windows.update(tab.windowId, { focused: true });
-		}
-	}, [id, tab.windowId]);
+	const handleTabClick = useCallback(
+		(e: React.MouseEvent) => {
+			if (!id) return;
+
+			// Handle multi-select
+			if (e.ctrlKey || e.metaKey || e.shiftKey) {
+				e.preventDefault();
+				onSelect(id, { ctrlKey: e.ctrlKey || e.metaKey, shiftKey: e.shiftKey });
+			} else {
+				// Regular click - activate tab and clear selection
+				onSelect(id, { ctrlKey: false, shiftKey: false });
+				if (tab.windowId) {
+					browser.tabs.update(id, { active: true });
+					browser.windows.update(tab.windowId, { focused: true });
+				}
+			}
+		},
+		[id, tab.windowId, onSelect],
+	);
 
 	const handleKeyDown = useCallback(
 		(e: React.KeyboardEvent) => {
 			if (e.key === "Enter" || e.key === " ") {
 				e.preventDefault();
-				handleTabClick();
+				handleTabClick(e as unknown as React.MouseEvent);
 			}
 		},
 		[handleTabClick],
@@ -55,17 +81,23 @@ export function TabCard({ tabAtom }: { tabAtom: PrimitiveAtom<TabAtomValue> }) {
 
 	return (
 		<div
-			className={cn("flex flex-col rounded-md overflow-hidden", {
-				"bg-blue-500/15 dark:bg-blue-500/30 border-2 border-blue-500/50 dark:border-blue-500/60 shadow-[0_0_0_1px_rgba(59,130,246,0.1)] dark:shadow-[0_0_0_1px_rgba(59,130,246,0.2)]":
-					tab.active,
-				"bg-cyan-500/10 dark:bg-cyan-500/10": tab.frozen && !tab.active,
-				"bg-black/5 dark:bg-white/5 border-2 border-transparent":
-					!tab.active && !tab.frozen,
+			className={cn("flex flex-col rounded-md overflow-hidden border-2", {
+				"bg-blue-500/15 dark:bg-blue-500/30 border-blue-500/50 dark:border-blue-500/60 shadow-[0_0_0_1px_rgba(59,130,246,0.1)] dark:shadow-[0_0_0_1px_rgba(59,130,246,0.2)]":
+					tab.active && !isSelected,
+				"bg-orange-500/25 dark:bg-orange-500/35 border-orange-500/70 dark:border-orange-500/80 shadow-[0_0_0_1px_rgba(249,115,22,0.2)] dark:shadow-[0_0_0_1px_rgba(249,115,22,0.3)]":
+					isSelected,
+				"bg-cyan-500/10 dark:bg-cyan-500/10 border-cyan-500/30 dark:border-cyan-500/40":
+					tab.frozen && !tab.active && !isSelected,
+				"bg-black/5 dark:bg-white/5 border-transparent":
+					!tab.active && !tab.frozen && !isSelected,
 			})}
 		>
 			{/* biome-ignore lint/a11y/useSemanticElements: Cannot use button element due to nested close button */}
 			<div
-				className="flex items-center gap-2 cursor-pointer transition-colors hover:bg-black/10 dark:hover:bg-white/10 group"
+				className={cn("flex items-center gap-2 cursor-pointer group", {
+					"hover:bg-black/10 dark:hover:bg-white/10": !isSelected,
+					"hover:bg-orange-500/30 dark:hover:bg-orange-500/40": isSelected,
+				})}
 				onClick={handleTabClick}
 				onKeyDown={handleKeyDown}
 				role="button"

@@ -9,6 +9,9 @@ import { windowListAtom } from "./store/windowListAtom";
 const tabAtomMap = new Map<number, PrimitiveAtom<TabAtomValue>>();
 const windowAtomMap = new Map<number, PrimitiveAtom<WindowData>>();
 
+// Atom to track selected tab IDs for multi-select
+export const selectedTabIdsAtom = atom<Set<number>>(new Set<number>());
+
 function App() {
 	const [windowList, setWindowList] = useAtom(windowListAtom);
 	const [currentWindowId, setCurrentWindowId] = useState<number | undefined>();
@@ -255,6 +258,29 @@ function App() {
 			}
 
 			const window = store.get(windowAtom);
+
+			// Check if already applied optimistically (e.g., from drag-and-drop)
+			// If the tab is already at toIndex, skip the move to avoid double-flip
+			const tabAtToIndex = window.tabAtoms[toIndex];
+			if (tabAtToIndex && store.get(tabAtToIndex).tab.id === tabId) {
+				console.log(
+					"[handleTabMoved] Tab already at target position, skipping move",
+				);
+				// Still update indices to ensure consistency
+				const minIndex = Math.min(fromIndex, toIndex);
+				const maxIndex = Math.max(fromIndex, toIndex);
+				for (let i = minIndex; i <= maxIndex; i++) {
+					const tabAtomAtIndex = window.tabAtoms[i];
+					if (tabAtomAtIndex) {
+						const currentValue = store.get(tabAtomAtIndex);
+						store.set(tabAtomAtIndex, {
+							...currentValue,
+							tab: { ...currentValue.tab, index: i },
+						});
+					}
+				}
+				return;
+			}
 
 			// Apply the move: remove from fromIndex, insert at toIndex
 			// This mirrors what Chrome does - it's not a swap, it's a splice operation
