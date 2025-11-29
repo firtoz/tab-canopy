@@ -177,25 +177,28 @@ export function WindowGroup({
 
 	const isDragging = active !== null;
 
-	// Create stable IDs for sortable items
-	const items: WindowItem[] = window.tabAtoms.map((atom) => {
-		const data = store.get(atom);
-		return {
-			id: `tab-${window.windowId}-${data.tab.id}`,
-			tabId: data.tab.id,
-			atom,
-			windowId: window.windowId,
-		};
-	});
+	// Create stable IDs for sortable items - filter out any invalid atoms
+	const items: WindowItem[] = window.tabAtoms
+		.filter((atom) => atom !== undefined && atom !== null)
+		.map((atom) => {
+			const data = store.get(atom);
+			return {
+				id: `tab-${window.windowId}-${data.tab.id}`,
+				tabId: data.tab.id,
+				atom,
+				windowId: window.windowId,
+			};
+		});
 
 	const handleTabSelect = useCallback(
 		(tabId: number, options: { ctrlKey: boolean; shiftKey: boolean }) => {
 			if (options.shiftKey && lastSelectedTabId !== undefined) {
-				const lastIndex = window.tabAtoms.findIndex((atom) => {
+				const validAtoms = window.tabAtoms.filter((a) => a != null);
+				const lastIndex = validAtoms.findIndex((atom) => {
 					const tabData = store.get(atom);
 					return tabData.tab.id === lastSelectedTabId;
 				});
-				const currentIndex = window.tabAtoms.findIndex((atom) => {
+				const currentIndex = validAtoms.findIndex((atom) => {
 					const tabData = store.get(atom);
 					return tabData.tab.id === tabId;
 				});
@@ -206,7 +209,7 @@ export function WindowGroup({
 					const newSelected = new Set(selectedTabIds);
 
 					for (let i = start; i <= end; i++) {
-						const atom = window.tabAtoms[i];
+						const atom = validAtoms[i];
 						if (atom) {
 							const tabData = store.get(atom);
 							if (tabData.tab.id) {
@@ -219,6 +222,22 @@ export function WindowGroup({
 				}
 			} else if (options.ctrlKey) {
 				const newSelected = new Set(selectedTabIds);
+
+				// If nothing is selected yet, also add the currently active tab
+				if (newSelected.size === 0) {
+					const validAtomsForCtrl = window.tabAtoms.filter((a) => a != null);
+					const activeTab = validAtomsForCtrl.find((atom) => {
+						const tabData = store.get(atom);
+						return tabData.tab.active;
+					});
+					if (activeTab) {
+						const activeTabId = store.get(activeTab).tab.id;
+						if (activeTabId && activeTabId !== tabId) {
+							newSelected.add(activeTabId);
+						}
+					}
+				}
+
 				if (newSelected.has(tabId)) {
 					newSelected.delete(tabId);
 				} else {

@@ -185,21 +185,49 @@ function App() {
 			// Insert at the correct index
 			newTabAtoms.splice(tab.index, 0, tabAtom);
 
-			// Update the window atom with the new tab list
+			// Update the window atom with the new tab list and active tab if needed
 			store.set(windowAtom, {
 				...window,
 				tabAtoms: newTabAtoms,
+				activeTabId: tab.active ? tabId : window.activeTabId,
 			});
 
 			// Update indices for all tabs at or after the insertion point
+			// Also update active state if new tab is active
 			for (let i = tab.index; i < newTabAtoms.length; i++) {
 				const tabAtomAtIndex = newTabAtoms[i];
 				if (tabAtomAtIndex) {
 					const currentValue = store.get(tabAtomAtIndex);
+					const isNewTab = tabAtomAtIndex === tabAtom;
 					store.set(tabAtomAtIndex, {
 						...currentValue,
-						tab: { ...currentValue.tab, index: i },
+						tab: {
+							...currentValue.tab,
+							index: i,
+							// If new tab is active, set other tabs to inactive
+							active: isNewTab
+								? tab.active
+								: tab.active
+									? false
+									: currentValue.tab.active,
+						},
 					});
+				}
+			}
+
+			// Also update tabs before the insertion point if new tab is active
+			if (tab.active) {
+				for (let i = 0; i < tab.index; i++) {
+					const tabAtomAtIndex = newTabAtoms[i];
+					if (tabAtomAtIndex) {
+						const currentValue = store.get(tabAtomAtIndex);
+						if (currentValue.tab.active) {
+							store.set(tabAtomAtIndex, {
+								...currentValue,
+								tab: { ...currentValue.tab, active: false },
+							});
+						}
+					}
 				}
 			}
 		};
@@ -416,11 +444,13 @@ function App() {
 				return;
 			}
 
-			const tab = store.get(tabAtom).tab;
+			const tabValue = store.get(tabAtom);
+			const tab = tabValue.tab;
 			if (!tab || tab.index === undefined) {
 				return;
 			}
 
+			const wasActive = tab.active;
 			const oldWindowId = detachInfo.oldWindowId;
 			const oldIndex = detachInfo.oldPosition;
 			const windowAtom = windowAtomMap.get(oldWindowId);
@@ -440,10 +470,11 @@ function App() {
 				(t) => store.get(t).tab.id !== tabId,
 			);
 
-			// Update the window atom
+			// Update the window atom - clear activeTabId if detached tab was active
 			store.set(windowAtom, (w) => ({
 				...w,
 				tabAtoms: newTabAtoms,
+				activeTabId: wasActive ? undefined : w.activeTabId,
 			}));
 
 			// Update indices for all tabs after the detached tab in the old window
@@ -493,10 +524,15 @@ function App() {
 				return;
 			}
 
+			// Fetch fresh tab data to get active state
+			const freshTab = await browser.tabs.get(tabId);
+			const isActive = freshTab.active;
+
 			// Update the tab atom with new window reference and updated tab data
 			store.set(tabAtom, (t) => ({
 				tab: {
 					...t.tab,
+					...freshTab,
 					windowId: newWindowId,
 					index: newPosition,
 				},
@@ -509,20 +545,48 @@ function App() {
 			// Insert at the new position
 			newTabAtoms.splice(newPosition, 0, tabAtom);
 
-			// Update the window atom
+			// Update the window atom with new activeTabId if this tab is active
 			store.set(windowAtom, {
 				...window,
 				tabAtoms: newTabAtoms,
+				activeTabId: isActive ? tabId : window.activeTabId,
 			});
 
 			// Update indices for all tabs at or after the insertion point
+			// Also update active state if attached tab is active
 			for (let i = newPosition; i < newTabAtoms.length; i++) {
 				const tabAtomAtIndex = newTabAtoms[i];
 				if (tabAtomAtIndex) {
+					const isAttachedTab = tabAtomAtIndex === tabAtom;
 					store.set(tabAtomAtIndex, (t) => ({
 						...t,
-						tab: { ...t.tab, index: i },
+						tab: {
+							...t.tab,
+							index: i,
+							// If attached tab is active, set other tabs to inactive
+							active: isAttachedTab
+								? isActive
+								: isActive
+									? false
+									: t.tab.active,
+						},
 					}));
+				}
+			}
+
+			// Also update tabs before the insertion point if attached tab is active
+			if (isActive) {
+				for (let i = 0; i < newPosition; i++) {
+					const tabAtomAtIndex = newTabAtoms[i];
+					if (tabAtomAtIndex) {
+						const currentValue = store.get(tabAtomAtIndex);
+						if (currentValue.tab.active) {
+							store.set(tabAtomAtIndex, {
+								...currentValue,
+								tab: { ...currentValue.tab, active: false },
+							});
+						}
+					}
 				}
 			}
 		};
@@ -752,11 +816,6 @@ function App() {
 			const activeItem = allItems.find((item) => item.id === active.id);
 			if (!activeItem) return;
 
-			const windowItems = allItems.filter((i) => i.windowId === targetWindowId);
-			const windowTabIds = windowItems
-				.map((i) => i.tabId)
-				.filter((id): id is number => id !== undefined);
-
 			const activeTabId = activeItem.tabId;
 			const draggedTabIds =
 				activeTabId && selectedTabIds.has(activeTabId)
@@ -767,15 +826,30 @@ function App() {
 
 			if (draggedTabIds.length === 0) return;
 
-			if (activeItem.windowId === targetWindowId) {
-				// Same window - use slot to determine position
+			// Get target window's current tabs
+			const windowItems = allItems.filter((i) => i.windowId === targetWindowId);
+			const windowTabIds = windowItems
+				.map((i) => i.tabId)
+				.filter((id): id is number => id !== undefined);
+
+			// Separate selected tabs by source window
+			const selectedSet = new Set(draggedTabIds);
+			const selectedFromTarget = draggedTabIds.filter((id) =>
+				windowTabIds.includes(id),
+			);
+			const selectedFromOther = draggedTabIds.filter(
+				(id) => !windowTabIds.includes(id),
+			);
+
+			// Check if ALL selected tabs are in the target window
+			if (selectedFromOther.length === 0) {
+				// Same window reorder - use the sequential moves logic
 				let reorderPosition: ReorderPosition;
 				if (targetSlot === 0) {
 					reorderPosition = "start";
 				} else if (targetSlot >= windowTabIds.length) {
 					reorderPosition = "end";
 				} else {
-					// Slot N means "before item at index N"
 					reorderPosition = { before: targetSlot };
 				}
 
@@ -789,11 +863,68 @@ function App() {
 					browser.tabs.move(op.tabId, { index: op.toIndex });
 				}
 			} else {
-				// Cross-window move - slot is the target index
-				for (let i = 0; i < draggedTabIds.length; i++) {
-					browser.tabs.move(draggedTabIds[i], {
+				// Mixed-window move - need careful index tracking
+				// Step 1: Calculate adjusted slot (accounting for selected tabs being removed)
+				const selectedIndicesBefore = windowTabIds
+					.slice(0, targetSlot)
+					.filter((id) => selectedSet.has(id)).length;
+				const adjustedSlot = targetSlot - selectedIndicesBefore;
+
+				// Step 2: Calculate final same-window array (to figure out same-window moves)
+				const nonSelected = windowTabIds.filter((id) => !selectedSet.has(id));
+				const sameWindowFinal = [
+					...nonSelected.slice(0, adjustedSlot),
+					...selectedFromTarget,
+					...nonSelected.slice(adjustedSlot),
+				];
+
+				// Step 3: Move same-window selected tabs first
+				// We need to process in an order that doesn't mess up indices
+				// Calculate each tab's current and target index, then use sequential moves
+				if (selectedFromTarget.length > 0) {
+					// Figure out target indices for same-window selected tabs
+					const sameWindowTargetIndices = selectedFromTarget.map((id) =>
+						sameWindowFinal.indexOf(id),
+					);
+
+					// Use our existing sequential moves logic
+					let reorderPosition: ReorderPosition;
+					const firstTargetIndex = sameWindowTargetIndices[0];
+					if (firstTargetIndex === 0) {
+						reorderPosition = "start";
+					} else if (firstTargetIndex >= windowTabIds.length) {
+						reorderPosition = "end";
+					} else {
+						reorderPosition = { before: firstTargetIndex };
+					}
+
+					const operations = calculateSequentialMoves(
+						windowTabIds,
+						selectedFromTarget,
+						reorderPosition,
+					);
+
+					for (const op of operations) {
+						browser.tabs.move(op.tabId, { index: op.toIndex });
+					}
+				}
+
+				// Step 4: Insert cross-window tabs
+				// Each cross-window tab goes at: adjustedSlot + (same-window tabs before it in selection) + (its index among cross-window tabs)
+				for (let i = 0; i < selectedFromOther.length; i++) {
+					const tabId = selectedFromOther[i];
+					// Find position in original selection
+					const positionInSelection = draggedTabIds.indexOf(tabId);
+					// Count same-window tabs that come before this in selection
+					const sameWindowBefore = draggedTabIds
+						.slice(0, positionInSelection)
+						.filter((id) => selectedFromTarget.includes(id)).length;
+					// Target index
+					const targetIndex = adjustedSlot + sameWindowBefore + i;
+
+					browser.tabs.move(tabId, {
 						windowId: targetWindowId,
-						index: targetSlot + i,
+						index: targetIndex,
 					});
 				}
 			}
