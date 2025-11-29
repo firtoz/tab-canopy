@@ -7,6 +7,7 @@ import type { TabAtomValue } from "../store/TabAtomValue";
 interface TabCardProps {
 	tabAtom: PrimitiveAtom<TabAtomValue>;
 	isSelected: boolean;
+	isDragging?: boolean;
 	onSelect: (
 		tabId: number,
 		options: { ctrlKey: boolean; shiftKey: boolean },
@@ -17,8 +18,8 @@ interface TabCardProps {
 export function TabCard({
 	tabAtom,
 	isSelected,
+	isDragging,
 	onSelect,
-	lastSelectedTabId,
 }: TabCardProps) {
 	const { tab } = useAtomValue(tabAtom);
 	const { id, audible, favIconUrl, title, url } = tab;
@@ -82,6 +83,7 @@ export function TabCard({
 	return (
 		<div
 			className={cn("flex flex-col rounded-md overflow-hidden border-2", {
+				"cursor-grab active:cursor-grabbing": !isDragging,
 				"bg-blue-500/15 dark:bg-blue-500/30 border-blue-500/50 dark:border-blue-500/60 shadow-[0_0_0_1px_rgba(59,130,246,0.1)] dark:shadow-[0_0_0_1px_rgba(59,130,246,0.2)]":
 					tab.active && !isSelected,
 				"bg-orange-500/25 dark:bg-orange-500/35 border-orange-500/70 dark:border-orange-500/80 shadow-[0_0_0_1px_rgba(249,115,22,0.2)] dark:shadow-[0_0_0_1px_rgba(249,115,22,0.3)]":
@@ -94,7 +96,8 @@ export function TabCard({
 		>
 			{/* biome-ignore lint/a11y/useSemanticElements: Cannot use button element due to nested close button */}
 			<div
-				className={cn("flex items-center gap-2 cursor-pointer group", {
+				className={cn("flex items-center gap-2 group", {
+					"cursor-pointer": !isDragging,
 					"hover:bg-black/10 dark:hover:bg-white/10": !isSelected,
 					"hover:bg-orange-500/30 dark:hover:bg-orange-500/40": isSelected,
 				})}

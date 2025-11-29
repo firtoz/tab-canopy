@@ -1,7 +1,22 @@
+import {
+	closestCenter,
+	DndContext,
+	type DragEndEvent,
+	type DragOverEvent,
+	DragOverlay,
+	type DragStartEvent,
+	KeyboardSensor,
+	PointerSensor,
+	useSensor,
+	useSensors,
+} from "@dnd-kit/core";
+import { sortableKeyboardCoordinates } from "@dnd-kit/sortable";
 import { atom, type PrimitiveAtom, useAtom, useStore } from "jotai";
 import { Settings } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
-import { WindowGroup } from "./components/WindowGroup";
+import { SortableTab, WindowGroup } from "./components/WindowGroup";
+import { cn } from "./lib/cn";
+import { calculateSequentialMoves, type ReorderPosition } from "./lib/reorder";
 import type { TabAtomValue } from "./store/TabAtomValue";
 import type { WindowData } from "./store/WindowData";
 import { windowListAtom } from "./store/windowListAtom";
@@ -15,8 +30,22 @@ export const selectedTabIdsAtom = atom<Set<number>>(new Set<number>());
 function App() {
 	const [windowList, setWindowList] = useAtom(windowListAtom);
 	const [currentWindowId, setCurrentWindowId] = useState<number | undefined>();
+	const [selectedTabIds, setSelectedTabIds] = useAtom(selectedTabIdsAtom);
+	const [activeId, setActiveId] = useState<string | null>(null);
+	const [activeDropZone, setActiveDropZone] = useState<string | null>(null);
 
 	const store = useStore();
+
+	const sensors = useSensors(
+		useSensor(PointerSensor, {
+			activationConstraint: {
+				distance: 5,
+			},
+		}),
+		useSensor(KeyboardSensor, {
+			coordinateGetter: sortableKeyboardCoordinates,
+		}),
+	);
 
 	useEffect(() => {
 		const getTabs = async () => {
@@ -612,8 +641,6 @@ function App() {
 	const handleOpenSettings = useCallback(() => {
 		const isFirefox = navigator.userAgent.includes("Firefox");
 		if (isFirefox) {
-			// Firefox blocks opening about: URLs from extensions
-			// Open MDN docs for sidebar settings instead
 			browser.tabs.create({
 				url: "https://support.mozilla.org/en-US/kb/customize-firefox-sidebars",
 			});
@@ -622,32 +649,237 @@ function App() {
 		}
 	}, []);
 
+	// Get all items across all windows for drag operations
+	const getAllItems = useCallback(() => {
+		const allItems: {
+			id: string;
+			tabId: number | undefined;
+			atom: PrimitiveAtom<TabAtomValue>;
+			windowId: number;
+		}[] = [];
+		for (const windowAtom of windowList) {
+			const windowData = store.get(windowAtom);
+			for (const tabAtom of windowData.tabAtoms) {
+				const tabData = store.get(tabAtom);
+				allItems.push({
+					id: `tab-${windowData.windowId}-${tabData.tab.id}`,
+					tabId: tabData.tab.id,
+					atom: tabAtom,
+					windowId: windowData.windowId,
+				});
+			}
+		}
+		return allItems;
+	}, [windowList, store]);
+
+	const handleDragStart = useCallback(
+		(event: DragStartEvent) => {
+			const { active } = event;
+			setActiveId(active.id as string);
+			setActiveDropZone(null);
+
+			// Extract tab ID from the id (format: tab-windowId-tabId)
+			const parts = (active.id as string).split("-");
+			const draggedTabId = Number.parseInt(parts[parts.length - 1], 10);
+			if (!selectedTabIds.has(draggedTabId)) {
+				setSelectedTabIds(new Set([draggedTabId]));
+			}
+		},
+		[selectedTabIds, setSelectedTabIds],
+	);
+
+	const handleDragOver = useCallback((event: DragOverEvent) => {
+		const { over } = event;
+
+		if (!over) {
+			setActiveDropZone(null);
+			return;
+		}
+
+		const overIdStr = over.id as string;
+		// Only track drop zones (not tab sortables)
+		if (overIdStr.startsWith("drop-")) {
+			setActiveDropZone(overIdStr);
+		}
+	}, []);
+
+	const handleDragCancel = useCallback(() => {
+		setActiveId(null);
+		setActiveDropZone(null);
+	}, []);
+
+	// Parse drop zone ID to get window ID and slot
+	// Format: "drop-{windowId}-{tabIndex}-{top|bottom}" or "drop-{windowId}-gap-{slotIndex}"
+	const parseDropZone = useCallback(
+		(dropZoneId: string): { windowId: number; slot: number } | null => {
+			const parts = dropZoneId.split("-");
+			if (parts[0] !== "drop") return null;
+
+			const windowId = Number.parseInt(parts[1], 10);
+
+			if (parts[2] === "gap") {
+				// Gap drop zone: drop-{windowId}-gap-{slotIndex}
+				const slot = Number.parseInt(parts[3], 10);
+				return { windowId, slot };
+			}
+			// Tab drop zone: drop-{windowId}-{tabIndex}-{top|bottom}
+			const tabIndex = Number.parseInt(parts[2], 10);
+			const position = parts[3];
+			// top = before this tab (slot = tabIndex)
+			// bottom = after this tab (slot = tabIndex + 1)
+			const slot = position === "top" ? tabIndex : tabIndex + 1;
+			return { windowId, slot };
+		},
+		[],
+	);
+
+	const handleDragEnd = useCallback(
+		(event: DragEndEvent) => {
+			const { active } = event;
+			const dropZone = activeDropZone;
+
+			setActiveId(null);
+			setActiveDropZone(null);
+
+			if (!dropZone) return;
+
+			const parsed = parseDropZone(dropZone);
+			if (!parsed) return;
+
+			const { windowId: targetWindowId, slot: targetSlot } = parsed;
+
+			const allItems = getAllItems();
+			const activeItem = allItems.find((item) => item.id === active.id);
+			if (!activeItem) return;
+
+			const windowItems = allItems.filter((i) => i.windowId === targetWindowId);
+			const windowTabIds = windowItems
+				.map((i) => i.tabId)
+				.filter((id): id is number => id !== undefined);
+
+			const activeTabId = activeItem.tabId;
+			const draggedTabIds =
+				activeTabId && selectedTabIds.has(activeTabId)
+					? Array.from(selectedTabIds)
+					: activeTabId
+						? [activeTabId]
+						: [];
+
+			if (draggedTabIds.length === 0) return;
+
+			if (activeItem.windowId === targetWindowId) {
+				// Same window - use slot to determine position
+				let reorderPosition: ReorderPosition;
+				if (targetSlot === 0) {
+					reorderPosition = "start";
+				} else if (targetSlot >= windowTabIds.length) {
+					reorderPosition = "end";
+				} else {
+					// Slot N means "before item at index N"
+					reorderPosition = { before: targetSlot };
+				}
+
+				const operations = calculateSequentialMoves(
+					windowTabIds,
+					draggedTabIds,
+					reorderPosition,
+				);
+
+				for (const op of operations) {
+					browser.tabs.move(op.tabId, { index: op.toIndex });
+				}
+			} else {
+				// Cross-window move - slot is the target index
+				for (let i = 0; i < draggedTabIds.length; i++) {
+					browser.tabs.move(draggedTabIds[i], {
+						windowId: targetWindowId,
+						index: targetSlot + i,
+					});
+				}
+			}
+		},
+		[getAllItems, selectedTabIds, activeDropZone, parseDropZone],
+	);
+
+	// Find active item for drag overlay
+	const allItems = getAllItems();
+	const activeItem = activeId
+		? allItems.find((item) => item.id === activeId)
+		: null;
+
+	const selectedItems =
+		activeItem && selectedTabIds.has(activeItem.tabId ?? -1)
+			? allItems.filter((item) => item.tabId && selectedTabIds.has(item.tabId))
+			: activeItem
+				? [activeItem]
+				: [];
+
 	return (
-		<div className="p-4 max-w-full min-h-screen bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white/90">
-			<div className="flex items-center justify-between mb-4">
-				<h1 className="text-2xl font-semibold m-0">Tab Canopy</h1>
-				<button
-					type="button"
-					className="flex items-center justify-center p-2 bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 rounded-md text-black/60 dark:text-white/70 cursor-pointer transition-all hover:bg-black/10 dark:hover:bg-white/10 hover:text-black/90 dark:hover:text-white/90 hover:border-black/20 dark:hover:border-white/20 active:scale-95"
-					onClick={handleOpenSettings}
-					title="Change side panel position"
-				>
-					<Settings size={18} />
-				</button>
+		<DndContext
+			sensors={sensors}
+			collisionDetection={closestCenter}
+			onDragStart={handleDragStart}
+			onDragOver={handleDragOver}
+			onDragEnd={handleDragEnd}
+			onDragCancel={handleDragCancel}
+		>
+			<div
+				className={cn(
+					"p-4 max-w-full min-h-screen bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white/90",
+				)}
+			>
+				<div className="flex items-center justify-between mb-4">
+					<h1 className="text-2xl font-semibold m-0">Tab Canopy</h1>
+					<button
+						type="button"
+						className={cn(
+							"flex items-center justify-center p-2 bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 rounded-md text-black/60 dark:text-white/70 transition-all hover:bg-black/10 dark:hover:bg-white/10 hover:text-black/90 dark:hover:text-white/90 hover:border-black/20 dark:hover:border-white/20 active:scale-95",
+							{ "cursor-pointer": !activeId },
+						)}
+						onClick={handleOpenSettings}
+						title="Change side panel position"
+					>
+						<Settings size={18} />
+					</button>
+				</div>
+				<div className="flex flex-col gap-6">
+					{windowList.map((windowAtom) => {
+						const windowData = store.get(windowAtom);
+						return (
+							<WindowGroup
+								key={`${windowAtom}`}
+								windowAtom={windowAtom}
+								isCurrentWindow={
+									currentWindowId !== undefined &&
+									windowData.windowId === currentWindowId
+								}
+								activeDropZone={activeDropZone}
+							/>
+						);
+					})}
+				</div>
 			</div>
-			<div className="flex flex-col gap-6">
-				{windowList.map((windowAtom) => (
-					<WindowGroup
-						key={`${windowAtom}`}
-						windowAtom={windowAtom}
-						isCurrentWindow={
-							currentWindowId !== undefined &&
-							store.get(windowAtom).windowId === currentWindowId
-						}
-					/>
-				))}
-			</div>
-		</div>
+			<DragOverlay dropAnimation={null}>
+				{activeId && selectedItems.length > 0 && (
+					<div className="flex flex-col gap-2 cursor-grabbing">
+						{selectedItems.map((item, index) => (
+							<SortableTab
+								key={item.id}
+								id={item.id}
+								windowId={item.windowId}
+								tabIndex={index}
+								tabAtom={item.atom}
+								isSelected={true}
+								isDragOverlay={true}
+								isDragging={false}
+								onSelect={() => {}}
+								lastSelectedTabId={undefined}
+							/>
+						))}
+					</div>
+				)}
+			</DragOverlay>
+		</DndContext>
 	);
 }
 
