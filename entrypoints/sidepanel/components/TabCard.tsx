@@ -88,7 +88,7 @@ export function TabCard({
 					tab.active && !isSelected,
 				"bg-orange-500/25 dark:bg-orange-500/35 border-orange-500/70 dark:border-orange-500/80 shadow-[0_0_0_1px_rgba(249,115,22,0.2)] dark:shadow-[0_0_0_1px_rgba(249,115,22,0.3)]":
 					isSelected,
-				"bg-cyan-500/10 dark:bg-cyan-500/10 border-cyan-500/30 dark:border-cyan-500/40":
+				"bg-black/5 dark:bg-white/5 border-cyan-500/15 dark:border-cyan-500/20":
 					tab.frozen && !tab.active && !isSelected,
 				"bg-black/5 dark:bg-white/5 border-transparent":
 					!tab.active && !tab.frozen && !isSelected,
