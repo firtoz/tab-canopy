@@ -12,8 +12,15 @@ import {
 } from "@dnd-kit/core";
 import { sortableKeyboardCoordinates } from "@dnd-kit/sortable";
 import { atom, type PrimitiveAtom, useAtom, useStore } from "jotai";
-import { Settings } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { MessageCircle, Settings } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import {
+	type ClientMessage,
+	createExtensionClientTransport,
+	type ExtensionClientTransport,
+	IDB_PORT_NAME,
+	type ServerMessage,
+} from "@/src/idb-transport";
 import { SortableTab, WindowGroup } from "./components/WindowGroup";
 import { cn } from "./lib/cn";
 import { calculateSequentialMoves, type ReorderPosition } from "./lib/reorder";
@@ -945,6 +952,51 @@ function App() {
 				? [activeItem]
 				: [];
 
+	// Transport connection with broadcast support
+	const transportRef = useRef<ExtensionClientTransport<ClientMessage> | null>(
+		null,
+	);
+	const [connectionStatus, setConnectionStatus] = useState<
+		"connecting" | "connected" | "disconnected"
+	>("connecting");
+	const [lastBroadcast, setLastBroadcast] = useState<string | null>(null);
+
+	useEffect(() => {
+		const transport = createExtensionClientTransport<
+			ClientMessage,
+			ServerMessage
+		>({
+			portName: IDB_PORT_NAME,
+			onMessage: (message) => {
+				if (message.type === "broadcast" && message.channel === "test") {
+					const data = message.data as { message: string };
+					console.log(
+						"[Sidepanel] Received broadcast:",
+						data,
+						"from:",
+						message.fromClientId,
+					);
+					setLastBroadcast(
+						`${data.message} (from ${message.fromClientId?.slice(-6) ?? "unknown"})`,
+					);
+				}
+			},
+			onDisconnect: () => {
+				console.log("[Sidepanel] Disconnected from background");
+				setConnectionStatus("disconnected");
+				transportRef.current = null;
+			},
+		});
+
+		transportRef.current = transport;
+		setConnectionStatus("connected");
+		console.log("[Sidepanel] Connected to background");
+
+		return () => {
+			transport.dispose();
+		};
+	}, []);
+
 	return (
 		<DndContext
 			sensors={sensors}
@@ -971,6 +1023,32 @@ function App() {
 						title="Change side panel position"
 					>
 						<Settings size={18} />
+					</button>
+					<button
+						type="button"
+						className={cn(
+							"flex items-center justify-center p-2 border rounded-md transition-all active:scale-95",
+							connectionStatus === "connected"
+								? "bg-green-500/10 border-green-500/30 text-green-600 dark:text-green-400"
+								: connectionStatus === "disconnected"
+									? "bg-red-500/10 border-red-500/30 text-red-600 dark:text-red-400"
+									: "bg-black/5 dark:bg-white/5 border-black/10 dark:border-white/10 text-black/60 dark:text-white/70",
+						)}
+						onClick={() => {
+							if (transportRef.current) {
+								transportRef.current.send({
+									type: "broadcast",
+									channel: "test",
+									data: {
+										message: `Hello from sidepanel at ${new Date().toLocaleTimeString()}`,
+									},
+								});
+								console.log("[Sidepanel] Sent broadcast");
+							}
+						}}
+						title={`Connection: ${connectionStatus}${lastBroadcast ? `\nLast: ${lastBroadcast}` : ""}`}
+					>
+						<MessageCircle size={18} />
 					</button>
 				</div>
 				<div className="flex flex-col gap-6">

@@ -1,0 +1,238 @@
+/**
+ * Generic browser extension transport using chrome.runtime ports.
+ * Fully typed with discriminated unions for client and server messages.
+ */
+
+import { browser } from "wxt/browser";
+
+/**
+ * Base message wrapper for port communication
+ */
+type PortMessage<TClientMsg, TServerMsg> =
+	| { direction: "toServer"; payload: TClientMsg }
+	| { direction: "toClient"; payload: TServerMsg };
+
+/**
+ * Client info passed to server message handlers
+ */
+export interface ClientInfo {
+	clientId: string;
+	port: Browser.runtime.Port;
+}
+
+/**
+ * Server transport options
+ */
+export interface ExtensionServerTransportOptions<TClientMsg, TServerMsg> {
+	/** Port name to listen on */
+	portName: string;
+	/** Handle incoming messages from clients */
+	onMessage: (
+		message: TClientMsg,
+		client: ClientInfo,
+		broadcast: (msg: TServerMsg, excludeClientId?: string) => void,
+	) => void;
+	/** Called when a client connects */
+	onConnect?: (client: ClientInfo) => void;
+	/** Called when a client disconnects */
+	onDisconnect?: (clientId: string) => void;
+}
+
+/**
+ * Server transport instance
+ */
+export interface ExtensionServerTransport<TServerMsg> {
+	/** Broadcast a message to all connected clients */
+	broadcast: (message: TServerMsg, excludeClientId?: string) => void;
+	/** Send a message to a specific client */
+	send: (clientId: string, message: TServerMsg) => void;
+	/** Get the number of connected clients */
+	getClientCount: () => number;
+	/** Get all connected client IDs */
+	getClientIds: () => string[];
+	/** Dispose and disconnect all clients */
+	dispose: () => void;
+}
+
+/**
+ * Create a server transport for background script.
+ */
+export function createExtensionServerTransport<TClientMsg, TServerMsg>(
+	options: ExtensionServerTransportOptions<TClientMsg, TServerMsg>,
+): ExtensionServerTransport<TServerMsg> {
+	const { portName, onMessage, onConnect, onDisconnect } = options;
+	const connectedClients = new Map<string, Browser.runtime.Port>();
+
+	// Helper to broadcast to clients
+	const broadcast = (message: TServerMsg, excludeClientId?: string) => {
+		const portMessage: PortMessage<TClientMsg, TServerMsg> = {
+			direction: "toClient",
+			payload: message,
+		};
+		for (const [clientId, port] of connectedClients) {
+			if (clientId !== excludeClientId) {
+				try {
+					port.postMessage(portMessage);
+				} catch (e) {
+					console.error(`[Server] Failed to send to ${clientId}:`, e);
+					connectedClients.delete(clientId);
+				}
+			}
+		}
+	};
+
+	// Helper to send to specific client
+	const send = (clientId: string, message: TServerMsg) => {
+		const port = connectedClients.get(clientId);
+		if (port) {
+			const portMessage: PortMessage<TClientMsg, TServerMsg> = {
+				direction: "toClient",
+				payload: message,
+			};
+			try {
+				port.postMessage(portMessage);
+			} catch (e) {
+				console.error(`[Server] Failed to send to ${clientId}:`, e);
+				connectedClients.delete(clientId);
+			}
+		}
+	};
+
+	// Listen for new connections
+	browser.runtime.onConnect.addListener((port) => {
+		if (port.name !== portName) return;
+
+		const clientId =
+			port.sender?.documentId ??
+			`client-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
+
+		console.log(`[Server] Client connected: ${clientId}`);
+		connectedClients.set(clientId, port);
+
+		const clientInfo: ClientInfo = { clientId, port };
+		onConnect?.(clientInfo);
+
+		// Handle messages from this client
+		port.onMessage.addListener(
+			(message: PortMessage<TClientMsg, TServerMsg>) => {
+				if (message.direction === "toServer") {
+					onMessage(message.payload, clientInfo, broadcast);
+				}
+			},
+		);
+
+		// Clean up on disconnect
+		port.onDisconnect.addListener(() => {
+			console.log(`[Server] Client disconnected: ${clientId}`);
+			connectedClients.delete(clientId);
+			onDisconnect?.(clientId);
+		});
+	});
+
+	return {
+		broadcast,
+		send,
+		getClientCount: () => connectedClients.size,
+		getClientIds: () => Array.from(connectedClients.keys()),
+		dispose: () => {
+			for (const port of connectedClients.values()) {
+				port.disconnect();
+			}
+			connectedClients.clear();
+		},
+	};
+}
+
+/**
+ * Client transport options
+ */
+export interface ExtensionClientTransportOptions<TServerMsg> {
+	/** Port name to connect to */
+	portName: string;
+	/** Handle incoming messages from server */
+	onMessage: (message: TServerMsg) => void;
+	/** Called when disconnected from server */
+	onDisconnect?: () => void;
+}
+
+/**
+ * Client transport instance
+ */
+export interface ExtensionClientTransport<TClientMsg> {
+	/** Send a message to the server */
+	send: (message: TClientMsg) => void;
+	/** Get the underlying port */
+	getPort: () => Browser.runtime.Port;
+	/** Disconnect from the server */
+	dispose: () => void;
+}
+
+/**
+ * Create a client transport for sidepanel/popup/options pages.
+ */
+export function createExtensionClientTransport<TClientMsg, TServerMsg>(
+	options: ExtensionClientTransportOptions<TServerMsg>,
+): ExtensionClientTransport<TClientMsg> {
+	const { portName, onMessage, onDisconnect } = options;
+	const port = browser.runtime.connect({ name: portName });
+
+	// Handle messages from server
+	port.onMessage.addListener((message: PortMessage<TClientMsg, TServerMsg>) => {
+		if (message.direction === "toClient") {
+			onMessage(message.payload);
+		}
+	});
+
+	// Handle disconnection
+	port.onDisconnect.addListener(() => {
+		console.log("[Client] Disconnected from server");
+		onDisconnect?.();
+	});
+
+	return {
+		send: (message: TClientMsg) => {
+			const portMessage: PortMessage<TClientMsg, TServerMsg> = {
+				direction: "toServer",
+				payload: message,
+			};
+			port.postMessage(portMessage);
+		},
+		getPort: () => port,
+		dispose: () => {
+			port.disconnect();
+		},
+	};
+}
+
+// ============================================================================
+// IDB Proxy specific types and helpers
+// ============================================================================
+
+import type {
+	IDBProxyRequest,
+	IDBProxyResponse,
+	IDBProxySyncMessage,
+} from "@firtoz/drizzle-indexeddb";
+
+/**
+ * Messages sent from client to server
+ */
+export type ClientMessage =
+	| { type: "idbRequest"; payload: IDBProxyRequest }
+	| { type: "broadcast"; channel: string; data: unknown };
+
+/**
+ * Messages sent from server to client
+ */
+export type ServerMessage =
+	| { type: "idbResponse"; payload: IDBProxyResponse }
+	| { type: "idbSync"; payload: IDBProxySyncMessage }
+	| {
+			type: "broadcast";
+			channel: string;
+			data: unknown;
+			fromClientId?: string;
+	  };
+
+/** Port name for the transport */
+export const IDB_PORT_NAME = "tabcanopy";
