@@ -28,3 +28,4 @@ web-ext.config.ts
 
 # Environment variables
 .env
+.env.*

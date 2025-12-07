@@ -3,12 +3,33 @@ import {
 	DrizzleIndexedDBProvider,
 	type IDBProxySyncMessage,
 } from "@firtoz/drizzle-indexeddb";
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+	createContext,
+	useContext,
+	useEffect,
+	useMemo,
+	useRef,
+	useState,
+} from "react";
 import * as schema from "@/schema/src/schema";
 import { TabManagerContent } from "./components/TabManagerContent";
 import { createIDBTransportAdapter } from "./createIDBTransportAdapter";
 
 const DB_NAME = "tabcanopy.db";
+
+// ============================================================================
+// Reset Database Context
+// ============================================================================
+
+const ResetDatabaseContext = createContext<(() => Promise<void>) | null>(null);
+
+export const useResetDatabase = () => {
+	const resetDatabase = useContext(ResetDatabaseContext);
+	if (!resetDatabase) {
+		throw new Error("useResetDatabase must be used within App");
+	}
+	return resetDatabase;
+};
 
 // ============================================================================
 // Main App with Provider
@@ -21,7 +42,7 @@ function App() {
 	> | null>(null);
 
 	// Create transport adapter
-	const { dbCreator, handleSyncReady } = useMemo(() => {
+	const { dbCreator, handleSyncReady, resetDatabase } = useMemo(() => {
 		const adapter = createIDBTransportAdapter();
 		adapterRef.current = adapter;
 
@@ -32,6 +53,7 @@ function App() {
 			handleSyncReady: (handler: (message: IDBProxySyncMessage) => void) => {
 				adapter.transport.onSync(handler);
 			},
+			resetDatabase: adapter.resetDatabase,
 		};
 	}, []);
 
@@ -47,14 +69,16 @@ function App() {
 	}
 
 	return (
-		<DrizzleIndexedDBProvider
-			dbName={DB_NAME}
-			schema={schema}
-			dbCreator={dbCreator}
-			onSyncReady={handleSyncReady}
-		>
-			<TabManagerContent />
-		</DrizzleIndexedDBProvider>
+		<ResetDatabaseContext.Provider value={resetDatabase}>
+			<DrizzleIndexedDBProvider
+				dbName={DB_NAME}
+				schema={schema}
+				dbCreator={dbCreator}
+				onSyncReady={handleSyncReady}
+			>
+				<TabManagerContent />
+			</DrizzleIndexedDBProvider>
+		</ResetDatabaseContext.Provider>
 	);
 }
 

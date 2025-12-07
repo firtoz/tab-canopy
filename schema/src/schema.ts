@@ -34,8 +34,14 @@ export const tabTable = syncableTable(
 		browserTabId: integer("browser_tab_id").notNull(),
 		// Browser's window ID (for quick lookups, denormalized)
 		browserWindowId: integer("browser_window_id").notNull(),
-		// Tab position in window
+		// Tab position in window (from browser)
 		tabIndex: integer("tab_index").notNull(),
+		// Tree structure fields
+		parentTabId: integer("parent_tab_id"), // null = root level
+		treeOrder: text("tree_order").notNull().default("a0"), // fractional indexing for sibling order
+		isCollapsed: integer("is_collapsed", { mode: "boolean" })
+			.notNull()
+			.default(false),
 		// Tab content
 		title: text("title"),
 		url: text("url"),
@@ -65,6 +71,8 @@ export const tabTable = syncableTable(
 		index("tab_browser_id_index").on(t.browserTabId),
 		index("tab_browser_window_id_index").on(t.browserWindowId),
 		index("tab_index_index").on(t.tabIndex),
+		index("tab_parent_id_index").on(t.parentTabId),
+		index("tab_tree_order_index").on(t.treeOrder),
 		index("tab_active_index").on(t.active),
 		index("tab_audible_index").on(t.audible),
 		index("tab_frozen_index").on(t.frozen),

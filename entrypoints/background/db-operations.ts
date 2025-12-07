@@ -12,8 +12,8 @@ export type BroadcastSyncFn = (
 // Use generic to accept branded string IDs (e.g., string & { __brand: "tab_id" })
 type RecordWithId<TId extends string = string> = { id: TId };
 type RecordWithTimestamps = {
-	createdAt: number;
-	updatedAt: number;
+	createdAt: Date;
+	updatedAt: Date;
 };
 
 export interface DbOperations {
@@ -44,15 +44,21 @@ export const createDbOperations = (
 		);
 
 		// Build a map of existing createdAt values
-		const existingCreatedAt = new Map<TId, number>();
+		// Handle both Date objects and legacy number timestamps
+		const existingCreatedAt = new Map<TId, Date>();
 		for (const record of existingRecords) {
 			if (record?.createdAt) {
-				existingCreatedAt.set(record.id, record.createdAt);
+				// Convert number to Date if needed (for legacy data)
+				const createdAt =
+					record.createdAt instanceof Date
+						? record.createdAt
+						: new Date(record.createdAt as unknown as number);
+				existingCreatedAt.set(record.id, createdAt);
 			}
 		}
 
-		// Add timestamps to items
-		const now = Date.now();
+		// Add timestamps to items (using Date objects for schema compatibility)
+		const now = new Date();
 		const itemsWithTimestamps = items.map((item) => ({
 			...item,
 			createdAt: existingCreatedAt.get(item.id) ?? now,

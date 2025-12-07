@@ -8,7 +8,11 @@ export type WindowRecord = Omit<
 > &
 	Required<Pick<InsertWindow, "id">>;
 export type TabRecord = Omit<InsertTab, "id" | "createdAt" | "updatedAt"> &
-	Required<Pick<InsertTab, "id">>;
+	Required<Pick<InsertTab, "id">> & {
+		parentTabId: number | null;
+		treeOrder: string;
+		isCollapsed: boolean;
+	};
 
 export const windowToRecord = (
 	win: Browser.windows.Window & { id: number },
@@ -26,6 +30,7 @@ export const windowToRecord = (
 
 export const tabToRecord = (
 	tab: Browser.tabs.Tab & { id: number; windowId: number },
+	options?: { parentTabId?: number | null; treeOrder?: string },
 ): TabRecord => {
 	// Cast to access Chrome-specific properties
 	const chromeTab = tab as Browser.tabs.Tab & {
@@ -34,12 +39,17 @@ export const tabToRecord = (
 		frozen?: boolean;
 		autoDiscardable?: boolean;
 		groupId?: number;
+		openerTabId?: number;
 	};
 	return {
 		id: makeTabId(tab.id),
 		browserTabId: tab.id,
 		browserWindowId: tab.windowId,
 		tabIndex: tab.index,
+		// Tree structure - use provided values or defaults
+		parentTabId: options?.parentTabId ?? null,
+		treeOrder: options?.treeOrder ?? "a0",
+		isCollapsed: false,
 		title: tab.title ?? null,
 		url: tab.url ?? null,
 		favIconUrl: tab.favIconUrl ?? null,

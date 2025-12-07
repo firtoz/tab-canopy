@@ -4,45 +4,69 @@ import {
 	useSortable,
 	verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
-import { useCallback } from "react";
+import { useCallback, useMemo } from "react";
 import type * as schema from "@/schema/src/schema";
 import { cn } from "../lib/cn";
+import { buildTabTree, type FlatTreeNode, flattenTree } from "../lib/tree";
 import { TabCard } from "./TabCard";
 
 // ============================================================================
 // Drop Zone Components
 // ============================================================================
 
-// Droppable zone component - becomes visible when dragging
-function DropZone({
+// Droppable zone component for tree - split into sibling (left) and child (right) zones
+function TreeDropZone({
 	id,
 	isDragging,
 	position,
+	depth,
 }: {
 	id: string;
 	isDragging: boolean;
-	position: "top" | "bottom" | "full";
+	position: "top" | "bottom";
+	depth: number;
 }) {
-	const { setNodeRef, isOver } = useDroppable({ id });
+	// Create two drop zones: sibling (left portion) and child (right portion)
+	const siblingId = `${id}-sibling`;
+	const childId = `${id}-child`;
 
-	const positionClass =
-		position === "top"
-			? "top-0 h-1/2"
-			: position === "bottom"
-				? "bottom-0 h-1/2"
-				: "inset-0";
+	const { setNodeRef: setSiblingRef, isOver: isSiblingOver } = useDroppable({
+		id: siblingId,
+	});
+	const { setNodeRef: setChildRef, isOver: isChildOver } = useDroppable({
+		id: childId,
+	});
+
+	const positionClass = position === "top" ? "top-0" : "bottom-0";
+	const indentWidth = depth * 20 + 24; // 20px per level + 24px for chevron area
 
 	return (
-		<div
-			ref={setNodeRef}
-			className={`absolute left-0 right-0 ${positionClass} ${
-				isDragging
-					? isOver
-						? "bg-blue-500/30 border-2 border-blue-500/50"
-						: "bg-black/5 dark:bg-white/5"
-					: "pointer-events-none"
-			}`}
-		/>
+		<>
+			{/* Sibling drop zone - the left edge/indent area */}
+			<div
+				ref={setSiblingRef}
+				style={{ width: `${indentWidth}px` }}
+				className={`absolute ${positionClass} left-0 h-1/2 ${
+					isDragging
+						? isSiblingOver
+							? "bg-green-500/30 border-2 border-green-500/50"
+							: "bg-black/5 dark:bg-white/5"
+						: "pointer-events-none"
+				}`}
+			/>
+			{/* Child drop zone - the rest of the row */}
+			<div
+				ref={setChildRef}
+				style={{ left: `${indentWidth}px` }}
+				className={`absolute ${positionClass} right-0 h-1/2 ${
+					isDragging
+						? isChildOver
+							? "bg-blue-500/30 border-2 border-blue-500/50"
+							: "bg-black/5 dark:bg-white/5"
+						: "pointer-events-none"
+				}`}
+			/>
+		</>
 	);
 }
 
@@ -65,7 +89,7 @@ function GapDropZone({ id, isDragging }: { id: string; isDragging: boolean }) {
 }
 
 // ============================================================================
-// Sortable Tab Component
+// Sortable Tab Component (Tree-aware)
 // ============================================================================
 
 interface SortableTabProps {
@@ -80,7 +104,11 @@ interface SortableTabProps {
 		tabId: number,
 		options: { ctrlKey: boolean; shiftKey: boolean },
 	) => void;
+	onToggleCollapse: (tabId: number) => void;
 	activeDropZone: string | null;
+	depth: number;
+	hasChildren: boolean;
+	indentGuides: boolean[];
 }
 
 function SortableTab({
@@ -92,7 +120,11 @@ function SortableTab({
 	isPartOfDrag,
 	isDragging,
 	onSelect,
+	onToggleCollapse,
 	activeDropZone,
+	depth,
+	hasChildren,
+	indentGuides,
 }: SortableTabProps) {
 	const {
 		attributes,
@@ -122,20 +154,25 @@ function SortableTab({
 				tabIndex={tabIndex}
 				isSelected={isSelected}
 				onSelect={onSelect}
+				onToggleCollapse={onToggleCollapse}
 				activeDropZone={activeDropZone}
 				isDragging={isDragging}
+				depth={depth}
+				hasChildren={hasChildren}
+				indentGuides={indentGuides}
 			/>
-			{/* Top half drop zone - drop here = insert BEFORE this tab */}
-			<DropZone
-				id={`drop-${windowId}-${tabIndex}-top`}
+			{/* Tree-aware drop zones - split into sibling (left) and child (right) */}
+			<TreeDropZone
+				id={`drop-${windowId}-${tab.browserTabId}-top`}
 				isDragging={isDragging}
 				position="top"
+				depth={depth}
 			/>
-			{/* Bottom half drop zone - drop here = insert AFTER this tab */}
-			<DropZone
-				id={`drop-${windowId}-${tabIndex}-bottom`}
+			<TreeDropZone
+				id={`drop-${windowId}-${tab.browserTabId}-bottom`}
 				isDragging={isDragging}
 				position="bottom"
+				depth={depth}
 			/>
 		</div>
 	);
@@ -150,6 +187,9 @@ export interface WindowItem {
 	tabId: number;
 	windowId: number;
 	tab: schema.Tab;
+	depth: number;
+	hasChildren: boolean;
+	indentGuides: boolean[];
 }
 
 export const WindowGroup = ({
@@ -161,6 +201,7 @@ export const WindowGroup = ({
 	setSelectedTabIds,
 	lastSelectedTabId,
 	setLastSelectedTabId,
+	onToggleCollapse,
 }: {
 	window: schema.Window;
 	tabs: schema.Tab[];
@@ -170,16 +211,26 @@ export const WindowGroup = ({
 	setSelectedTabIds: (ids: Set<number>) => void;
 	lastSelectedTabId: number | undefined;
 	setLastSelectedTabId: (id: number | undefined) => void;
+	onToggleCollapse: (tabId: number) => void;
 }) => {
 	const { active } = useDndContext();
 	const isDragging = active !== null;
 
-	// Create stable IDs for sortable items
-	const items: WindowItem[] = tabs.map((tab) => ({
-		id: `tab-${win.browserWindowId}-${tab.browserTabId}`,
-		tabId: tab.browserTabId,
+	// Build tree structure and flatten for rendering
+	const flatNodes = useMemo(() => {
+		const tree = buildTabTree(tabs);
+		return flattenTree(tree);
+	}, [tabs]);
+
+	// Create stable IDs for sortable items (use flattened tree order)
+	const items: WindowItem[] = flatNodes.map((node) => ({
+		id: `tab-${win.browserWindowId}-${node.tab.browserTabId}`,
+		tabId: node.tab.browserTabId,
 		windowId: win.browserWindowId,
-		tab,
+		tab: node.tab,
+		depth: node.depth,
+		hasChildren: node.hasChildren,
+		indentGuides: node.indentGuides,
 	}));
 
 	// Get selected items for this window
@@ -188,17 +239,17 @@ export const WindowGroup = ({
 	const handleTabSelect = useCallback(
 		(tabId: number, options: { ctrlKey: boolean; shiftKey: boolean }) => {
 			if (options.shiftKey && lastSelectedTabId !== undefined) {
-				// Range selection
-				const lastIndex = tabs.findIndex(
-					(t) => t.browserTabId === lastSelectedTabId,
+				// Range selection - use flat list order
+				const lastIndex = items.findIndex(
+					(item) => item.tabId === lastSelectedTabId,
 				);
-				const currentIndex = tabs.findIndex((t) => t.browserTabId === tabId);
+				const currentIndex = items.findIndex((item) => item.tabId === tabId);
 				if (lastIndex !== -1 && currentIndex !== -1) {
 					const startIdx = Math.min(lastIndex, currentIndex);
 					const endIdx = Math.max(lastIndex, currentIndex);
 					const newSelected = new Set(selectedTabIds);
 					for (let i = startIdx; i <= endIdx; i++) {
-						newSelected.add(tabs[i].browserTabId);
+						newSelected.add(items[i].tabId);
 					}
 					setSelectedTabIds(newSelected);
 				}
@@ -214,17 +265,17 @@ export const WindowGroup = ({
 				setLastSelectedTabId(tabId);
 			} else {
 				// Single click - activate tab and focus window
-				const tab = tabs.find((t) => t.browserTabId === tabId);
-				if (tab) {
+				const item = items.find((i) => i.tabId === tabId);
+				if (item) {
 					browser.tabs.update(tabId, { active: true });
-					browser.windows.update(tab.browserWindowId, { focused: true });
+					browser.windows.update(item.windowId, { focused: true });
 				}
 				setSelectedTabIds(new Set([tabId]));
 				setLastSelectedTabId(tabId);
 			}
 		},
 		[
-			tabs,
+			items,
 			selectedTabIds,
 			lastSelectedTabId,
 			setSelectedTabIds,
@@ -232,20 +283,44 @@ export const WindowGroup = ({
 		],
 	);
 
-	// Determine which slot should show the indicator
-	// activeDropZone format: "drop-{windowId}-{tabIndex}-{top|bottom}" or "drop-{windowId}-gap-{slot}"
-	let indicatorSlot: number | null = null;
-	if (activeDropZone?.startsWith(`drop-${win.browserWindowId}-`)) {
+	// Parse drop zone to determine indicator position
+	// New format: "drop-{windowId}-{tabId}-{top|bottom}-{sibling|child}" or "drop-{windowId}-gap-{slot}"
+	const parseIndicator = useCallback(() => {
+		if (!activeDropZone?.startsWith(`drop-${win.browserWindowId}-`)) {
+			return null;
+		}
+
 		const parts = activeDropZone.split("-");
 		if (parts[2] === "gap") {
-			indicatorSlot = Number.parseInt(parts[3], 10);
-		} else {
-			const tabIndex = Number.parseInt(parts[2], 10);
-			const position = parts[3];
-			// top = before this tab, bottom = after this tab
-			indicatorSlot = position === "top" ? tabIndex : tabIndex + 1;
+			return { type: "gap" as const, slot: Number.parseInt(parts[3], 10) };
 		}
-	}
+
+		const tabId = Number.parseInt(parts[2], 10);
+		const position = parts[3]; // top or bottom
+		const dropType = parts[4]; // sibling or child
+
+		const itemIndex = items.findIndex((item) => item.tabId === tabId);
+		if (itemIndex === -1) return null;
+
+		const item = items[itemIndex];
+
+		if (dropType === "sibling") {
+			// Sibling: insert at same level
+			return {
+				type: "sibling" as const,
+				index: position === "top" ? itemIndex : itemIndex + 1,
+				depth: item.depth,
+			};
+		}
+		// Child: insert as child (one level deeper)
+		return {
+			type: "child" as const,
+			index: position === "top" ? itemIndex : itemIndex + 1,
+			depth: item.depth + 1,
+		};
+	}, [activeDropZone, win.browserWindowId, items]);
+
+	const indicator = parseIndicator();
 
 	return (
 		<div
@@ -279,11 +354,28 @@ export const WindowGroup = ({
 						const isPartOfDrag =
 							isDragging && selectedItems.some((si) => si.tabId === item.tabId);
 
+						// Determine if indicator should show before this item
+						const showIndicatorBefore =
+							indicator &&
+							((indicator.type === "gap" && indicator.slot === index) ||
+								((indicator.type === "sibling" || indicator.type === "child") &&
+									indicator.index === index));
+
+						const indicatorDepth =
+							indicator?.type === "sibling" || indicator?.type === "child"
+								? indicator.depth
+								: 0;
+
 						return (
 							<div key={item.id} className="relative">
 								{/* Drop indicator line */}
-								{indicatorSlot === index && (
-									<div className="absolute -top-1 left-0 right-0 h-0.5 bg-blue-500 rounded-full z-30 shadow-[0_0_6px_rgba(59,130,246,0.6)] pointer-events-none" />
+								{showIndicatorBefore && (
+									<div
+										className="absolute -top-1 right-0 h-0.5 bg-blue-500 rounded-full z-30 shadow-[0_0_6px_rgba(59,130,246,0.6)] pointer-events-none"
+										style={{
+											left: `${indicatorDepth * 20}px`,
+										}}
+									/>
 								)}
 								<SortableTab
 									id={item.id}
@@ -294,15 +386,27 @@ export const WindowGroup = ({
 									isPartOfDrag={isPartOfDrag}
 									isDragging={isDragging}
 									onSelect={handleTabSelect}
+									onToggleCollapse={onToggleCollapse}
 									activeDropZone={activeDropZone}
+									depth={item.depth}
+									hasChildren={item.hasChildren}
+									indentGuides={item.indentGuides}
 								/>
 							</div>
 						);
 					})}
 					{/* Indicator after last tab */}
-					{indicatorSlot === items.length && (
-						<div className="absolute -bottom-1 left-0 right-0 h-0.5 bg-blue-500 rounded-full z-30 shadow-[0_0_6px_rgba(59,130,246,0.6)] pointer-events-none" />
-					)}
+					{indicator &&
+						((indicator.type === "gap" && indicator.slot === items.length) ||
+							((indicator.type === "sibling" || indicator.type === "child") &&
+								indicator.index === items.length)) && (
+							<div
+								className="absolute -bottom-1 right-0 h-0.5 bg-blue-500 rounded-full z-30 shadow-[0_0_6px_rgba(59,130,246,0.6)] pointer-events-none"
+								style={{
+									left: `${(indicator.type === "sibling" || indicator.type === "child" ? indicator.depth : 0) * 20}px`,
+								}}
+							/>
+						)}
 					{/* Gap after last tab */}
 					<GapDropZone
 						id={`drop-${win.browserWindowId}-gap-${items.length}`}

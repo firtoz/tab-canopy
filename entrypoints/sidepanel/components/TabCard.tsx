@@ -1,4 +1,11 @@
-import { Info, Puzzle, Volume2, X } from "lucide-react";
+import {
+	ChevronDown,
+	ChevronRight,
+	Info,
+	Puzzle,
+	Volume2,
+	X,
+} from "lucide-react";
 import { useCallback, useState } from "react";
 import type * as schema from "@/schema/src/schema";
 import { cn } from "../lib/cn";
@@ -8,8 +15,12 @@ export const TabCard = ({
 	tabIndex,
 	isSelected,
 	onSelect,
+	onToggleCollapse,
 	activeDropZone,
 	isDragging,
+	depth = 0,
+	hasChildren = false,
+	indentGuides = [],
 }: {
 	tab: schema.Tab;
 	tabIndex: number;
@@ -18,8 +29,12 @@ export const TabCard = ({
 		tabId: number,
 		options: { ctrlKey: boolean; shiftKey: boolean },
 	) => void;
+	onToggleCollapse: (tabId: number) => void;
 	activeDropZone: string | null;
 	isDragging?: boolean;
+	depth?: number;
+	hasChildren?: boolean;
+	indentGuides?: boolean[];
 }) => {
 	const [showInfo, setShowInfo] = useState(false);
 
@@ -47,10 +62,22 @@ export const TabCard = ({
 		setShowInfo((prev) => !prev);
 	}, []);
 
-	const dropZoneId = `drop-${tab.browserWindowId}-${tabIndex}`;
-	const isDropTarget =
-		activeDropZone === `${dropZoneId}-top` ||
-		activeDropZone === `${dropZoneId}-bottom`;
+	const handleToggleCollapse = useCallback(
+		(e: React.MouseEvent) => {
+			e.stopPropagation();
+			e.preventDefault();
+			onToggleCollapse(tab.browserTabId);
+		},
+		[tab.browserTabId, onToggleCollapse],
+	);
+
+	const dropZoneId = `drop-${tab.browserWindowId}-${tab.browserTabId}`;
+	const isDropTargetSibling =
+		activeDropZone === `${dropZoneId}-top-sibling` ||
+		activeDropZone === `${dropZoneId}-bottom-sibling`;
+	const isDropTargetChild =
+		activeDropZone === `${dropZoneId}-top-child` ||
+		activeDropZone === `${dropZoneId}-bottom-child`;
 
 	// Check if URL is an extension URL (can't load favicon)
 	const isExtensionUrl = tab.url?.startsWith("chrome-extension://");
@@ -73,13 +100,14 @@ export const TabCard = ({
 				// Normal inactive tab
 				"bg-black/5 dark:bg-white/5 border-transparent":
 					!tab.active && !tab.frozen && !tab.discarded && !isSelected,
-				// Drop target
-				"ring-2 ring-green-500": isDropTarget,
+				// Drop target - sibling (green) or child (blue)
+				"ring-2 ring-green-500": isDropTargetSibling,
+				"ring-2 ring-blue-500": isDropTargetChild,
 			})}
 		>
 			{/* biome-ignore lint/a11y/useSemanticElements: Cannot use button due to nested buttons */}
 			<div
-				className={cn("flex items-center gap-2 group", {
+				className={cn("flex items-center gap-0 group", {
 					"cursor-pointer": !isDragging,
 					"hover:bg-black/10 dark:hover:bg-white/10": !isSelected,
 					"hover:bg-orange-500/30 dark:hover:bg-orange-500/40": isSelected,
@@ -95,7 +123,42 @@ export const TabCard = ({
 				tabIndex={0}
 				aria-label={`Switch to tab: ${tab.title || "Untitled"}`}
 			>
-				<div className="flex-1 min-w-0 flex items-center gap-2 px-2 py-1.5">
+				{/* Indent guides and expand/collapse chevron */}
+				<div className="flex items-center shrink-0">
+					{/* Render indent guides */}
+					{indentGuides.map((showGuide, i) => (
+						<div
+							key={`guide-${tab.browserTabId}-${i}`}
+							className="w-5 h-full flex items-center justify-center"
+						>
+							{showGuide && (
+								<div className="w-px h-full bg-black/10 dark:bg-white/10" />
+							)}
+						</div>
+					))}
+					{/* Expand/collapse chevron or spacer */}
+					<button
+						type="button"
+						className={cn(
+							"w-6 h-6 flex items-center justify-center text-black/40 dark:text-white/40",
+							hasChildren &&
+								"hover:text-black/70 dark:hover:text-white/70 hover:bg-black/10 dark:hover:bg-white/10 rounded",
+						)}
+						onClick={hasChildren ? handleToggleCollapse : undefined}
+						disabled={!hasChildren}
+					>
+						{hasChildren ? (
+							tab.isCollapsed ? (
+								<ChevronRight size={14} />
+							) : (
+								<ChevronDown size={14} />
+							)
+						) : depth > 0 ? (
+							<div className="w-2 h-px bg-black/10 dark:bg-white/10" />
+						) : null}
+					</button>
+				</div>
+				<div className="flex-1 min-w-0 flex items-center gap-2 px-1 py-1.5">
 					<div className="shrink-0 size-4 flex items-center justify-center">
 						{tab.audible ? (
 							<Volume2

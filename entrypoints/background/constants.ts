@@ -1,7 +1,7 @@
 import { makeId } from "@firtoz/drizzle-utils";
 import { tabTable, windowTable } from "@/schema/src/schema";
 
-export const DEBUG = false;
+export const DEBUG = true;
 
 export const log = (...args: unknown[]) => {
 	if (DEBUG) console.log(...args);

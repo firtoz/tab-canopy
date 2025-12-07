@@ -219,7 +219,8 @@ import type {
  */
 export type ClientMessage =
 	| { type: "idbRequest"; payload: IDBProxyRequest }
-	| { type: "broadcast"; channel: string; data: unknown };
+	| { type: "broadcast"; channel: string; data: unknown }
+	| { type: "resetDatabase" };
 
 /**
  * Messages sent from server to client
@@ -232,7 +233,8 @@ export type ServerMessage =
 			channel: string;
 			data: unknown;
 			fromClientId?: string;
-	  };
+	  }
+	| { type: "resetDatabaseComplete" };
 
 /** Port name for the transport */
 export const IDB_PORT_NAME = "tabcanopy";
