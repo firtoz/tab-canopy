@@ -1,57 +1,78 @@
-import { type IdOf, syncableTable, type TableId } from "@firtoz/drizzle-utils";
-import { relations } from "drizzle-orm";
+import { syncableTable } from "@firtoz/drizzle-utils";
 import { index, integer, text } from "drizzle-orm/sqlite-core";
 
-export const userTable = syncableTable(
-	"user",
+/**
+ * Browser window table
+ */
+export const windowTable = syncableTable(
+	"window",
 	{
-		username: text("username").notNull(),
-		email: text("email").notNull(),
-	},
-	(t) => [index("email_index").on(t.email)],
-);
-
-export const todoTable = syncableTable(
-	"todo",
-	{
-		title: text("title").notNull(),
-		completed: integer("completed", { mode: "boolean" })
+		// Browser's window ID (not our primary key, but important for lookups)
+		browserWindowId: integer("browser_window_id").notNull(),
+		// Window state
+		focused: integer("focused", { mode: "boolean" }).notNull().default(false),
+		state: text("state"), // "normal" | "minimized" | "maximized" | "fullscreen"
+		incognito: integer("incognito", { mode: "boolean" })
 			.notNull()
 			.default(false),
-		parentId: integer("parent_id").$type<TableId<"todo">>(),
-		userId: integer("user_id").$type<IdOf<typeof userTable>>(),
-		// Fields for comprehensive expression testing
-		content: text("content"), // For LIKE/ILIKE queries
-		priority: integer("priority"), // For range queries (gt, gte, lt, lte) and IN queries
-		status: text("status"), // For eq/ne and IN queries
-		tags: text("tags"), // For LIKE pattern matching
+		// Window type
+		type: text("type"), // "normal" | "popup" | "panel" | "devtools"
 	},
 	(t) => [
-		index("todo_user_id_index").on(t.userId),
-		index("todo_parent_id_index").on(t.parentId),
-		index("todo_completed_index").on(t.completed),
-		index("todo_created_at_index").on(t.createdAt),
-		index("todo_updated_at_index").on(t.updatedAt),
-		index("todo_deleted_at_index").on(t.deletedAt),
-		// New indexes for testing index hits vs on-demand evaluation
-		index("todo_priority_index").on(t.priority),
-		index("todo_status_index").on(t.status),
+		index("window_browser_id_index").on(t.browserWindowId),
+		index("window_focused_index").on(t.focused),
 	],
 );
 
-export const todoTableRelations = relations(todoTable, ({ one }) => ({
-	parent: one(todoTable, {
-		fields: [todoTable.parentId],
-		references: [todoTable.id],
-	}),
-	user: one(userTable, {
-		fields: [todoTable.userId],
-		references: [userTable.id],
-	}),
-}));
+/**
+ * Browser tab table
+ */
+export const tabTable = syncableTable(
+	"tab",
+	{
+		// Browser's tab ID
+		browserTabId: integer("browser_tab_id").notNull(),
+		// Browser's window ID (for quick lookups, denormalized)
+		browserWindowId: integer("browser_window_id").notNull(),
+		// Tab position in window
+		tabIndex: integer("tab_index").notNull(),
+		// Tab content
+		title: text("title"),
+		url: text("url"),
+		favIconUrl: text("fav_icon_url"),
+		// Tab state
+		active: integer("active", { mode: "boolean" }).notNull().default(false),
+		pinned: integer("pinned", { mode: "boolean" }).notNull().default(false),
+		highlighted: integer("highlighted", { mode: "boolean" })
+			.notNull()
+			.default(false),
+		discarded: integer("discarded", { mode: "boolean" })
+			.notNull()
+			.default(false),
+		frozen: integer("frozen", { mode: "boolean" }).notNull().default(false),
+		autoDiscardable: integer("auto_discardable", { mode: "boolean" })
+			.notNull()
+			.default(true),
+		// Audio state
+		audible: integer("audible", { mode: "boolean" }).notNull().default(false),
+		mutedInfo: text("muted_info"), // JSON string of MutedInfo
+		// Status
+		status: text("status"), // "loading" | "complete"
+		// Group
+		groupId: integer("group_id"),
+	},
+	(t) => [
+		index("tab_browser_id_index").on(t.browserTabId),
+		index("tab_browser_window_id_index").on(t.browserWindowId),
+		index("tab_index_index").on(t.tabIndex),
+		index("tab_active_index").on(t.active),
+		index("tab_audible_index").on(t.audible),
+		index("tab_frozen_index").on(t.frozen),
+	],
+);
 
-export type Todo = typeof todoTable.$inferSelect;
-export type InsertTodo = typeof todoTable.$inferInsert;
-
-export type User = typeof userTable.$inferSelect;
-export type InsertUser = typeof userTable.$inferInsert;
+// Type exports
+export type Window = typeof windowTable.$inferSelect;
+export type InsertWindow = typeof windowTable.$inferInsert;
+export type Tab = typeof tabTable.$inferSelect;
+export type InsertTab = typeof tabTable.$inferInsert;

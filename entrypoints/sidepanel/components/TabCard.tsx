@@ -1,68 +1,45 @@
-import { type PrimitiveAtom, useAtomValue } from "jotai";
-import { Info, Puzzle, SplitSquareHorizontal, Volume2, X } from "lucide-react";
-import { useCallback, useMemo, useState } from "react";
+import { Info, Puzzle, Volume2, X } from "lucide-react";
+import { useCallback, useState } from "react";
+import type * as schema from "@/schema/src/schema";
 import { cn } from "../lib/cn";
-import type { TabAtomValue } from "../store/TabAtomValue";
 
-interface TabCardProps {
-	tabAtom: PrimitiveAtom<TabAtomValue>;
+export const TabCard = ({
+	tab,
+	tabIndex,
+	isSelected,
+	onSelect,
+	activeDropZone,
+	isDragging,
+}: {
+	tab: schema.Tab;
+	tabIndex: number;
 	isSelected: boolean;
-	isDragging?: boolean;
 	onSelect: (
 		tabId: number,
 		options: { ctrlKey: boolean; shiftKey: boolean },
 	) => void;
-	lastSelectedTabId: number | undefined;
-}
-
-export function TabCard({
-	tabAtom,
-	isSelected,
-	isDragging,
-	onSelect,
-}: TabCardProps) {
-	const { tab } = useAtomValue(tabAtom);
-	const { id, audible, favIconUrl, title, url } = tab;
+	activeDropZone: string | null;
+	isDragging?: boolean;
+}) => {
 	const [showInfo, setShowInfo] = useState(false);
 
-	const handleTabClick = useCallback(
+	const handleClick = useCallback(
 		(e: React.MouseEvent) => {
-			if (!id) return;
-
-			// Handle multi-select
-			if (e.ctrlKey || e.metaKey || e.shiftKey) {
-				e.preventDefault();
-				onSelect(id, { ctrlKey: e.ctrlKey || e.metaKey, shiftKey: e.shiftKey });
-			} else {
-				// Regular click - activate tab and clear selection
-				onSelect(id, { ctrlKey: false, shiftKey: false });
-				if (tab.windowId) {
-					browser.tabs.update(id, { active: true });
-					browser.windows.update(tab.windowId, { focused: true });
-				}
-			}
+			e.preventDefault();
+			onSelect(tab.browserTabId, {
+				ctrlKey: e.ctrlKey || e.metaKey,
+				shiftKey: e.shiftKey,
+			});
 		},
-		[id, tab.windowId, onSelect],
-	);
-
-	const handleKeyDown = useCallback(
-		(e: React.KeyboardEvent) => {
-			if (e.key === "Enter" || e.key === " ") {
-				e.preventDefault();
-				handleTabClick(e as unknown as React.MouseEvent);
-			}
-		},
-		[handleTabClick],
+		[tab.browserTabId, onSelect],
 	);
 
 	const handleClose = useCallback(
 		(e: React.MouseEvent) => {
 			e.stopPropagation();
-			if (id !== undefined) {
-				browser.tabs.remove(id);
-			}
+			browser.tabs.remove(tab.browserTabId);
 		},
-		[id],
+		[tab.browserTabId],
 	);
 
 	const handleToggleInfo = useCallback((e: React.MouseEvent) => {
@@ -70,52 +47,70 @@ export function TabCard({
 		setShowInfo((prev) => !prev);
 	}, []);
 
-	// Filter out chrome-extension:// URLs since we can't load them due to cross-extension security
-	const isExtensionUrl = useMemo(
-		() => url?.startsWith("chrome-extension://"),
-		[url],
-	);
-	const isLoadableFavicon = useMemo(
-		() => favIconUrl && !favIconUrl.startsWith("chrome-extension://"),
-		[favIconUrl],
-	);
+	const dropZoneId = `drop-${tab.browserWindowId}-${tabIndex}`;
+	const isDropTarget =
+		activeDropZone === `${dropZoneId}-top` ||
+		activeDropZone === `${dropZoneId}-bottom`;
+
+	// Check if URL is an extension URL (can't load favicon)
+	const isExtensionUrl = tab.url?.startsWith("chrome-extension://");
+	const isLoadableFavicon =
+		tab.favIconUrl && !tab.favIconUrl.startsWith("chrome-extension://");
 
 	return (
 		<div
 			className={cn("flex flex-col rounded-md overflow-hidden border-2", {
 				"cursor-grab active:cursor-grabbing": !isDragging,
-				"bg-blue-500/15 dark:bg-blue-500/30 border-blue-500/50 dark:border-blue-500/60 shadow-[0_0_0_1px_rgba(59,130,246,0.1)] dark:shadow-[0_0_0_1px_rgba(59,130,246,0.2)]":
+				// Active tab (blue)
+				"bg-blue-500/15 dark:bg-blue-500/30 border-blue-500/50 dark:border-blue-500/60":
 					tab.active && !isSelected,
-				"bg-orange-500/25 dark:bg-orange-500/35 border-orange-500/70 dark:border-orange-500/80 shadow-[0_0_0_1px_rgba(249,115,22,0.2)] dark:shadow-[0_0_0_1px_rgba(249,115,22,0.3)]":
+				// Selected tab (orange)
+				"bg-orange-500/25 dark:bg-orange-500/35 border-orange-500/70 dark:border-orange-500/80":
 					isSelected,
+				// Frozen/discarded tab (cyan border)
 				"bg-black/5 dark:bg-white/5 border-cyan-500/15 dark:border-cyan-500/20":
-					tab.frozen && !tab.active && !isSelected,
+					(tab.frozen || tab.discarded) && !tab.active && !isSelected,
+				// Normal inactive tab
 				"bg-black/5 dark:bg-white/5 border-transparent":
-					!tab.active && !tab.frozen && !isSelected,
+					!tab.active && !tab.frozen && !tab.discarded && !isSelected,
+				// Drop target
+				"ring-2 ring-green-500": isDropTarget,
 			})}
 		>
-			{/* biome-ignore lint/a11y/useSemanticElements: Cannot use button element due to nested close button */}
+			{/* biome-ignore lint/a11y/useSemanticElements: Cannot use button due to nested buttons */}
 			<div
 				className={cn("flex items-center gap-2 group", {
 					"cursor-pointer": !isDragging,
 					"hover:bg-black/10 dark:hover:bg-white/10": !isSelected,
 					"hover:bg-orange-500/30 dark:hover:bg-orange-500/40": isSelected,
 				})}
-				onClick={handleTabClick}
-				onKeyDown={handleKeyDown}
+				onClick={handleClick}
+				onKeyDown={(e) => {
+					if (e.key === "Enter" || e.key === " ") {
+						e.preventDefault();
+						handleClick(e as unknown as React.MouseEvent);
+					}
+				}}
 				role="button"
 				tabIndex={0}
-				aria-label={`Switch to tab: ${title || "Untitled"}`}
+				aria-label={`Switch to tab: ${tab.title || "Untitled"}`}
 			>
 				<div className="flex-1 min-w-0 flex items-center gap-2 px-2 py-1.5">
 					<div className="shrink-0 size-4 flex items-center justify-center">
-						{audible ? (
+						{tab.audible ? (
 							<Volume2
 								size={16}
 								className="text-green-500 dark:text-green-400 animate-pulse"
 							/>
 						) : isLoadableFavicon ? (
-							<img src={favIconUrl} alt="" className="w-4 h-4 object-contain" />
+							<img
+								src={tab.favIconUrl ?? undefined}
+								alt=""
+								className="w-4 h-4 object-contain"
+								onError={(e) => {
+									e.currentTarget.style.display = "none";
+								}}
+							/>
 						) : isExtensionUrl ? (
 							<Puzzle
 								size={16}
@@ -126,28 +121,31 @@ export function TabCard({
 						)}
 					</div>
 					<div className="text-xs font-medium whitespace-nowrap overflow-hidden text-ellipsis shrink h-full">
-						{title || "Untitled"}
+						{tab.title || "Untitled"}
 					</div>
-					{tab.splitViewId !== undefined && tab.splitViewId !== -1 && (
-						<div
-							className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-orange-500/20 text-orange-600 dark:text-orange-400 text-xs font-medium shrink-0"
-							title={`Split view ID: ${tab.splitViewId}`}
-						>
-							<SplitSquareHorizontal size={10} />
-						</div>
+					{tab.pinned && (
+						<span className="text-xs text-orange-500" title="Pinned">
+							📌
+						</span>
 					)}
-					{url && (
+					{tab.url && (
 						<div className="text-xs text-black/40 dark:text-white/40 whitespace-nowrap overflow-hidden text-ellipsis shrink-999">
-							{new URL(url).hostname || url}
+							{(() => {
+								try {
+									return new URL(tab.url).hostname || tab.url;
+								} catch {
+									return tab.url;
+								}
+							})()}
 						</div>
 					)}
 				</div>
-				<div className=" items-center hidden group-hover:flex">
+				<div className="items-center hidden group-hover:flex">
 					<button
 						type="button"
 						className={cn(
-							"shrink-0 flex items-center justify-center p-1.5 hover:bg-blue-500/10 dark:hover:bg-blue-500/10 hover:text-blue-600 dark:hover:text-blue-400 text-black/50 dark:text-white/50 transition-all",
-							{ "opacity-100": showInfo },
+							"shrink-0 flex items-center justify-center p-1.5 hover:bg-blue-500/10 hover:text-blue-600 dark:hover:text-blue-400 text-black/50 dark:text-white/50 transition-all",
+							{ "opacity-100 text-blue-500": showInfo },
 						)}
 						onClick={handleToggleInfo}
 						title="Toggle debug info"
@@ -156,7 +154,7 @@ export function TabCard({
 					</button>
 					<button
 						type="button"
-						className="shrink-0 flex items-center justify-center p-1.5 hover:bg-red-500/10 dark:hover:bg-red-500/10 hover:text-red-600 dark:hover:text-red-400 text-black/50 dark:text-white/50 transition-colors"
+						className="shrink-0 flex items-center justify-center p-1.5 hover:bg-red-500/10 hover:text-red-600 dark:hover:text-red-400 text-black/50 dark:text-white/50 transition-colors"
 						onClick={handleClose}
 						title="Close tab"
 					>
@@ -173,4 +171,4 @@ export function TabCard({
 			)}
 		</div>
 	);
-}
+};

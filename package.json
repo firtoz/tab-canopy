@@ -24,13 +24,17 @@
 		"@dnd-kit/sortable": "^10.0.0",
 		"@dnd-kit/utilities": "^3.2.2",
 		"@firtoz/drizzle-indexeddb": "^0.4.3",
+		"@firtoz/drizzle-utils": "^0.3.0",
+		"@tanstack/db": "^0.5.11",
+		"@tanstack/react-db": "^0.1.55",
 		"@webext-core/messaging": "^2.3.0",
 		"clsx": "^2.1.1",
 		"jotai": "^2.15.2",
 		"lucide-react": "^0.556.0",
 		"react": "^19.2.1",
 		"react-dom": "^19.2.1",
-		"tailwind-merge": "^3.4.0"
+		"tailwind-merge": "^3.4.0",
+		"valibot": "^1.2.0"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "^2.3.8",

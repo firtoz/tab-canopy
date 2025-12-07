@@ -1,11 +1,11 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "0a003299-4b69-4b08-8185-796f4be57176",
+  "id": "8524c84f-4973-47c3-81c4-318f10616b96",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "tables": {
-    "todo": {
-      "name": "todo",
+    "tab": {
+      "name": "tab",
       "columns": {
         "id": {
           "name": "id",
@@ -35,45 +35,107 @@
           "notNull": false,
           "autoincrement": false
         },
-        "title": {
-          "name": "title",
-          "type": "text",
+        "browser_tab_id": {
+          "name": "browser_tab_id",
+          "type": "integer",
           "primaryKey": false,
           "notNull": true,
           "autoincrement": false
         },
-        "completed": {
-          "name": "completed",
+        "browser_window_id": {
+          "name": "browser_window_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "tab_index": {
+          "name": "tab_index",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "title": {
+          "name": "title",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "url": {
+          "name": "url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "fav_icon_url": {
+          "name": "fav_icon_url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "active": {
+          "name": "active",
           "type": "integer",
           "primaryKey": false,
           "notNull": true,
           "autoincrement": false,
           "default": false
         },
-        "parent_id": {
-          "name": "parent_id",
+        "pinned": {
+          "name": "pinned",
           "type": "integer",
           "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
+          "notNull": true,
+          "autoincrement": false,
+          "default": false
         },
-        "user_id": {
-          "name": "user_id",
+        "highlighted": {
+          "name": "highlighted",
           "type": "integer",
           "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
+          "notNull": true,
+          "autoincrement": false,
+          "default": false
         },
-        "content": {
-          "name": "content",
+        "discarded": {
+          "name": "discarded",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": false
+        },
+        "frozen": {
+          "name": "frozen",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": false
+        },
+        "auto_discardable": {
+          "name": "auto_discardable",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": true
+        },
+        "audible": {
+          "name": "audible",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": false
+        },
+        "muted_info": {
+          "name": "muted_info",
           "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "priority": {
-          "name": "priority",
-          "type": "integer",
           "primaryKey": false,
           "notNull": false,
           "autoincrement": false
@@ -85,68 +147,54 @@
           "notNull": false,
           "autoincrement": false
         },
-        "tags": {
-          "name": "tags",
-          "type": "text",
+        "group_id": {
+          "name": "group_id",
+          "type": "integer",
           "primaryKey": false,
           "notNull": false,
           "autoincrement": false
         }
       },
       "indexes": {
-        "todo_user_id_index": {
-          "name": "todo_user_id_index",
+        "tab_browser_id_index": {
+          "name": "tab_browser_id_index",
           "columns": [
-            "user_id"
+            "browser_tab_id"
           ],
           "isUnique": false
         },
-        "todo_parent_id_index": {
-          "name": "todo_parent_id_index",
+        "tab_browser_window_id_index": {
+          "name": "tab_browser_window_id_index",
           "columns": [
-            "parent_id"
+            "browser_window_id"
           ],
           "isUnique": false
         },
-        "todo_completed_index": {
-          "name": "todo_completed_index",
+        "tab_index_index": {
+          "name": "tab_index_index",
           "columns": [
-            "completed"
+            "tab_index"
           ],
           "isUnique": false
         },
-        "todo_created_at_index": {
-          "name": "todo_created_at_index",
+        "tab_active_index": {
+          "name": "tab_active_index",
           "columns": [
-            "createdAt"
+            "active"
           ],
           "isUnique": false
         },
-        "todo_updated_at_index": {
-          "name": "todo_updated_at_index",
+        "tab_audible_index": {
+          "name": "tab_audible_index",
           "columns": [
-            "updatedAt"
+            "audible"
           ],
           "isUnique": false
         },
-        "todo_deleted_at_index": {
-          "name": "todo_deleted_at_index",
+        "tab_frozen_index": {
+          "name": "tab_frozen_index",
           "columns": [
-            "deletedAt"
-          ],
-          "isUnique": false
-        },
-        "todo_priority_index": {
-          "name": "todo_priority_index",
-          "columns": [
-            "priority"
-          ],
-          "isUnique": false
-        },
-        "todo_status_index": {
-          "name": "todo_status_index",
-          "columns": [
-            "status"
+            "frozen"
           ],
           "isUnique": false
         }
@@ -156,8 +204,8 @@
       "uniqueConstraints": {},
       "checkConstraints": {}
     },
-    "user": {
-      "name": "user",
+    "window": {
+      "name": "window",
       "columns": {
         "id": {
           "name": "id",
@@ -187,26 +235,56 @@
           "notNull": false,
           "autoincrement": false
         },
-        "username": {
-          "name": "username",
-          "type": "text",
+        "browser_window_id": {
+          "name": "browser_window_id",
+          "type": "integer",
           "primaryKey": false,
           "notNull": true,
           "autoincrement": false
         },
-        "email": {
-          "name": "email",
-          "type": "text",
+        "focused": {
+          "name": "focused",
+          "type": "integer",
           "primaryKey": false,
           "notNull": true,
+          "autoincrement": false,
+          "default": false
+        },
+        "state": {
+          "name": "state",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "incognito": {
+          "name": "incognito",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": false
+        },
+        "type": {
+          "name": "type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
           "autoincrement": false
         }
       },
       "indexes": {
-        "email_index": {
-          "name": "email_index",
+        "window_browser_id_index": {
+          "name": "window_browser_id_index",
           "columns": [
-            "email"
+            "browser_window_id"
+          ],
+          "isUnique": false
+        },
+        "window_focused_index": {
+          "name": "window_focused_index",
+          "columns": [
+            "focused"
           ],
           "isUnique": false
         }
