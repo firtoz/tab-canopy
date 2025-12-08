@@ -180,21 +180,73 @@ export const setupTabListeners = (dbOps: DbOperations) => {
 			// Make it a child of the opener tab
 			parentTabId = openerTabId;
 
-			// Find siblings (other children of the opener) and place at the end
+			// Find siblings (other children of the opener)
 			const siblings = existingTabs
 				.filter((t) => t.parentTabId === openerTabId)
 				.sort((a, b) =>
 					a.treeOrder < b.treeOrder ? -1 : a.treeOrder > b.treeOrder ? 1 : 0,
 				);
 
-			const lastSibling = siblings[siblings.length - 1];
-			treeOrder = generateTreeOrder(lastSibling?.treeOrder, undefined);
+			// Get all tabs in the window to determine browser positions
+			const windowTabs = await browser.tabs.query({ windowId: tab.windowId });
+
+			// Build a map of tab ID to browser index for quick lookup
+			const tabIndexMap = new Map<number, number>();
+			for (const wt of windowTabs.filter(hasTabIds)) {
+				tabIndexMap.set(wt.id, wt.index);
+			}
+
+			// Find the position among siblings based on browser index
+			// Build a list of sibling indices in browser order
+			const siblingWithIndices = siblings
+				.map((s) => {
+					const browserIndex = tabIndexMap.get(s.browserTabId);
+					return browserIndex !== undefined ? { tab: s, browserIndex } : null;
+				})
+				.filter((s): s is { tab: Tab; browserIndex: number } => s !== null);
+
+			// Find where to insert based on the new tab's browser index
+			let insertAfter: Tab | undefined;
+			let insertBefore: Tab | undefined;
+
+			for (const sibling of siblingWithIndices) {
+				if (sibling.browserIndex < tab.index) {
+					// This sibling is before the new tab
+					if (
+						!insertAfter ||
+						sibling.browserIndex >
+							(tabIndexMap.get(insertAfter.browserTabId) ?? -1)
+					) {
+						insertAfter = sibling.tab;
+					}
+				} else {
+					// This sibling is after the new tab
+					if (
+						!insertBefore ||
+						sibling.browserIndex <
+							(tabIndexMap.get(insertBefore.browserTabId) ?? Number.MAX_VALUE)
+					) {
+						insertBefore = sibling.tab;
+					}
+				}
+			}
+
+			treeOrder = generateTreeOrder(
+				insertAfter?.treeOrder,
+				insertBefore?.treeOrder,
+			);
 
 			log(
 				"[Background] Tab opened from",
 				openerTabId,
+				"at index",
+				tab.index,
 				"- setting as child with treeOrder:",
 				treeOrder,
+				"between siblings:",
+				insertAfter?.browserTabId,
+				"and",
+				insertBefore?.browserTabId,
 			);
 		} else {
 			// Root level tab - place at end of root tabs in this window

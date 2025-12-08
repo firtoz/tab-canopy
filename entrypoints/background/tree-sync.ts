@@ -20,10 +20,12 @@ export function buildTree(tabs: Tab[]): TreeNode[] {
 	const childrenMap = new Map<number | null, Tab[]>();
 	for (const tab of tabs) {
 		const parentId = tab.parentTabId;
-		if (!childrenMap.has(parentId)) {
-			childrenMap.set(parentId, []);
+		let parent = childrenMap.get(parentId);
+		if (!parent) {
+			parent = [];
+			childrenMap.set(parentId, parent);
 		}
-		childrenMap.get(parentId)!.push(tab);
+		parent.push(tab);
 	}
 
 	// Sort children by treeOrder (using ASCII order, not locale)
@@ -85,13 +87,16 @@ export function getExpectedBrowserOrder(tabs: Tab[]): Map<number, number> {
  */
 function generateTreeOrder(before?: string, after?: string): string {
 	// Default midpoint
-	if (!before && !after) {
-		return "n"; // middle of alphabet
-	}
+	// if (!before && !after) {
+	// 	return "n"; // middle of alphabet
+	// }
 
 	if (!before) {
+		if (!after) {
+			return "n";
+		}
 		// Insert before `after` - we need something that sorts before it
-		const firstChar = after!.charCodeAt(0);
+		const firstChar = after.charCodeAt(0);
 
 		// Try to find a character that sorts before the first character
 		// '0' is ASCII 48, which is a safe lower bound for printable chars
@@ -105,17 +110,21 @@ function generateTreeOrder(before?: string, after?: string): string {
 
 		// First char is already at or near the minimum ('0')
 		// Prepend '0' and recurse on the rest
-		if (after!.length > 1) {
-			return "0" + generateTreeOrder(undefined, after!.slice(1));
+		if (after.length > 1) {
+			return `0${generateTreeOrder(undefined, after.slice(1))}`;
 		}
 		// Single character at minimum - just prepend '0'
 		return "0";
 	}
 
 	if (!after) {
+		if (!before) {
+			return "n";
+		}
+
 		// Insert after `before` - we need something that sorts after it
 		// Append a character to make it larger
-		return before + "n";
+		return `${before}n`;
 	}
 
 	// Insert between two values
@@ -155,7 +164,7 @@ function generateTreeOrder(before?: string, after?: string): string {
 	}
 
 	// Append to before to make it slightly larger but still less than after
-	return before + "n";
+	return `${before}n`;
 }
 
 /**

@@ -25,12 +25,11 @@ import {
 	buildTabTree,
 	calculateTreeMove,
 	flattenTree,
+	isAncestor,
 	type TreeDropPosition,
 } from "../lib/tree";
 import { TabItemOverlay } from "./TabItemOverlay";
 import { WindowGroup } from "./WindowGroupNew";
-
-const DB_NAME = "tabcanopy.db";
 
 // Modifier to position drag overlay to the right of the cursor
 // Uses the initial pointer offset within the dragged element to calculate proper positioning
@@ -184,7 +183,6 @@ export const TabManagerContent = () => {
 
 	const handleDragOver = useCallback((event: DragOverEvent) => {
 		const overIdStr = event.over?.id as string | undefined;
-		console.log("[DragOver] over:", overIdStr);
 		if (overIdStr?.startsWith("drop-")) {
 			setActiveDropZone(overIdStr);
 		} else {
@@ -251,19 +249,15 @@ export const TabManagerContent = () => {
 	const handleDragEnd = useCallback(
 		async (event: DragEndEvent) => {
 			const dropZone = activeDropZone;
-			console.log("[DragEnd] dropZone:", dropZone);
 			setActiveId(null);
 			setActiveDropZone(null);
 
 			if (!dropZone || !tabs) {
-				console.log("[DragEnd] early return - no dropZone or tabs");
 				return;
 			}
 
 			const parsed = parseTreeDropZone(dropZone);
-			console.log("[DragEnd] parsed:", parsed);
 			if (!parsed) {
-				console.log("[DragEnd] early return - parse failed");
 				return;
 			}
 
@@ -288,6 +282,29 @@ export const TabManagerContent = () => {
 
 			if (draggedTabIds.length === 0) return;
 
+			// Filter out invalid drops:
+			// 1. Can't drop a tab on itself
+			// 2. Can't make a tab a child of its own descendant (circular reference)
+			let validDraggedTabIds = draggedTabIds;
+
+			if (targetTabId !== undefined) {
+				// Remove the target tab from dragged tabs (can't drop on itself)
+				validDraggedTabIds = validDraggedTabIds.filter(
+					(id) => id !== targetTabId,
+				);
+
+				// For child drops, also remove any tabs that would create circular references
+				if (dropType === "child") {
+					validDraggedTabIds = validDraggedTabIds.filter(
+						(draggedId) => !isAncestor(tabs, draggedId, targetTabId),
+					);
+				}
+			}
+
+			if (validDraggedTabIds.length === 0) {
+				return;
+			}
+
 			// For tree operations, we need to update tree structure in the database
 			// Get all tabs in the target window
 			const windowTabs = tabs.filter(
@@ -296,14 +313,12 @@ export const TabManagerContent = () => {
 
 			// Check if this is a cross-window move
 			const firstDraggedTab = tabs.find(
-				(t) => t.browserTabId === draggedTabIds[0],
+				(t) => t.browserTabId === validDraggedTabIds[0],
 			);
 			if (!firstDraggedTab) return;
 
 			const isCrossWindowMove =
 				firstDraggedTab.browserWindowId !== targetWindowId;
-
-			console.log("[DragEnd] cross-window move:", isCrossWindowMove);
 
 			// For cross-window moves, we need to include the dragged tabs in the target window's tab list
 			// for proper tree calculation
@@ -311,7 +326,7 @@ export const TabManagerContent = () => {
 			if (isCrossWindowMove) {
 				// Add dragged tabs to the target window's tab list (with updated windowId)
 				const draggedTabs = tabs.filter((t) =>
-					draggedTabIds.includes(t.browserTabId),
+					validDraggedTabIds.includes(t.browserTabId),
 				);
 				tabsForTreeCalc = [
 					...windowTabs,
@@ -349,22 +364,11 @@ export const TabManagerContent = () => {
 
 			// Calculate the new parent and treeOrder
 			const { parentTabId: newParentId, treeOrder: newTreeOrder } =
-				calculateTreeMove(tabsForTreeCalc, draggedTabIds[0], treeDropPosition);
-
-			// Find target tab for debugging
-			const targetTab = targetTabId
-				? tabs.find((t) => t.browserTabId === targetTabId)
-				: null;
-
-			console.log("[DragEnd] tree move result:", {
-				treeDropPosition,
-				newParentId,
-				newTreeOrder,
-				draggedTabIds,
-				isCrossWindowMove,
-				targetTabTitle: targetTab?.title?.slice(0, 20),
-				targetTabTreeOrder: targetTab?.treeOrder,
-			});
+				calculateTreeMove(
+					tabsForTreeCalc,
+					validDraggedTabIds[0],
+					treeDropPosition,
+				);
 
 			// Update tree structure in the database for each dragged tab
 			// First, create the updated tabs with new tree positions
@@ -375,23 +379,14 @@ export const TabManagerContent = () => {
 				newWindowId: number;
 			}> = [];
 
-			for (let i = 0; i < draggedTabIds.length; i++) {
-				const browserTabId = draggedTabIds[i];
+			for (let i = 0; i < validDraggedTabIds.length; i++) {
+				const browserTabId = validDraggedTabIds[i];
 				const tab = tabs.find((t) => t.browserTabId === browserTabId);
 				if (!tab) continue;
 
 				// For multiple selections, keep their relative order
 				const orderSuffix = i > 0 ? String.fromCharCode(97 + i) : ""; // a, b, c...
 				const tabNewTreeOrder = newTreeOrder + orderSuffix;
-
-				console.log("[DragEnd] updating tab:", {
-					tabId: tab.id,
-					browserTabId,
-					newParentId,
-					newTreeOrder: tabNewTreeOrder,
-					newWindowId: targetWindowId,
-					isCrossWindowMove,
-				});
 
 				// The collection key is the tab's id field, not browserTabId
 				tabCollection.update(tab.id, (draft) => {
@@ -438,51 +433,16 @@ export const TabManagerContent = () => {
 				updatedWindowTabs = [...updatedWindowTabs, ...movedTabs];
 			}
 
-			// Debug: log the tabs before building tree
-			console.log(
-				"[DragEnd] updatedWindowTabs:",
-				updatedWindowTabs.map((t) => ({
-					browserTabId: t.browserTabId,
-					title: t.title?.slice(0, 20),
-					parentTabId: t.parentTabId,
-					treeOrder: t.treeOrder,
-				})),
-			);
-
 			// Flatten to get expected browser order
 			const newTree = buildTabTree(updatedWindowTabs);
 			const flatOrder = flattenTree(newTree);
-
-			// Debug: log the flat order
-			console.log(
-				"[DragEnd] flatOrder:",
-				flatOrder.map((t, i) => ({
-					index: i,
-					browserTabId: t.tab.browserTabId,
-					title: t.tab.title?.slice(0, 20),
-					treeOrder: t.tab.treeOrder,
-				})),
-			);
 
 			// Move each dragged tab to its expected position
 			for (const { tab } of updatedTabs) {
 				const expectedIndex = flatOrder.findIndex(
 					(t) => t.tab.browserTabId === tab.browserTabId,
 				);
-				console.log(
-					"[DragEnd] moving browser tab:",
-					tab.browserTabId,
-					"title:",
-					tab.title?.slice(0, 20),
-					"to window:",
-					targetWindowId,
-					"index:",
-					expectedIndex,
-					"(tab's new treeOrder:",
-					updatedTabs.find((u) => u.tab.browserTabId === tab.browserTabId)
-						?.newTreeOrder,
-					")",
-				);
+
 				if (expectedIndex !== -1) {
 					// For cross-window moves, we need to specify the windowId
 					browser.tabs.move(tab.browserTabId, {
@@ -567,8 +527,8 @@ export const TabManagerContent = () => {
 						</button>
 					</div>
 				</div>
-				<div className="flex flex-col gap-6">
-					{windowsWithTabs.map(({ window: win, tabs: windowTabs }) => (
+				<div className="flex flex-col">
+					{windowsWithTabs.map(({ window: win, tabs: windowTabs }, index) => (
 						<WindowGroup
 							key={win.id}
 							window={win}
@@ -577,6 +537,7 @@ export const TabManagerContent = () => {
 								currentWindowId !== undefined &&
 								win.browserWindowId === currentWindowId
 							}
+							isLastWindow={index === windowsWithTabs.length - 1}
 							activeDropZone={activeDropZone}
 							selectedTabIds={selectedTabIds}
 							setSelectedTabIds={setSelectedTabIds}
