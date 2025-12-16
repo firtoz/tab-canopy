@@ -199,6 +199,7 @@ export function createExtensionClientTransport<TClientMsg, TServerMsg>(
 		},
 		getPort: () => port,
 		dispose: () => {
+			console.log("[Client] Disposing transport");
 			port.disconnect();
 		},
 	};
@@ -215,12 +216,22 @@ import type {
 } from "@firtoz/drizzle-indexeddb";
 
 /**
+ * UI move intent for preventing race conditions
+ */
+export interface UiMoveIntentData {
+	tabId: number;
+	parentTabId: number | null;
+	treeOrder: string;
+}
+
+/**
  * Messages sent from client to server
  */
 export type ClientMessage =
 	| { type: "idbRequest"; payload: IDBProxyRequest }
 	| { type: "broadcast"; channel: string; data: unknown }
-	| { type: "resetDatabase" };
+	| { type: "resetDatabase" }
+	| { type: "uiMoveIntent"; moves: UiMoveIntentData[] };
 
 /**
  * Messages sent from server to client

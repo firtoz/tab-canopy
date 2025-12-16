@@ -9,7 +9,9 @@ import {
 	createExtensionClientTransport,
 	IDB_PORT_NAME,
 	type ServerMessage,
+	type UiMoveIntentData,
 } from "@/src/idb-transport";
+import { log } from "../background/constants";
 
 // ============================================================================
 // Date Serialization Helpers
@@ -90,6 +92,7 @@ function transformSyncMessage(
 export function createIDBTransportAdapter(): {
 	transport: IDBProxyClientTransport;
 	resetDatabase: () => Promise<void>;
+	sendMoveIntent: (moves: UiMoveIntentData[]) => void;
 	dispose: () => void;
 } {
 	const pendingRequests = new Map<
@@ -117,7 +120,7 @@ export function createIDBTransportAdapter(): {
 				}
 			} else if (message.type === "idbSync") {
 				// Transform dates in the sync message
-				console.log(
+				log(
 					"[Sidepanel] Received sync:",
 					message.payload.type,
 					message.payload.storeName,
@@ -165,9 +168,15 @@ export function createIDBTransportAdapter(): {
 		});
 	};
 
+	const sendMoveIntent = (moves: UiMoveIntentData[]): void => {
+		log("[Sidepanel] Sending move intent for", moves.length, "tabs");
+		extensionTransport.send({ type: "uiMoveIntent", moves });
+	};
+
 	return {
 		transport,
 		resetDatabase,
+		sendMoveIntent,
 		dispose: () => transport.dispose?.(),
 	};
 }

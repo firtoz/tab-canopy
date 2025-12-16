@@ -1,7 +1,10 @@
+import { useDndContext } from "@dnd-kit/core";
 import { Info, Puzzle, Volume2, X } from "lucide-react";
 import { useCallback, useState } from "react";
 import type * as schema from "@/schema/src/schema";
 import { cn } from "../lib/cn";
+import { useDevTools } from "../lib/devtools";
+import { isDropData } from "../lib/dnd-types";
 
 // SVG tree line components with fixed dimensions
 const TREE_W = 24; // Width of each tree segment (wider for better indentation)
@@ -17,9 +20,24 @@ const BOX_SIZE = ICON_SIZE - 2; // Size of the box
 const BOX_OFFSET = (ICON_SIZE - BOX_SIZE) / 2; // Center the box
 const BOX_Y = MID_Y - BOX_SIZE / 2; // Vertical center
 
-// Vertical line (┃) - full height
-const TreeVertical = () => (
-	<svg width={TREE_W} height={TREE_H} className="shrink-0" aria-hidden="true">
+// Vertical line (┃) - full height, with optional highlight
+const TreeVertical = ({ highlighted }: { highlighted?: boolean }) => (
+	<svg
+		width={TREE_W}
+		height={TREE_H}
+		className={cn("shrink-0", highlighted && "text-emerald-500")}
+		aria-hidden="true"
+	>
+		{highlighted && (
+			<rect
+				x={0}
+				y={0}
+				width={TREE_W}
+				height={TREE_H}
+				fill="currentColor"
+				fillOpacity={0.2}
+			/>
+		)}
 		<line
 			x1={MID_X}
 			y1={0}
@@ -31,14 +49,32 @@ const TreeVertical = () => (
 	</svg>
 );
 
-// Empty space
-export const TreeEmpty = () => (
-	<div style={{ width: TREE_W, height: TREE_H }} className="shrink-0" />
+// Empty space - with optional highlight for drop zones
+export const TreeEmpty = ({ highlighted }: { highlighted?: boolean }) => (
+	<div
+		style={{ width: TREE_W, height: TREE_H }}
+		className={cn("shrink-0", highlighted && "bg-emerald-500/20")}
+	/>
 );
 
 // Branch (┣) - vertical + horizontal right
-export const TreeBranch = () => (
-	<svg width={TREE_W} height={TREE_H} className="shrink-0" aria-hidden="true">
+export const TreeBranch = ({ highlighted }: { highlighted?: boolean }) => (
+	<svg
+		width={TREE_W}
+		height={TREE_H}
+		className={cn("shrink-0", highlighted && "text-emerald-500")}
+		aria-hidden="true"
+	>
+		{highlighted && (
+			<rect
+				x={0}
+				y={0}
+				width={TREE_W}
+				height={TREE_H}
+				fill="currentColor"
+				fillOpacity={0.2}
+			/>
+		)}
 		<line
 			x1={MID_X}
 			y1={0}
@@ -59,8 +95,23 @@ export const TreeBranch = () => (
 );
 
 // End (┗) - vertical top half + horizontal right
-export const TreeEnd = () => (
-	<svg width={TREE_W} height={TREE_H} className="shrink-0" aria-hidden="true">
+export const TreeEnd = ({ highlighted }: { highlighted?: boolean }) => (
+	<svg
+		width={TREE_W}
+		height={TREE_H}
+		className={cn("shrink-0", highlighted && "text-emerald-500")}
+		aria-hidden="true"
+	>
+		{highlighted && (
+			<rect
+				x={0}
+				y={0}
+				width={TREE_W}
+				height={TREE_H}
+				fill="currentColor"
+				fillOpacity={0.2}
+			/>
+		)}
 		<line
 			x1={MID_X}
 			y1={0}
@@ -173,12 +224,13 @@ export const TabCard = ({
 	isSelected,
 	onSelect,
 	onToggleCollapse,
-	activeDropZone,
+	// activeDropData,
 	isDragging,
 	depth = 0,
 	hasChildren = false,
 	isLastChild = false,
 	indentGuides = [],
+	highlightedDepth,
 }: {
 	tab: schema.Tab;
 	isSelected: boolean;
@@ -187,32 +239,54 @@ export const TabCard = ({
 		options: { ctrlKey: boolean; shiftKey: boolean },
 	) => void;
 	onToggleCollapse: (tabId: number) => void;
-	activeDropZone: string | null;
+	// activeDropData: DropData | null;
 	isDragging?: boolean;
 	depth?: number;
 	hasChildren?: boolean;
 	isLastChild?: boolean;
 	indentGuides?: boolean[];
+	highlightedDepth?: number | null;
 }) => {
 	const [showInfo, setShowInfo] = useState(false);
+	const { recordUserEvent } = useDevTools();
 
 	const handleClick = useCallback(
 		(e: React.MouseEvent) => {
 			e.preventDefault();
+
+			// Record tab activation event
+			recordUserEvent({
+				type: "user.tabActivate",
+				data: {
+					tabId: tab.browserTabId,
+					windowId: tab.browserWindowId,
+				},
+			});
+
 			onSelect(tab.browserTabId, {
 				ctrlKey: e.ctrlKey || e.metaKey,
 				shiftKey: e.shiftKey,
 			});
 		},
-		[tab.browserTabId, onSelect],
+		[tab.browserTabId, tab.browserWindowId, onSelect, recordUserEvent],
 	);
 
 	const handleClose = useCallback(
 		(e: React.MouseEvent) => {
 			e.stopPropagation();
+
+			// Record tab close event
+			recordUserEvent({
+				type: "user.tabClose",
+				data: {
+					tabId: tab.browserTabId,
+					windowId: tab.browserWindowId,
+				},
+			});
+
 			browser.tabs.remove(tab.browserTabId);
 		},
-		[tab.browserTabId],
+		[tab.browserTabId, tab.browserWindowId, recordUserEvent],
 	);
 
 	const handleToggleInfo = useCallback((e: React.MouseEvent) => {
@@ -229,13 +303,17 @@ export const TabCard = ({
 		[tab.browserTabId, onToggleCollapse],
 	);
 
-	const dropZoneId = `drop-${tab.browserWindowId}-${tab.browserTabId}`;
+	const { over } = useDndContext();
+	const dropData = over?.data?.current;
+	const activeDropData = isDropData(dropData) ? dropData : null;
+
+	// Check if this tab is the drop target
 	const isDropTargetSibling =
-		activeDropZone === `${dropZoneId}-top-sibling` ||
-		activeDropZone === `${dropZoneId}-bottom-sibling`;
+		activeDropData?.type === "sibling" &&
+		activeDropData.tabId === tab.browserTabId;
 	const isDropTargetChild =
-		activeDropZone === `${dropZoneId}-top-child` ||
-		activeDropZone === `${dropZoneId}-bottom-child`;
+		activeDropData?.type === "child" &&
+		activeDropData.tabId === tab.browserTabId;
 
 	// Check if URL is an extension URL (can't load favicon)
 	const isExtensionUrl = tab.url?.startsWith("chrome-extension://");
@@ -247,25 +325,32 @@ export const TabCard = ({
 			className={cn("flex items-stretch", {
 				"cursor-grab active:cursor-grabbing": !isDragging,
 			})}
+			data-testid="tab-card"
 		>
 			{/* Tree lines - outside the card using SVGs */}
 			{depth > 0 && (
 				<div className="flex items-stretch shrink-0 text-slate-300 dark:text-slate-600 select-none">
 					{/* Render continuation lines for parent levels */}
 					{indentGuides.map((showGuide, i) => {
+						const isHighlighted = highlightedDepth === i;
 						return (
 							<div key={`guide-${tab.browserTabId}-${i}`}>
 								{showGuide ? (
-									<TreeVertical key={`guide-${tab.browserTabId}-${i}`} />
+									<TreeVertical highlighted={isHighlighted} />
 								) : (
-									<TreeEmpty key={`guide-${tab.browserTabId}-${i}`} />
+									<TreeEmpty highlighted={isHighlighted} />
 								)}
 							</div>
 						);
 					})}
 					{/* Render branch connector for current level */}
-					<div>{isLastChild ? <TreeEnd /> : <TreeBranch />}</div>
-					{/* <TreeHorizontal /> */}
+					<div>
+						{isLastChild ? (
+							<TreeEnd highlighted={highlightedDepth === depth} />
+						) : (
+							<TreeBranch highlighted={highlightedDepth === depth} />
+						)}
+					</div>
 				</div>
 			)}
 			{/* Card content */}
@@ -361,6 +446,7 @@ export const TabCard = ({
 									"text-indigo-700 dark:text-indigo-300": isSelected,
 								},
 							)}
+							title={tab.title || "Untitled"}
 						>
 							{tab.title || "Untitled"}
 						</div>

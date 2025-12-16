@@ -5,26 +5,35 @@ import {
 	type DragOverEvent,
 	DragOverlay,
 	type DragStartEvent,
-	KeyboardSensor,
 	type Modifier,
 	PointerSensor,
 	pointerWithin,
 	rectIntersection,
+	useDndContext,
+	useDroppable,
 	useSensor,
 	useSensors,
 } from "@dnd-kit/core";
-import { sortableKeyboardCoordinates } from "@dnd-kit/sortable";
+// import { sortableKeyboardCoordinates } from "@dnd-kit/sortable";
 import { useDrizzleIndexedDB } from "@firtoz/drizzle-indexeddb";
 import { useLiveQuery } from "@tanstack/react-db";
 import { RefreshCw, Settings } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type * as schema from "@/schema/src/schema";
-import { useResetDatabase } from "../App";
+import {
+	useRegisterStateGetter,
+	useResetDatabase,
+	useSendMoveIntent,
+} from "../App";
 import { cn } from "../lib/cn";
+import { useDevTools } from "../lib/devtools";
+import { type DropDataNewWindow, isDropData } from "../lib/dnd-types";
+import { exposeCurrentTreeStateForTests } from "../lib/test-helpers";
 import {
 	buildTabTree,
 	calculateTreeMove,
 	flattenTree,
+	getDescendantIds,
 	isAncestor,
 	type TreeDropPosition,
 } from "../lib/tree";
@@ -64,10 +73,13 @@ const dropZoneCollision: CollisionDetection = (args) => {
 	// First, try pointerWithin to find droppables containing the pointer
 	const pointerCollisions = pointerWithin(args);
 
-	// Filter to only drop zones
-	const dropZoneCollisions = pointerCollisions.filter((collision) =>
-		(collision.id as string).startsWith("drop-"),
-	);
+	// Filter to only drop zones (those with DropData)
+	const dropZoneCollisions = pointerCollisions.filter((collision) => {
+		const container = args.droppableContainers.find(
+			(c) => c.id === collision.id,
+		);
+		return container && isDropData(container.data?.current);
+	});
 
 	if (dropZoneCollisions.length > 0) {
 		return dropZoneCollisions;
@@ -75,10 +87,48 @@ const dropZoneCollision: CollisionDetection = (args) => {
 
 	// Fallback to rectIntersection if pointer isn't within any drop zone
 	const rectCollisions = rectIntersection(args);
-	return rectCollisions.filter((collision) =>
-		(collision.id as string).startsWith("drop-"),
-	);
+	return rectCollisions.filter((collision) => {
+		const container = args.droppableContainers.find(
+			(c) => c.id === collision.id,
+		);
+		return container && isDropData(container.data?.current);
+	});
 };
+
+// ============================================================================
+// New Window Drop Zone (at bottom of main container)
+// ============================================================================
+
+function NewWindowDropZone() {
+	const { active } = useDndContext();
+	const isDragging = active !== null;
+
+	const dropData: DropDataNewWindow = { type: "new-window" };
+	const { setNodeRef, isOver } = useDroppable({
+		id: "new-window-drop",
+		data: dropData,
+	});
+
+	if (!isDragging) {
+		return null;
+	}
+
+	return (
+		<div
+			ref={setNodeRef}
+			className={cn(
+				"flex-1 min-h-24 flex items-center justify-center border-2 border-dashed rounded-lg transition-colors",
+				isOver
+					? "border-emerald-500 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+					: "border-slate-300 dark:border-slate-600 text-slate-400 dark:text-slate-500",
+			)}
+		>
+			<span className="text-sm font-medium">
+				Drop here to create new window
+			</span>
+		</div>
+	);
+}
 
 // ============================================================================
 // Inner App Component (uses collections)
@@ -88,6 +138,9 @@ export const TabManagerContent = () => {
 	const windowCollection = useCollection("windowTable");
 	const tabCollection = useCollection("tabTable");
 	const resetDatabase = useResetDatabase();
+	const sendMoveIntent = useSendMoveIntent();
+	const registerStateGetter = useRegisterStateGetter();
+	const { recordUserEvent } = useDevTools();
 	const [isResetting, setIsResetting] = useState(false);
 
 	// Reactive queries for windows and tabs
@@ -99,20 +152,32 @@ export const TabManagerContent = () => {
 		q.from({ tab: tabCollection }),
 	);
 
+	// Register state getter for DevTools snapshots
+	useEffect(() => {
+		registerStateGetter(() => ({
+			windows: windows ?? [],
+			tabs: tabs ?? [],
+		}));
+	}, [registerStateGetter, windows, tabs]);
+
+	// Expose current tree state to Playwright tests (updates when state changes)
+	useEffect(() => {
+		if (windows && tabs) {
+			exposeCurrentTreeStateForTests(windows, tabs);
+		}
+	}, [windows, tabs]);
+
 	const [currentWindowId, setCurrentWindowId] = useState<number | undefined>();
 	const [selectedTabIds, setSelectedTabIds] = useState<Set<number>>(new Set());
 	const [lastSelectedTabId, setLastSelectedTabId] = useState<
 		number | undefined
 	>();
 	const [activeId, setActiveId] = useState<string | null>(null);
-	const [activeDropZone, setActiveDropZone] = useState<string | null>(null);
+	// const [activeDropData, setActiveDropData] = useState<DropData | null>(null);
 
 	const sensors = useSensors(
 		useSensor(PointerSensor, {
 			activationConstraint: { distance: 5 },
-		}),
-		useSensor(KeyboardSensor, {
-			coordinateGetter: sortableKeyboardCoordinates,
 		}),
 	);
 
@@ -170,64 +235,51 @@ export const TabManagerContent = () => {
 	const handleDragStart = useCallback(
 		(event: DragStartEvent) => {
 			setActiveId(event.active.id as string);
-			setActiveDropZone(null);
+			// setActiveDropData(null);
 
 			const parts = (event.active.id as string).split("-");
 			const draggedTabId = Number.parseInt(parts[parts.length - 1], 10);
+			const windowIdPart = Number.parseInt(parts[parts.length - 2], 10);
+
 			if (!selectedTabIds.has(draggedTabId)) {
 				setSelectedTabIds(new Set([draggedTabId]));
 			}
+
+			// Record user event for DevTools
+			const selectedIds = selectedTabIds.has(draggedTabId)
+				? Array.from(selectedTabIds)
+				: [draggedTabId];
+
+			recordUserEvent({
+				type: "user.dragStart",
+				data: {
+					tabId: draggedTabId,
+					windowId: windowIdPart,
+					selectedTabIds: selectedIds,
+				},
+			});
 		},
-		[selectedTabIds],
+		[selectedTabIds, recordUserEvent],
 	);
 
 	const handleDragOver = useCallback((event: DragOverEvent) => {
-		const overIdStr = event.over?.id as string | undefined;
-		if (overIdStr?.startsWith("drop-")) {
-			setActiveDropZone(overIdStr);
+		const overData = event.over?.data?.current;
+		if (isDropData(overData)) {
+			const dragData = event.active?.data?.current;
+			// if (isDragDataTab(dragData)) {
+			console.log("dragData", dragData);
+			console.log("overData", overData);
+			// }
+			// setActiveDropData(overData);
 		} else {
-			setActiveDropZone(null);
+			// setActiveDropData(null);
 		}
 	}, []);
 
 	const handleDragCancel = useCallback(() => {
 		setActiveId(null);
-		setActiveDropZone(null);
+		// setActiveDropData(null);
 	}, []);
-
-	// Parse tree-aware drop zone
-	// Format: "drop-{windowId}-{tabId}-{top|bottom}-{sibling|child}" or "drop-{windowId}-gap-{slot}"
-	const parseTreeDropZone = useCallback(
-		(
-			dropZoneId: string,
-		): {
-			windowId: number;
-			targetTabId?: number;
-			position: "top" | "bottom";
-			dropType: "sibling" | "child" | "gap";
-			slot?: number;
-		} | null => {
-			const parts = dropZoneId.split("-");
-			if (parts[0] !== "drop") return null;
-
-			const windowId = Number.parseInt(parts[1], 10);
-			if (parts[2] === "gap") {
-				return {
-					windowId,
-					position: "top",
-					dropType: "gap",
-					slot: Number.parseInt(parts[3], 10),
-				};
-			}
-
-			const targetTabId = Number.parseInt(parts[2], 10);
-			const position = parts[3] as "top" | "bottom";
-			const dropType = parts[4] as "sibling" | "child";
-
-			return { windowId, targetTabId, position, dropType };
-		},
-		[],
-	);
 
 	// Handle toggle collapse for a tab
 	const handleToggleCollapse = useCallback(
@@ -237,71 +289,174 @@ export const TabManagerContent = () => {
 			const tab = tabs.find((t) => t.browserTabId === browserTabId);
 			if (!tab) return;
 
+			// Record user event for DevTools
+			recordUserEvent({
+				type: "user.toggleCollapse",
+				data: {
+					tabId: browserTabId,
+					windowId: tab.browserWindowId,
+				},
+			});
+
 			// Update the tab's collapsed state in the database
 			// The collection key is the tab's id field, not browserTabId
 			tabCollection.update(tab.id, (draft) => {
 				draft.isCollapsed = !tab.isCollapsed;
 			});
 		},
-		[tabs, tabCollection],
+		[tabs, tabCollection, recordUserEvent],
 	);
 
 	const handleDragEnd = useCallback(
 		async (event: DragEndEvent) => {
-			const dropZone = activeDropZone;
+			console.log("handleDragEnd", event);
+			console.log("event.over", event.over);
+			const dropData = event.over?.data?.current;
+
+			// Get info for recording before any early returns
+			const allItemsForRecord = getAllItems();
+			const activeItemForRecord = allItemsForRecord.find(
+				(item) => item.id === event.active.id,
+			);
+			const draggedTabIdForRecord = activeItemForRecord?.tabId;
+			const draggedWindowIdForRecord = activeItemForRecord?.windowId;
+			const selectedIdsForRecord =
+				draggedTabIdForRecord && selectedTabIds.has(draggedTabIdForRecord)
+					? Array.from(selectedTabIds)
+					: draggedTabIdForRecord
+						? [draggedTabIdForRecord]
+						: [];
+
+			// Record the drag end event
+			if (
+				draggedTabIdForRecord !== undefined &&
+				draggedWindowIdForRecord !== undefined
+			) {
+				let dropTarget: Parameters<typeof recordUserEvent>[0] extends {
+					data: infer D;
+				}
+					? D extends { dropTarget: infer T }
+						? T
+						: never
+					: never = null;
+
+				if (isDropData(dropData)) {
+					if (dropData.type === "new-window") {
+						dropTarget = { type: "new-window" };
+					} else if (dropData.type === "sibling") {
+						dropTarget = {
+							type: "sibling",
+							windowId: dropData.windowId,
+							tabId: dropData.tabId,
+							ancestorId: dropData.ancestorId,
+						};
+					} else if (dropData.type === "child") {
+						dropTarget = {
+							type: "child",
+							windowId: dropData.windowId,
+							tabId: dropData.tabId,
+						};
+					} else if (dropData.type === "gap") {
+						dropTarget = {
+							type: "gap",
+							windowId: dropData.windowId,
+							slot: dropData.slot,
+						};
+					}
+				}
+
+				recordUserEvent({
+					type: "user.dragEnd",
+					data: {
+						tabId: draggedTabIdForRecord,
+						windowId: draggedWindowIdForRecord,
+						selectedTabIds: selectedIdsForRecord,
+						dropTarget,
+					},
+				});
+			}
+
+			if (!isDropData(dropData)) {
+				setActiveId(null);
+				return;
+			}
+
+			console.log("dropData", dropData);
+
 			setActiveId(null);
-			setActiveDropZone(null);
 
-			if (!dropZone || !tabs) {
+			if (!dropData || !tabs) {
+				console.warn("no dropData or tabs");
 				return;
 			}
 
-			const parsed = parseTreeDropZone(dropZone);
-			if (!parsed) {
-				return;
-			}
-
-			const {
-				windowId: targetWindowId,
-				targetTabId,
-				position,
-				dropType,
-				slot,
-			} = parsed;
 			const allItems = getAllItems();
 			const activeItem = allItems.find((item) => item.id === event.active.id);
-			if (!activeItem) return;
+			if (!activeItem) {
+				console.warn("no activeItem");
+				return;
+			}
 
 			const activeTabId = activeItem.tabId;
+			// Get dragged tabs in tree order, not selection order
 			const draggedTabIds =
 				activeTabId && selectedTabIds.has(activeTabId)
-					? Array.from(selectedTabIds)
+					? allItems
+							.filter((item) => selectedTabIds.has(item.tabId))
+							.map((item) => item.tabId)
 					: activeTabId
 						? [activeTabId]
 						: [];
 
-			if (draggedTabIds.length === 0) return;
-
-			// Filter out invalid drops:
-			// 1. Can't drop a tab on itself
-			// 2. Can't make a tab a child of its own descendant (circular reference)
-			let validDraggedTabIds = draggedTabIds;
-
-			if (targetTabId !== undefined) {
-				// Remove the target tab from dragged tabs (can't drop on itself)
-				validDraggedTabIds = validDraggedTabIds.filter(
-					(id) => id !== targetTabId,
-				);
-
-				// For child drops, also remove any tabs that would create circular references
-				if (dropType === "child") {
-					validDraggedTabIds = validDraggedTabIds.filter(
-						(draggedId) => !isAncestor(tabs, draggedId, targetTabId),
-					);
-				}
+			if (draggedTabIds.length === 0) {
+				console.warn("no draggedTabIds");
+				return;
 			}
 
+			// Handle "new-window" drop type - create a new window with dragged tabs
+			if (dropData.type === "new-window") {
+				try {
+					const newWindow = await browser.windows.create({
+						tabId: draggedTabIds[0],
+					});
+					// Move remaining tabs to the new window if multiple selected
+					if (draggedTabIds.length > 1 && newWindow?.id !== undefined) {
+						for (let i = 1; i < draggedTabIds.length; i++) {
+							await browser.tabs.move(draggedTabIds[i], {
+								windowId: newWindow.id,
+								index: i,
+							});
+						}
+					}
+				} catch (e) {
+					console.error("Failed to create new window:", e);
+				}
+				return;
+			}
+
+			const targetWindowId = dropData.windowId;
+
+			// Filter out invalid drops based on circular reference checks
+			let validDraggedTabIds = draggedTabIds;
+
+			if (dropData.type === "child") {
+				// For child drops: can't drop a tab on itself or make it a child of its descendant
+				const targetTabId = dropData.tabId;
+				validDraggedTabIds = validDraggedTabIds.filter(
+					(id) => id !== targetTabId && !isAncestor(tabs, id, targetTabId),
+				);
+			} else if (dropData.type === "sibling" && dropData.ancestorId !== null) {
+				// For sibling drops with an ancestor: can't make a tab a child of its descendant
+				// (ancestorId is the new parent, so check for circular reference)
+				const newParentId = dropData.ancestorId;
+				validDraggedTabIds = validDraggedTabIds.filter(
+					(id) => !isAncestor(tabs, id, newParentId),
+				);
+			}
+			// For sibling drops with ancestorId === null (root level), no filtering needed
+
 			if (validDraggedTabIds.length === 0) {
+				console.warn("no validDraggedTabIds");
 				return;
 			}
 
@@ -340,23 +495,65 @@ export const TabManagerContent = () => {
 			// Determine the tree drop position
 			let treeDropPosition: TreeDropPosition;
 
-			if (dropType === "gap") {
-				treeDropPosition = { type: "root", index: slot ?? 0 };
-			} else if (dropType === "child" && targetTabId !== undefined) {
+			if (dropData.type === "gap") {
+				treeDropPosition = { type: "root", index: dropData.slot };
+			} else if (dropData.type === "child") {
 				// Drop as child of target
-				if (position === "bottom") {
-					// Dropping at bottom-child means becoming a child of the target tab
-					treeDropPosition = { type: "child", parentTabId: targetTabId };
+				treeDropPosition = { type: "child", parentTabId: dropData.tabId };
+			} else if (dropData.type === "sibling") {
+				console.log("dropData", dropData);
+				const ancestorId = dropData.ancestorId;
+
+				// ancestorId is the new parent for the dragged tab
+				// null = root level (parentId becomes null)
+				// number = become child of that ancestor
+
+				const targetTab = tabsForTreeCalc.find(
+					(t) => t.browserTabId === dropData.tabId,
+				);
+				if (!targetTab) return;
+
+				if (ancestorId === null) {
+					// Becoming a root sibling - drop after the target tab's root ancestor
+					// Find the root ancestor of targetTab
+					let rootAncestor = targetTab;
+					while (rootAncestor.parentTabId !== null) {
+						const parent = tabsForTreeCalc.find(
+							(t) => t.browserTabId === rootAncestor.parentTabId,
+						);
+						if (!parent) break;
+						rootAncestor = parent;
+					}
+					treeDropPosition = {
+						type: "after",
+						targetTabId: rootAncestor.browserTabId,
+					};
 				} else {
-					// Dropping at top-child means insert before target as sibling (special case)
-					treeDropPosition = { type: "before", targetTabId };
-				}
-			} else if (targetTabId !== undefined) {
-				// Sibling drop
-				if (position === "top") {
-					treeDropPosition = { type: "before", targetTabId };
-				} else {
-					treeDropPosition = { type: "after", targetTabId };
+					// Becoming a child of ancestorId - find the last child of ancestorId
+					// that's an ancestor of (or is) the target tab, and drop after it
+
+					// Build ancestor chain from ancestorId to targetTab
+					const ancestorChain: (typeof tabs)[0][] = [];
+					let current: (typeof tabs)[0] | undefined = targetTab;
+					while (current && current.browserTabId !== ancestorId) {
+						ancestorChain.unshift(current);
+						if (current.parentTabId === null) break;
+						current = tabsForTreeCalc.find(
+							(t) => t.browserTabId === current!.parentTabId,
+						);
+					}
+
+					// The first item in ancestorChain is the direct child of ancestorId
+					// that leads to targetTab (or targetTab itself if it's a direct child)
+					if (ancestorChain.length > 0) {
+						treeDropPosition = {
+							type: "after",
+							targetTabId: ancestorChain[0].browserTabId,
+						};
+					} else {
+						// targetTab is ancestorId itself, drop after it
+						treeDropPosition = { type: "after", targetTabId: dropData.tabId };
+					}
 				}
 			} else {
 				return;
@@ -437,15 +634,51 @@ export const TabManagerContent = () => {
 			const newTree = buildTabTree(updatedWindowTabs);
 			const flatOrder = flattenTree(newTree);
 
-			// Move each dragged tab to its expected position
+			// Collect all tabs that need to move: dragged tabs + their descendants
+			// This ensures when we move a parent, its children move with it in Chrome
+			const tabsToMove = new Set<number>();
 			for (const { tab } of updatedTabs) {
+				tabsToMove.add(tab.browserTabId);
+				// Add all descendants of this tab
+				const descendants = getDescendantIds(
+					updatedWindowTabs,
+					tab.browserTabId,
+				);
+				for (const descendantId of descendants) {
+					tabsToMove.add(descendantId);
+				}
+			}
+
+			// Move tabs in the order they appear in the flattened tree
+			// This ensures correct positioning (parent first, then children)
+			const orderedTabsToMove = flatOrder
+				.filter((node) => tabsToMove.has(node.tab.browserTabId))
+				.map((node) => node.tab.browserTabId);
+
+			// Send move intent to background BEFORE calling browser.tabs.move
+			// This prevents the race condition where onMoved handler reads stale DB state
+			const moveIntents = orderedTabsToMove.map((browserTabId) => {
+				const tabData = updatedWindowTabs.find(
+					(t) => t.browserTabId === browserTabId,
+				);
+				return {
+					tabId: browserTabId,
+					parentTabId: tabData?.parentTabId ?? null,
+					treeOrder: tabData?.treeOrder ?? "a0",
+				};
+			});
+			sendMoveIntent(moveIntents);
+
+			// Move each tab to its expected position sequentially
+			// Using sequential moves because browser.tabs.move with multiple tabs is unreliable
+			for (const browserTabId of orderedTabsToMove) {
 				const expectedIndex = flatOrder.findIndex(
-					(t) => t.tab.browserTabId === tab.browserTabId,
+					(t) => t.tab.browserTabId === browserTabId,
 				);
 
 				if (expectedIndex !== -1) {
 					// For cross-window moves, we need to specify the windowId
-					browser.tabs.move(tab.browserTabId, {
+					await browser.tabs.move(browserTabId, {
 						windowId: targetWindowId,
 						index: expectedIndex,
 					});
@@ -455,10 +688,10 @@ export const TabManagerContent = () => {
 		[
 			getAllItems,
 			selectedTabIds,
-			activeDropZone,
-			parseTreeDropZone,
 			tabs,
 			tabCollection,
+			recordUserEvent,
+			sendMoveIntent,
 		],
 	);
 
@@ -489,8 +722,9 @@ export const TabManagerContent = () => {
 			onDragCancel={handleDragCancel}
 		>
 			<div
+				data-testid="tab-manager"
 				className={cn(
-					"p-4 max-w-full min-h-screen bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white/90",
+					"p-4 max-w-full min-h-screen bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white/90 flex flex-col",
 				)}
 			>
 				<div className="flex items-center justify-between mb-4">
@@ -538,7 +772,6 @@ export const TabManagerContent = () => {
 								win.browserWindowId === currentWindowId
 							}
 							isLastWindow={index === windowsWithTabs.length - 1}
-							activeDropZone={activeDropZone}
 							selectedTabIds={selectedTabIds}
 							setSelectedTabIds={setSelectedTabIds}
 							lastSelectedTabId={lastSelectedTabId}
@@ -547,6 +780,8 @@ export const TabManagerContent = () => {
 						/>
 					))}
 				</div>
+				{/* Drop zone at bottom to create new window */}
+				<NewWindowDropZone />
 			</div>
 			<DragOverlay dropAnimation={null} modifiers={[cursorOffsetModifier]}>
 				{activeId && selectedItems.length > 0 && (

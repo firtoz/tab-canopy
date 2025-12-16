@@ -1,0 +1,114 @@
+{
+	"$schema": "https://turbo.build/schema.json",
+	"tasks": {
+		"dev": {
+			"cache": false,
+			"persistent": true
+		},
+		"build": {
+			"dependsOn": ["db:generate"],
+			"outputs": ["packages/extension/.output/**"],
+			"inputs": [
+				"packages/extension/entrypoints/**",
+				"packages/extension/src/**",
+				"packages/extension/schema/**",
+				"packages/extension/wxt.config.ts",
+				"packages/extension/package.json"
+			]
+		},
+		"build:firefox": {
+			"dependsOn": ["db:generate"],
+			"outputs": ["packages/extension/.output/**"],
+			"inputs": [
+				"packages/extension/entrypoints/**",
+				"packages/extension/src/**",
+				"packages/extension/schema/**",
+				"packages/extension/wxt.config.ts",
+				"packages/extension/package.json"
+			]
+		},
+		"db:generate": {
+			"outputs": [
+				"packages/extension/schema/drizzle/**",
+				"packages/extension/schema/indexeddb-migrations/**"
+			],
+			"inputs": [
+				"packages/extension/schema/src/schema.ts",
+				"packages/extension/schema/drizzle.config.ts"
+			]
+		},
+		"test": {
+			"dependsOn": [],
+			"inputs": [
+				"packages/extension/entrypoints/**/*.test.ts",
+				"packages/extension/entrypoints/**/*.test.tsx"
+			]
+		},
+		"test:unit": {
+			"dependsOn": [],
+			"inputs": [
+				"packages/extension/entrypoints/**/*.test.ts",
+				"packages/extension/entrypoints/**/*.test.tsx"
+			]
+		},
+		"test:e2e": {
+			"dependsOn": ["build"],
+			"outputs": ["playwright-report/**", "test-results/**"],
+			"inputs": ["e2e/**", "playwright.config.ts"]
+		},
+		"test:e2e:ui": {
+			"dependsOn": ["build"],
+			"outputs": ["playwright-report/**", "test-results/**"],
+			"inputs": ["e2e/**", "playwright.config.ts"]
+		},
+		"test:e2e:headed": {
+			"dependsOn": ["build"],
+			"outputs": ["playwright-report/**", "test-results/**"],
+			"inputs": ["e2e/**", "playwright.config.ts"]
+		},
+		"lint": {
+			"outputs": [],
+			"inputs": [
+				"packages/extension/**",
+				"e2e/**",
+				"*.{ts,tsx,js,jsx}",
+				"biome.json"
+			]
+		},
+		"lint:ci": {
+			"outputs": [],
+			"inputs": [
+				"packages/extension/**",
+				"e2e/**",
+				"*.{ts,tsx,js,jsx}",
+				"biome.json"
+			]
+		},
+		"format": {
+			"outputs": [],
+			"inputs": [
+				"packages/extension/**",
+				"e2e/**",
+				"*.{ts,tsx,js,jsx}",
+				"biome.json"
+			]
+		},
+		"compile": {
+			"outputs": [],
+			"inputs": [
+				"packages/extension/entrypoints/**",
+				"packages/extension/src/**",
+				"packages/extension/schema/**",
+				"packages/extension/tsconfig.json"
+			]
+		},
+		"zip": {
+			"dependsOn": ["build"],
+			"outputs": ["*.zip"]
+		},
+		"zip:firefox": {
+			"dependsOn": ["build:firefox"],
+			"outputs": ["*.zip"]
+		}
+	}
+}

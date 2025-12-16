@@ -28,4 +28,11 @@ web-ext.config.ts
 
 # Environment variables
 .env
-.env.*
+.env.*.turbo
+
+# Playwright
+playwright-report
+test-results    
+
+# Turbo
+.turbo

@@ -153,6 +153,28 @@ describe("buildTabTree", () => {
 		expect(tree[1].children.length).toBe(0);
 	});
 
+	test("populates ancestorIds correctly", () => {
+		const tabs = [
+			createMockTab(1, null, "a0"), // root
+			createMockTab(2, 1, "a0"), // child of 1
+			createMockTab(3, 2, "a0"), // grandchild of 1, child of 2
+			createMockTab(4, 3, "a0"), // great-grandchild
+		];
+
+		const tree = buildTabTree(tabs);
+
+		// Root has empty ancestorIds
+		expect(tree[0].ancestorIds).toEqual([]);
+		// Child has parent's id
+		expect(tree[0].children[0].ancestorIds).toEqual([1]);
+		// Grandchild has [grandparent, parent]
+		expect(tree[0].children[0].children[0].ancestorIds).toEqual([1, 2]);
+		// Great-grandchild has [great-grandparent, grandparent, parent]
+		expect(tree[0].children[0].children[0].children[0].ancestorIds).toEqual([
+			1, 2, 3,
+		]);
+	});
+
 	test("sorts by ASCII order, not locale order", () => {
 		// 'H' (72) < 'a' (97) in ASCII
 		// This tests that we use ASCII comparison, not localeCompare
@@ -244,6 +266,21 @@ describe("flattenTree", () => {
 		expect(flat[0].hasChildren).toBe(true); // tab 1 has children
 		expect(flat[1].hasChildren).toBe(false); // tab 2 has no children
 		expect(flat[2].hasChildren).toBe(false); // tab 3 has no children
+	});
+
+	test("propagates ancestorIds to flat nodes", () => {
+		const tabs = [
+			createMockTab(1, null, "a0"),
+			createMockTab(2, 1, "a0"),
+			createMockTab(3, 2, "a0"),
+		];
+
+		const tree = buildTabTree(tabs);
+		const flat = flattenTree(tree);
+
+		expect(flat[0].ancestorIds).toEqual([]); // tab 1 at root
+		expect(flat[1].ancestorIds).toEqual([1]); // tab 2, child of 1
+		expect(flat[2].ancestorIds).toEqual([1, 2]); // tab 3, child of 2, grandchild of 1
 	});
 });
 

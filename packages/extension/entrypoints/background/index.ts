@@ -18,7 +18,7 @@ import {
 import { log } from "./constants";
 import { type BroadcastSyncFn, createDbOperations } from "./db-operations";
 import { performFullReset, performInitialSync } from "./initial-sync";
-import { setupTabListeners } from "./tab-handlers";
+import { registerUiMoveIntent, setupTabListeners } from "./tab-handlers";
 import { setupWindowListeners } from "./window-handlers";
 
 export default defineBackground(() => {
@@ -95,6 +95,17 @@ export default defineBackground(() => {
 				await performFullReset(dbOps);
 				// Notify all clients that reset is complete
 				broadcast({ type: "resetDatabaseComplete" });
+			} else if (message.type === "uiMoveIntent") {
+				// Register UI move intents to prevent race conditions with onMoved handler
+				const moves = message.moves as Array<{
+					tabId: number;
+					parentTabId: number | null;
+					treeOrder: string;
+				}>;
+				log("[Background] Received UI move intent for", moves.length, "tabs");
+				for (const move of moves) {
+					registerUiMoveIntent(move.tabId, move.parentTabId, move.treeOrder);
+				}
 			}
 		},
 	});

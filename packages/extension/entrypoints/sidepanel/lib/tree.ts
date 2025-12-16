@@ -7,6 +7,8 @@ export interface TabTreeNode {
 	tab: Tab;
 	children: TabTreeNode[];
 	depth: number;
+	/** Ancestor IDs from root to parent, e.g. [grandparentId, parentId] */
+	ancestorIds: number[];
 }
 
 /**
@@ -19,6 +21,8 @@ export interface FlatTreeNode {
 	isLastChild: boolean;
 	/** Array of booleans indicating which indent guides to show */
 	indentGuides: boolean[];
+	/** Ancestor IDs from root to parent, e.g. [grandparentId, parentId] */
+	ancestorIds: number[];
 }
 
 /**
@@ -67,18 +71,26 @@ export function buildTabTree(tabs: Tab[]): TabTreeNode[] {
 	}
 
 	// Recursively build tree
-	function buildNode(tab: Tab, depth: number): TabTreeNode {
+	function buildNode(
+		tab: Tab,
+		depth: number,
+		ancestorIds: number[],
+	): TabTreeNode {
 		const children = childrenMap.get(tab.browserTabId) ?? [];
+		const childAncestorIds = [...ancestorIds, tab.browserTabId];
 		return {
 			tab,
 			depth,
-			children: children.map((child) => buildNode(child, depth + 1)),
+			ancestorIds,
+			children: children.map((child) =>
+				buildNode(child, depth + 1, childAncestorIds),
+			),
 		};
 	}
 
 	// Build root nodes
 	const rootTabs = childrenMap.get(null) ?? [];
-	return rootTabs.map((tab) => buildNode(tab, 0));
+	return rootTabs.map((tab) => buildNode(tab, 0, []));
 }
 
 /**
@@ -102,6 +114,7 @@ export function flattenTree(
 			hasChildren,
 			isLastChild: isLast,
 			indentGuides: [...parentIndentGuides],
+			ancestorIds: node.ancestorIds,
 		});
 
 		// Only show children if not collapsed

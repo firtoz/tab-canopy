@@ -7,6 +7,63 @@ import { calculateTreePositionFromBrowserMove } from "./tree-sync";
 import { hasTabIds } from "./type-guards";
 
 /**
+ * Track UI-initiated moves to prevent race conditions.
+ * When the UI updates tree structure and then calls browser.tabs.move(),
+ * the onMoved event might fire before the DB sync completes.
+ * This map stores the intended tree positions so we don't recalculate.
+ */
+export interface UiMoveIntent {
+	parentTabId: number | null;
+	treeOrder: string;
+	timestamp: number;
+}
+
+// Map of tabId -> intended tree position from UI
+const uiMoveIntents = new Map<number, UiMoveIntent>();
+
+// Clean up stale intents after 5 seconds
+const UI_MOVE_INTENT_TTL = 5000;
+
+export function registerUiMoveIntent(
+	tabId: number,
+	parentTabId: number | null,
+	treeOrder: string,
+): void {
+	log("[Background] Registering UI move intent for tab:", tabId, {
+		parentTabId,
+		treeOrder,
+	});
+	uiMoveIntents.set(tabId, {
+		parentTabId,
+		treeOrder,
+		timestamp: Date.now(),
+	});
+
+	// Auto-cleanup after TTL
+	setTimeout(() => {
+		const intent = uiMoveIntents.get(tabId);
+		if (intent && Date.now() - intent.timestamp >= UI_MOVE_INTENT_TTL) {
+			uiMoveIntents.delete(tabId);
+			log("[Background] Cleaned up stale UI move intent for tab:", tabId);
+		}
+	}, UI_MOVE_INTENT_TTL);
+}
+
+function consumeUiMoveIntent(tabId: number): UiMoveIntent | undefined {
+	const intent = uiMoveIntents.get(tabId);
+	if (intent) {
+		uiMoveIntents.delete(tabId);
+		// Check if intent is still fresh
+		if (Date.now() - intent.timestamp < UI_MOVE_INTENT_TTL) {
+			log("[Background] Consuming UI move intent for tab:", tabId, intent);
+			return intent;
+		}
+		log("[Background] UI move intent expired for tab:", tabId);
+	}
+	return undefined;
+}
+
+/**
  * Generate a treeOrder value between two existing values.
  * Handles mixed alphanumeric strings (digits sort before letters in ASCII).
  * ASCII order: '0'-'9' (48-57) < 'A'-'Z' (65-90) < 'a'-'z' (97-122)
@@ -367,6 +424,55 @@ export const setupTabListeners = (dbOps: DbOperations) => {
 		moveInfo: Browser.tabs.OnMovedInfo,
 	) => {
 		log("[Background] Tab moved:", tabId, moveInfo);
+
+		// First, check if this move was initiated by our UI
+		// The UI registers intent before calling browser.tabs.move() to avoid race conditions
+		const uiIntent = consumeUiMoveIntent(tabId);
+		if (uiIntent) {
+			log(
+				"[Background] Using UI move intent, skipping tree recalculation for tab:",
+				tabId,
+			);
+			// Use the tree position that the UI already set
+			const browserTab = await browser.tabs.get(tabId);
+			if (browserTab && hasTabIds(browserTab)) {
+				await putItems("tab", [
+					tabToRecord(browserTab, {
+						parentTabId: uiIntent.parentTabId,
+						treeOrder: uiIntent.treeOrder,
+					}),
+				]);
+			}
+
+			// Still need to update other tabs' indices
+			const existingTabs = await getAll<Tab>("tab");
+			const existingMap = new Map<number, Tab>();
+			for (const tab of existingTabs) {
+				existingMap.set(tab.browserTabId, tab);
+			}
+
+			const allBrowserTabs = await browser.tabs.query({
+				windowId: moveInfo.windowId,
+			});
+			const otherTabRecords: TabRecord[] = [];
+			for (const bt of allBrowserTabs.filter(hasTabIds)) {
+				if (bt.id === tabId) continue;
+				const existing = existingMap.get(bt.id);
+				// Check if this tab also has a UI intent (for batch moves)
+				const otherIntent = uiMoveIntents.get(bt.id);
+				otherTabRecords.push(
+					tabToRecord(bt, {
+						parentTabId:
+							otherIntent?.parentTabId ?? existing?.parentTabId ?? null,
+						treeOrder: otherIntent?.treeOrder ?? existing?.treeOrder ?? "a0",
+					}),
+				);
+			}
+			if (otherTabRecords.length > 0) {
+				await putItems("tab", otherTabRecords);
+			}
+			return;
+		}
 
 		// Get existing tabs to calculate new tree position
 		const existingTabs = await getAll<Tab>("tab");
