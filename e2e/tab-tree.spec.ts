@@ -301,4 +301,125 @@ test.describe("Tab Movement with Children", () => {
 		await childTab.close();
 		await targetTab.close();
 	});
+
+	test("moving parent tab in native browser after its child should flatten hierarchy", async ({
+		context,
+		sidepanel,
+		treeHelpers,
+	}) => {
+		// This test verifies behavior when a parent tab is dragged in the native browser
+		// to a position after its child tab.
+		// Expected: the child should be flattened (no longer a child), and parent moves after it
+
+		// Create tabs a, b, c
+		const tabA = await createTab(
+			context,
+			"about:blank?title=a",
+			sidepanel,
+		);
+		const tabB = await createTab(
+			context,
+			"about:blank?title=b",
+			sidepanel,
+		);
+		const tabC = await createTab(
+			context,
+			"about:blank?title=c",
+			sidepanel,
+		);
+
+		// Wait for tabs to appear
+		const aInfo = await treeHelpers.waitForTab("about:blank?title=a");
+		const bInfo = await treeHelpers.waitForTab("about:blank?title=b");
+		const cInfo = await treeHelpers.waitForTab("about:blank?title=c");
+
+		console.log("Initial state - a:", aInfo, "b:", bInfo, "c:", cInfo);
+
+		// Make c a child of b by dragging c onto b in the sidepanel
+		const bElement = treeHelpers.getTabElement(bInfo.id);
+		const cElement = treeHelpers.getTabElement(cInfo.id);
+
+		const cBox = await cElement.boundingBox();
+		const bBox = await bElement.boundingBox();
+
+		if (cBox && bBox) {
+			// Drag c onto b to make c a child of b
+			await sidepanel.mouse.move(
+				cBox.x + 200,
+				cBox.y + cBox.height / 2,
+			);
+			await sidepanel.mouse.down();
+			await sidepanel.mouse.move(
+				bBox.x + 200,
+				bBox.y + bBox.height / 2,
+				{ steps: 10 },
+			);
+			await sidepanel.waitForTimeout(100);
+			await sidepanel.mouse.up();
+			await sidepanel.waitForTimeout(500);
+		}
+
+		// Verify c is now a child of b
+		let helpers = await treeHelpers.getHelpers();
+		let updatedC = helpers.getTabById(cInfo.id);
+		expect(updatedC?.parentId).toBe(bInfo.id);
+		expect(updatedC?.depth).toBe(1);
+		console.log("After making c child of b - c:", updatedC);
+
+		// Now simulate dragging tab b in the native browser to be after tab c
+		// In the browser, tabs appear in order: ..., a, b, c (where c is visually indented under b)
+		// Before move: b is at some index, c is at index after b
+		// We want to move b to be after c's current position
+
+		// Get current positions
+		helpers = await treeHelpers.getHelpers();
+		const allTabs = helpers.getAllTabs();
+		console.log("Before browser move - all tabs:", allTabs.map(t => ({ id: t.id, index: t.index, parentId: t.parentId })));
+
+		const updatedBBeforeMove = helpers.getTabById(bInfo.id);
+		const updatedCBeforeMove = helpers.getTabById(cInfo.id);
+		console.log("Before move - b index:", updatedBBeforeMove?.index, "c index:", updatedCBeforeMove?.index);
+
+		// Move b to be after c using native browser API
+		// c is at index 4, so we want to move b to index 5 to be after c
+		// Or we can move b to index 4, which will push c to 3 and b to 4
+		await treeHelpers.moveBrowserTab(bInfo.id, { index: 4 });
+
+		// Wait for changes to be processed
+		await sidepanel.waitForTimeout(1000);
+
+		// Get and print background logs
+		const backgroundLogs = treeHelpers.getBackgroundLogs();
+		console.log("Background logs:");
+		for (const log of backgroundLogs) {
+			console.log("  ", log);
+		}
+
+		// Verify the expected behavior:
+		// 1. c should no longer be a child of b (parentId should be null)
+		// 2. b should be positioned after c in the tab order
+		helpers = await treeHelpers.getHelpers();
+		updatedC = helpers.getTabById(cInfo.id);
+		const updatedB = helpers.getTabById(bInfo.id);
+		const updatedA = helpers.getTabById(aInfo.id);
+
+		console.log("After browser move - a:", updatedA, "b:", updatedB, "c:", updatedC);
+
+		// c should no longer be a child of b
+		expect(updatedC?.parentId).toBeNull();
+		expect(updatedC?.depth).toBe(0);
+
+		// b should be after c in the tab order
+		// Since tabs are sorted by index, b's index should be greater than c's index
+		expect(updatedB?.index).toBeGreaterThan(updatedC?.index ?? -1);
+
+		// All tabs should be at root level
+		expect(updatedA?.depth).toBe(0);
+		expect(updatedB?.depth).toBe(0);
+		expect(updatedC?.depth).toBe(0);
+
+		await tabA.close();
+		await tabB.close();
+		await tabC.close();
+	});
 });

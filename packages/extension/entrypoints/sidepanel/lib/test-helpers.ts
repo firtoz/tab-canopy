@@ -188,6 +188,19 @@ export function createTestHelpers(
 }
 
 /**
+ * Browser API test actions interface
+ */
+export interface BrowserTestActions {
+	/**
+	 * Move a tab to a new position in its window or to a different window
+	 */
+	moveTab: (
+		tabId: number,
+		moveProperties: { windowId?: number; index: number },
+	) => Promise<void>;
+}
+
+/**
  * Report current tree state to Playwright tests if callback is available
  * This is called whenever windows/tabs change to keep test data fresh
  */
@@ -206,4 +219,40 @@ export function exposeCurrentTreeStateForTests(
 		// In test mode - report state to Playwright
 		reportFn({ windows, tabs });
 	}
+}
+
+/**
+ * Expose browser API test actions to Playwright tests
+ * This allows tests to trigger actual browser API calls
+ */
+export function exposeBrowserTestActions(): void {
+	if (typeof window === "undefined") return;
+
+	// Check if we're in test mode
+	const isTestMode = (
+		window as Window & { __reportTabTreeState?: unknown }
+	).__reportTabTreeState !== undefined;
+
+	if (!isTestMode) return;
+
+	// Expose browser API actions
+	const actions: BrowserTestActions = {
+		moveTab: async (tabId: number, moveProperties) => {
+			await browser.tabs.move(tabId, moveProperties);
+		},
+	};
+
+	(window as Window & { __tabCanopyBrowserActions?: BrowserTestActions }).__tabCanopyBrowserActions = actions;
+
+	// Set up message listener to receive debug logs from background script
+	browser.runtime.onMessage.addListener((message) => {
+		if (message.type === "TEST_DEBUG_LOG" && message.log) {
+			const logFn = (
+				window as Window & { __backgroundDebugLog?: (message: string) => void }
+			).__backgroundDebugLog;
+			if (logFn) {
+				logFn(message.log);
+			}
+		}
+	});
 }

@@ -28,7 +28,7 @@ import {
 import { cn } from "../lib/cn";
 import { useDevTools } from "../lib/devtools";
 import { type DropDataNewWindow, isDropData } from "../lib/dnd-types";
-import { exposeCurrentTreeStateForTests } from "../lib/test-helpers";
+import { exposeBrowserTestActions, exposeCurrentTreeStateForTests } from "../lib/test-helpers";
 import {
 	buildTabTree,
 	calculateTreeMove,
@@ -166,6 +166,11 @@ export const TabManagerContent = () => {
 			exposeCurrentTreeStateForTests(windows, tabs);
 		}
 	}, [windows, tabs]);
+
+	// Expose browser test actions once on mount
+	useEffect(() => {
+		exposeBrowserTestActions();
+	}, []);
 
 	const [currentWindowId, setCurrentWindowId] = useState<number | undefined>();
 	const [selectedTabIds, setSelectedTabIds] = useState<Set<number>>(new Set());

@@ -50,6 +50,24 @@ export interface TestTreeHelpers {
 		parentId: number,
 		childId: number,
 	) => Promise<{ isChild: boolean; childDepth: number }>;
+
+	/**
+	 * Move a tab using the native browser API (simulates drag in native UI)
+	 */
+	moveBrowserTab: (
+		tabId: number,
+		moveProperties: { windowId?: number; index: number },
+	) => Promise<void>;
+
+	/**
+	 * Get background debug logs
+	 */
+	getBackgroundLogs: () => string[];
+
+	/**
+	 * Clear background debug logs
+	 */
+	clearBackgroundLogs: () => void;
 }
 
 // ES module equivalent of __dirname (Playwright runs in Node.js, not Bun)
@@ -96,6 +114,8 @@ interface TestState {
 		windows: schema.Window[];
 		tabs: schema.Tab[];
 	}) => void;
+	backgroundLogs: string[];
+	addBackgroundLog: (message: string) => void;
 }
 
 export interface ExtensionFixtures {
@@ -132,6 +152,10 @@ export const test = base.extend<ExtensionFixtures>({
 					resolveStateReported = null; // Only resolve once
 				}
 			},
+			backgroundLogs: [],
+			addBackgroundLog: (message: string) => {
+				testState.backgroundLogs.push(message);
+			},
 		};
 
 		await use(testState);
@@ -152,8 +176,9 @@ export const test = base.extend<ExtensionFixtures>({
 			],
 		});
 
-		// Expose test helper callback early, before any pages load
+		// Expose test helper callbacks early, before any pages load
 		await context.exposeFunction("__reportTabTreeState", testState.updateState);
+		await context.exposeFunction("__backgroundDebugLog", testState.addBackgroundLog);
 
 		await use(context);
 		await context.close();
@@ -355,6 +380,45 @@ export const test = base.extend<ExtensionFixtures>({
 				const isChild = child?.parentId === parentId;
 				const childDepth = child?.depth ?? 0;
 				return { isChild, childDepth };
+			},
+
+			moveBrowserTab: async (tabId: number, moveProperties) => {
+				// Call the exposed browser API action
+				await sidepanel.evaluate(
+					({ tabId, moveProperties }) => {
+						const actions = (
+							window as Window & {
+								__tabCanopyBrowserActions?: {
+									moveTab: (
+										tabId: number,
+										moveProperties: { windowId?: number; index: number },
+									) => Promise<void>;
+								};
+							}
+						).__tabCanopyBrowserActions;
+
+						if (!actions) {
+							throw new Error(
+								"Browser test actions not exposed. Make sure the app is in test mode.",
+							);
+						}
+
+						return actions.moveTab(tabId, moveProperties);
+					},
+					{ tabId, moveProperties },
+				);
+
+				// Wait for the state to update
+				// Give it more time for the background script to process the move
+				await sidepanel.waitForTimeout(2000);
+			},
+
+			getBackgroundLogs: () => {
+				return [...testState.backgroundLogs];
+			},
+
+			clearBackgroundLogs: () => {
+				testState.backgroundLogs = [];
 			},
 		};
 

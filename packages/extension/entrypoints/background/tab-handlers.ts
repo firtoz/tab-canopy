@@ -418,12 +418,24 @@ export const setupTabListeners = (dbOps: DbOperations) => {
 		queuedHandler("tabs.onRemoved", handleTabRemoved),
 	);
 
+	// Helper to log to test context by sending message to sidepanel
+	const testLog = (message: string) => {
+		// Send message to all extension pages (sidepanel will receive it)
+		browser.runtime.sendMessage({
+			type: "TEST_DEBUG_LOG",
+			log: message,
+		}).catch(() => {
+			// Ignore errors if no listeners (not in test mode)
+		});
+	};
+
 	// Handler for tab moves
 	const handleTabMoved = async (
 		tabId: number,
 		moveInfo: Browser.tabs.OnMovedInfo,
 	) => {
 		log("[Background] Tab moved:", tabId, moveInfo);
+		testLog(`Tab moved: ${tabId} from ${moveInfo.fromIndex} to ${moveInfo.toIndex}`);
 
 		// First, check if this move was initiated by our UI
 		// The UI registers intent before calling browser.tabs.move() to avoid race conditions
@@ -543,6 +555,12 @@ export const setupTabListeners = (dbOps: DbOperations) => {
 		let newParentId: number | null;
 		let newTreeOrder: string;
 
+		let childrenToFlatten: number[] = [];
+
+		testLog(
+			`shouldRecalculateTree: ${shouldRecalculateTree} for tab: ${tabId}`,
+		);
+
 		if (shouldRecalculateTree) {
 			// This is a browser-native move (drag from tab bar) - calculate tree position
 			const result = calculateTreePositionFromBrowserMove(
@@ -552,10 +570,15 @@ export const setupTabListeners = (dbOps: DbOperations) => {
 			);
 			newParentId = result.parentTabId;
 			newTreeOrder = result.treeOrder;
+			childrenToFlatten = result.childrenToFlatten ?? [];
 			log("[Background] Calculated new tree position:", {
 				newParentId,
 				newTreeOrder,
+				childrenToFlatten,
 			});
+			testLog(
+				`Calculated new tree position: parentId=${newParentId}, treeOrder=${newTreeOrder}, childrenToFlatten=${JSON.stringify(childrenToFlatten)}`,
+			);
 		} else {
 			// Preserve the existing tree position (set by extension UI)
 			newParentId = existingTab?.parentTabId ?? null;
@@ -564,6 +587,9 @@ export const setupTabListeners = (dbOps: DbOperations) => {
 				newParentId,
 				newTreeOrder,
 			});
+			testLog(
+				`Preserving existing tree position: parentId=${newParentId}, treeOrder=${newTreeOrder}`,
+			);
 		}
 
 		// Update the moved tab with tree position AND new browser index
@@ -577,7 +603,118 @@ export const setupTabListeners = (dbOps: DbOperations) => {
 			]);
 		}
 
+		testLog("About to check for descendants to flatten");
+
+		// After moving the tab, check if any of its descendants are now at a browser index
+		// before the parent. If so, flatten those descendants.
+		// This handles the case where a parent tab is moved past its children.
+		
+		// Get all descendants of the moved tab BEFORE the move (from existing DB state)
+		const getAllDescendantIds = (parentId: number): number[] => {
+			const descendants: number[] = [];
+			const children = existingTabs.filter((t) => t.parentTabId === parentId);
+			for (const child of children) {
+				descendants.push(child.browserTabId);
+				descendants.push(...getAllDescendantIds(child.browserTabId));
+			}
+			return descendants;
+		};
+
+		const descendantIds = getAllDescendantIds(tabId);
+		testLog(`Found descendants: [${descendantIds.join(", ")}] for moved tab: ${tabId}`);
+
+		// Track which descendants were actually flattened so we don't overwrite them later
+		const flattenedDescendantIds: number[] = [];
+
+		if (descendantIds.length > 0) {
+			const movedTabBrowserInfo = await browser.tabs.get(tabId);
+			if (movedTabBrowserInfo && hasTabIds(movedTabBrowserInfo)) {
+				const movedTabNewIndex = movedTabBrowserInfo.index;
+				testLog(`Moved tab new browser index: ${movedTabNewIndex}`);
+
+				// Check which descendants are now before the parent in browser order
+				const descendantsToFlatten: number[] = [];
+				for (const descendantId of descendantIds) {
+					const descendantBrowserTab = await browser.tabs
+						.get(descendantId)
+						.catch(() => null);
+					if (descendantBrowserTab && hasTabIds(descendantBrowserTab)) {
+						testLog(
+							`Descendant ${descendantId} is at browser index ${descendantBrowserTab.index} vs parent at ${movedTabNewIndex}`,
+						);
+						if (descendantBrowserTab.index < movedTabNewIndex) {
+							testLog(`--> Descendant ${descendantId} needs to be flattened!`);
+							descendantsToFlatten.push(descendantId);
+						}
+					}
+				}
+
+				if (descendantsToFlatten.length > 0) {
+					log("[Background] Flattening descendants:", descendantsToFlatten);
+					testLog(`Flattening descendants: [${descendantsToFlatten.join(", ")}]`);
+					const childRecords: TabRecord[] = [];
+
+					// Get all tabs at the new parent level to calculate proper tree orders
+					const siblingsAtNewLevel = existingTabs
+						.filter(
+							(t) =>
+								t.parentTabId === newParentId &&
+								t.browserTabId !== tabId &&
+								!descendantsToFlatten.includes(t.browserTabId),
+						)
+						.sort((a, b) =>
+							a.treeOrder < b.treeOrder ? -1 : a.treeOrder > b.treeOrder ? 1 : 0,
+						);
+
+					// For each child to flatten, give it the same parent as the moved tab
+					// and a treeOrder that places it before the moved tab
+					for (let i = 0; i < descendantsToFlatten.length; i++) {
+						const childId = descendantsToFlatten[i];
+						const childBrowserTab = await browser.tabs
+							.get(childId)
+							.catch(() => null);
+						if (childBrowserTab && hasTabIds(childBrowserTab)) {
+							// Generate treeOrder between the last sibling and the moved tab
+							const beforeSibling =
+								i === 0
+									? siblingsAtNewLevel[siblingsAtNewLevel.length - 1]
+									: childRecords[childRecords.length - 1];
+							const childTreeOrder = generateTreeOrder(
+								beforeSibling?.treeOrder,
+								newTreeOrder,
+							);
+
+							testLog(
+								`Flattening child ${childId} with treeOrder=${childTreeOrder} and newParentId=${newParentId}`,
+							);
+
+							childRecords.push(
+								tabToRecord(childBrowserTab, {
+									parentTabId: newParentId,
+									treeOrder: childTreeOrder,
+								}),
+							);
+
+							// Track that we flattened this descendant
+							flattenedDescendantIds.push(childId);
+						}
+					}
+					if (childRecords.length > 0) {
+						testLog(`Updating ${childRecords.length} child records`);
+						await putItems("tab", childRecords);
+					}
+				} else {
+					testLog("No descendants need to be flattened");
+				}
+			}
+		} else {
+			testLog("No descendants found for moved tab");
+		}
+
 		// Also update indices of other affected tabs (preserve their tree structure)
+		// BUT exclude the flattened descendants, as we've already updated them
+		testLog(`Flattened descendant IDs to exclude from other tabs update: [${flattenedDescendantIds.join(", ")}]`);
+
 		const existingMap = new Map<number, Tab>();
 		for (const tab of existingTabs) {
 			existingMap.set(tab.browserTabId, tab);
@@ -588,7 +725,11 @@ export const setupTabListeners = (dbOps: DbOperations) => {
 		});
 		const otherTabRecords: TabRecord[] = [];
 		for (const bt of allBrowserTabs.filter(hasTabIds)) {
-			if (bt.id === tabId) continue; // Skip the moved tab, already updated
+			// Skip the moved tab (already updated) and flattened descendants (already updated)
+			if (bt.id === tabId || flattenedDescendantIds.includes(bt.id)) {
+				testLog(`Skipping tab ${bt.id} in other tabs update`);
+				continue;
+			}
 			const existing = existingMap.get(bt.id);
 			otherTabRecords.push(
 				tabToRecord(bt, {
@@ -599,6 +740,7 @@ export const setupTabListeners = (dbOps: DbOperations) => {
 		}
 
 		if (otherTabRecords.length > 0) {
+			testLog(`Updating ${otherTabRecords.length} other tab records`);
 			await putItems("tab", otherTabRecords);
 		}
 	};
