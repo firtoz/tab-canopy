@@ -2,6 +2,7 @@
 	"name": "@tabcanopy/extension",
 	"version": "0.0.0",
 	"private": true,
+	"license": "MIT",
 	"type": "module",
 	"scripts": {
 		"dev": "bun --env-file .env --env-file .env.development wxt",

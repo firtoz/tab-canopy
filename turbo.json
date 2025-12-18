@@ -9,6 +9,7 @@
 			"dependsOn": ["db:generate"],
 			"outputs": ["packages/extension/.output/**"],
 			"inputs": [
+				".env",
 				"packages/extension/entrypoints/**",
 				"packages/extension/src/**",
 				"packages/extension/schema/**",
@@ -20,6 +21,7 @@
 			"dependsOn": ["db:generate"],
 			"outputs": ["packages/extension/.output/**"],
 			"inputs": [
+				".env",
 				"packages/extension/entrypoints/**",
 				"packages/extension/src/**",
 				"packages/extension/schema/**",
