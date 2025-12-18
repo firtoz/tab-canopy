@@ -68,6 +68,11 @@ export interface TestTreeHelpers {
 	 * Clear background debug logs
 	 */
 	clearBackgroundLogs: () => void;
+
+	/**
+	 * Get the treeOrder for a tab by ID
+	 */
+	getTreeOrder: (tabId: number) => Promise<string | undefined>;
 }
 
 // ES module equivalent of __dirname (Playwright runs in Node.js, not Bun)
@@ -386,16 +391,8 @@ export const test = base.extend<ExtensionFixtures>({
 				// Call the exposed browser API action
 				await sidepanel.evaluate(
 					({ tabId, moveProperties }) => {
-						const actions = (
-							window as Window & {
-								__tabCanopyBrowserActions?: {
-									moveTab: (
-										tabId: number,
-										moveProperties: { windowId?: number; index: number },
-									) => Promise<void>;
-								};
-							}
-						).__tabCanopyBrowserActions;
+						// @ts-ignore - window is available in browser context
+						const actions = window.__tabCanopyBrowserActions;
 
 						if (!actions) {
 							throw new Error(
@@ -419,6 +416,13 @@ export const test = base.extend<ExtensionFixtures>({
 
 			clearBackgroundLogs: () => {
 				testState.backgroundLogs = [];
+			},
+			getTreeOrder: async (tabId: number) => {
+				await getTestHelpers(); // Ensure state is refreshed
+				const tab = testState.latestTreeState?.tabs.find(
+					(t) => t.browserTabId === tabId,
+				);
+				return tab?.treeOrder;
 			},
 		};
 

@@ -6,17 +6,17 @@ import type { Migration } from "@firtoz/drizzle-indexeddb";
  */
 export const migrate_0001: Migration = [
 	{
-		type: "createIndex",
-		tableName: "tab",
-		indexName: "tab_parent_id_index",
-		keyPath: "parent_tab_id",
-		unique: false,
+		"type": "createIndex",
+		"tableName": "tab",
+		"indexName": "tab_parent_id_index",
+		"keyPath": "parent_tab_id",
+		"unique": false
 	},
 	{
-		type: "createIndex",
-		tableName: "tab",
-		indexName: "tab_tree_order_index",
-		keyPath: "tree_order",
-		unique: false,
-	},
+		"type": "createIndex",
+		"tableName": "tab",
+		"indexName": "tab_tree_order_index",
+		"keyPath": "tree_order",
+		"unique": false
+	}
 ];

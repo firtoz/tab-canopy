@@ -422,4 +422,147 @@ test.describe("Tab Movement with Children", () => {
 		await tabB.close();
 		await tabC.close();
 	});
+
+	test("moving parent tab in native browser after its child maintains correct order with other tabs", async ({
+		context,
+		sidepanel,
+		treeHelpers,
+	}) => {
+		// This test verifies that when a parent tab is moved past its child,
+		// the other tabs in the window maintain their correct positions
+
+		// Create tabs a, b, c, d
+		const tabA = await createTab(
+			context,
+			"about:blank?title=a",
+			sidepanel,
+		);
+		const tabB = await createTab(
+			context,
+			"about:blank?title=b",
+			sidepanel,
+		);
+		const tabC = await createTab(
+			context,
+			"about:blank?title=c",
+			sidepanel,
+		);
+		const tabD = await createTab(
+			context,
+			"about:blank?title=d",
+			sidepanel,
+		);
+
+		// Wait for tabs to appear
+		const aInfo = await treeHelpers.waitForTab("about:blank?title=a");
+		const bInfo = await treeHelpers.waitForTab("about:blank?title=b");
+		const cInfo = await treeHelpers.waitForTab("about:blank?title=c");
+		const dInfo = await treeHelpers.waitForTab("about:blank?title=d");
+
+		console.log("Initial state - a:", aInfo, "b:", bInfo, "c:", cInfo, "d:", dInfo);
+
+		// Make c a child of b by dragging c onto b in the sidepanel
+		const bElement = treeHelpers.getTabElement(bInfo.id);
+		const cElement = treeHelpers.getTabElement(cInfo.id);
+
+		const cBox = await cElement.boundingBox();
+		const bBox = await bElement.boundingBox();
+
+		if (cBox && bBox) {
+			// Drag c onto b to make c a child of b
+			await sidepanel.mouse.move(
+				cBox.x + 200,
+				cBox.y + cBox.height / 2,
+			);
+			await sidepanel.mouse.down();
+			await sidepanel.mouse.move(
+				bBox.x + 200,
+				bBox.y + bBox.height / 2,
+				{ steps: 10 },
+			);
+			await sidepanel.waitForTimeout(100);
+			await sidepanel.mouse.up();
+			await sidepanel.waitForTimeout(500);
+		}
+
+		// Verify c is now a child of b
+		let helpers = await treeHelpers.getHelpers();
+		let updatedC = helpers.getTabById(cInfo.id);
+		expect(updatedC?.parentId).toBe(bInfo.id);
+		console.log("After making c child of b - c:", updatedC);
+
+		// Now move b to be after c using native browser API
+		helpers = await treeHelpers.getHelpers();
+		const allTabs = helpers.getAllTabs();
+		console.log("Before browser move - all tabs:", allTabs.map(t => ({ id: t.id, index: t.index, parentId: t.parentId })));
+
+		const updatedBBeforeMove = helpers.getTabById(bInfo.id);
+		console.log("Before move - b index:", updatedBBeforeMove?.index);
+
+		// Clear background logs before the move
+		treeHelpers.clearBackgroundLogs();
+
+		// Move b to after c (c is at index after b, so we move b forward)
+		await treeHelpers.moveBrowserTab(bInfo.id, { index: updatedBBeforeMove!.index + 1 });
+
+		// Wait for changes to be processed
+		await sidepanel.waitForTimeout(1000);
+
+		// Get and print background logs
+		const backgroundLogs = treeHelpers.getBackgroundLogs();
+		console.log("Background logs:");
+		for (const log of backgroundLogs) {
+			console.log("  ", log);
+		}
+
+		// Verify the expected behavior
+		helpers = await treeHelpers.getHelpers();
+		const updatedA = helpers.getTabById(aInfo.id);
+		const updatedB = helpers.getTabById(bInfo.id);
+		updatedC = helpers.getTabById(cInfo.id);
+		const updatedD = helpers.getTabById(dInfo.id);
+
+		console.log("After browser move:");
+		console.log("  a:", updatedA);
+		console.log("  b:", updatedB);
+		console.log("  c:", updatedC);
+		console.log("  d:", updatedD);
+
+		// Check tree orders to see if they're in the right order
+		const allTabsAfter = helpers.getAllTabs().filter(t => 
+			[aInfo.id, bInfo.id, cInfo.id, dInfo.id].includes(t.id)
+		);
+		console.log("Tree orders after move:");
+		for (const tab of allTabsAfter) {
+			const name = tab.id === aInfo.id ? 'a' : tab.id === bInfo.id ? 'b' : tab.id === cInfo.id ? 'c' : 'd';
+			const treeOrder = await treeHelpers.getTreeOrder(tab.id);
+			console.log(`  ${name}: treeOrder=${treeOrder}, index=${tab.index}, parentId=${tab.parentId}`);
+		}
+
+		// Expected order: a, c, b, d
+		// c should no longer be a child of b
+		expect(updatedC?.parentId).toBeNull();
+		expect(updatedC?.depth).toBe(0);
+
+		// Verify the index order
+		const indices = [
+			{ name: "a", index: updatedA?.index ?? -1 },
+			{ name: "b", index: updatedB?.index ?? -1 },
+			{ name: "c", index: updatedC?.index ?? -1 },
+			{ name: "d", index: updatedD?.index ?? -1 },
+		].sort((a, b) => a.index - b.index);
+
+		console.log("Sorted by index:", indices);
+
+		// Expected order by index: a, c, b, d
+		expect(indices[0].name).toBe("a");
+		expect(indices[1].name).toBe("c");
+		expect(indices[2].name).toBe("b");
+		expect(indices[3].name).toBe("d");
+
+		await tabA.close();
+		await tabB.close();
+		await tabC.close();
+		await tabD.close();
+	});
 });

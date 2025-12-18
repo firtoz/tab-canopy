@@ -713,6 +713,7 @@ export const setupTabListeners = (dbOps: DbOperations) => {
 
 		// Also update indices of other affected tabs (preserve their tree structure)
 		// BUT exclude the flattened descendants, as we've already updated them
+		// ALSO: fix treeOrders for tabs that come after the moved section
 		testLog(`Flattened descendant IDs to exclude from other tabs update: [${flattenedDescendantIds.join(", ")}]`);
 
 		const existingMap = new Map<number, Tab>();
@@ -720,28 +721,96 @@ export const setupTabListeners = (dbOps: DbOperations) => {
 			existingMap.set(tab.browserTabId, tab);
 		}
 
+		// Get the final browser tab order
 		const allBrowserTabs = await browser.tabs.query({
 			windowId: moveInfo.windowId,
 		});
+
+		// Build a map of what we've already updated with new tree orders
+		const updatedTreeOrders = new Map<number, string>();
+		updatedTreeOrders.set(tabId, newTreeOrder);
+		for (const flattenedId of flattenedDescendantIds) {
+			const flattenedTab = existingTabs.find((t) => t.browserTabId === flattenedId);
+			// The flattened tab got a new treeOrder, but we need to know what it was
+			// For now, we'll regenerate it
+		}
+
 		const otherTabRecords: TabRecord[] = [];
+		
+		// For tabs that come after the moved tab, we need to ensure their treeOrders
+		// are greater than the moved tab's treeOrder to maintain correct sort order
+		let lastTreeOrderAtSameLevel = newTreeOrder;
+
 		for (const bt of allBrowserTabs.filter(hasTabIds)) {
 			// Skip the moved tab (already updated) and flattened descendants (already updated)
 			if (bt.id === tabId || flattenedDescendantIds.includes(bt.id)) {
 				testLog(`Skipping tab ${bt.id} in other tabs update`);
+				// Update lastTreeOrder if this is at root level
+				if (flattenedDescendantIds.includes(bt.id)) {
+					// Flattened tabs are at root level, update lastTreeOrder
+					// We need to recalculate what treeOrder the flattened tab got
+					// For simplicity, let's get it from the DB after it was updated
+					const updated = await browser.tabs.get(bt.id);
+					if (updated) {
+						const freshTabs = await getAll<Tab>("tab");
+						const freshTab = freshTabs.find((t) => t.browserTabId === bt.id);
+						if (freshTab) {
+							lastTreeOrderAtSameLevel = freshTab.treeOrder;
+						}
+					}
+				}
 				continue;
 			}
+
 			const existing = existingMap.get(bt.id);
+			let treeOrderToUse = existing?.treeOrder ?? "a0";
+			const parentIdToUse = existing?.parentTabId ?? null;
+
+			// If this tab is at root level AND comes after the moved tab in browser order,
+			// AND its current treeOrder is less than the last root-level tab we've seen,
+			// we need to give it a new treeOrder
+			if (
+				parentIdToUse === null &&
+				bt.index > moveInfo.toIndex &&
+				treeOrderToUse <= lastTreeOrderAtSameLevel
+			) {
+				// Generate a new treeOrder after the last one
+				treeOrderToUse = generateTreeOrder(lastTreeOrderAtSameLevel, undefined);
+				testLog(
+					`Tab ${bt.id} at index ${bt.index} needs new treeOrder ${treeOrderToUse} (was ${existing?.treeOrder}) because it comes after moved tab and had old treeOrder`,
+				);
+			}
+
+			if (parentIdToUse === null) {
+				lastTreeOrderAtSameLevel = treeOrderToUse;
+			}
+
 			otherTabRecords.push(
 				tabToRecord(bt, {
-					parentTabId: existing?.parentTabId ?? null,
-					treeOrder: existing?.treeOrder ?? "a0",
+					parentTabId: parentIdToUse,
+					treeOrder: treeOrderToUse,
 				}),
 			);
 		}
 
 		if (otherTabRecords.length > 0) {
 			testLog(`Updating ${otherTabRecords.length} other tab records`);
+			// Log each tab's treeOrder for debugging
+			for (const record of otherTabRecords) {
+				testLog(`  Tab ${record.browserTabId}: treeOrder=${record.treeOrder}, parentId=${record.parentTabId}, index=${record.tabIndex}`);
+			}
 			await putItems("tab", otherTabRecords);
+		}
+
+		// Log final state of all tabs in window for debugging
+		const finalBrowserTabs = await browser.tabs.query({
+			windowId: moveInfo.windowId,
+		});
+		const finalExistingTabs = await getAll<Tab>("tab");
+		testLog("Final tab state after move:");
+		for (const bt of finalBrowserTabs.filter(hasTabIds)) {
+			const existing = finalExistingTabs.find((t) => t.browserTabId === bt.id);
+			testLog(`  Tab ${bt.id} @ index ${bt.index}: treeOrder=${existing?.treeOrder}, parentId=${existing?.parentTabId}`);
 		}
 	};
 

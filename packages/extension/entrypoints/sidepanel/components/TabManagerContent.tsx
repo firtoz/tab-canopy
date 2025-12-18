@@ -199,9 +199,9 @@ export const TabManagerContent = () => {
 
 		return windows.map((win) => ({
 			window: win,
-			tabs: tabs
-				.filter((tab) => tab.browserWindowId === win.browserWindowId)
-				.sort((a, b) => a.tabIndex - b.tabIndex),
+			// Don't sort by tabIndex here - let buildTabTree handle the sorting by treeOrder
+			// This ensures the tree structure is displayed correctly
+			tabs: tabs.filter((tab) => tab.browserWindowId === win.browserWindowId),
 		}));
 	}, [windows, tabs]);
 

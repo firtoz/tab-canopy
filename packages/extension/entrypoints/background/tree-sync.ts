@@ -1,4 +1,5 @@
 import type { Tab } from "@/schema/src/schema";
+import { generateKeyBetween } from "fractional-indexing";
 
 /**
  * Tree structure for a tab node
@@ -82,89 +83,12 @@ export function getExpectedBrowserOrder(tabs: Tab[]): Map<number, number> {
 
 /**
  * Generate a treeOrder value between two existing values.
- * Handles mixed alphanumeric strings (digits sort before letters in ASCII).
- * ASCII order: '0'-'9' (48-57) < 'A'-'Z' (65-90) < 'a'-'z' (97-122)
+ * Uses the fractional-indexing library (battle-tested by Figma).
  */
 function generateTreeOrder(before?: string, after?: string): string {
-	// Default midpoint
-	// if (!before && !after) {
-	// 	return "n"; // middle of alphabet
-	// }
-
-	if (!before) {
-		if (!after) {
-			return "n";
-		}
-		// Insert before `after` - we need something that sorts before it
-		const firstChar = after.charCodeAt(0);
-
-		// Try to find a character that sorts before the first character
-		// '0' is ASCII 48, which is a safe lower bound for printable chars
-		if (firstChar > 48) {
-			// There's room before the first character
-			const midChar = Math.floor((48 + firstChar) / 2);
-			if (midChar < firstChar && midChar >= 48) {
-				return String.fromCharCode(midChar);
-			}
-		}
-
-		// First char is already at or near the minimum ('0')
-		// Prepend '0' and recurse on the rest
-		if (after.length > 1) {
-			return `0${generateTreeOrder(undefined, after.slice(1))}`;
-		}
-		// Single character at minimum - just prepend '0'
-		return "0";
-	}
-
-	if (!after) {
-		if (!before) {
-			return "n";
-		}
-
-		// Insert after `before` - we need something that sorts after it
-		// Append a character to make it larger
-		return `${before}n`;
-	}
-
-	// Insert between two values
-	// Find common prefix
-	let i = 0;
-	while (i < before.length && i < after.length && before[i] === after[i]) {
-		i++;
-	}
-	const commonPrefix = before.slice(0, i);
-
-	// Get the differing parts
-	const beforeSuffix = before.slice(i);
-	const afterSuffix = after.slice(i);
-
-	// Get first differing character (or use boundaries)
-	// Use ASCII 47 ('/') as lower bound and 127 (DEL) as upper bound
-	const beforeChar = beforeSuffix.length > 0 ? beforeSuffix.charCodeAt(0) : 47;
-	const afterChar = afterSuffix.length > 0 ? afterSuffix.charCodeAt(0) : 127;
-
-	if (afterChar - beforeChar > 1) {
-		// There's room for a character in between
-		const midChar = String.fromCharCode(
-			Math.floor((beforeChar + afterChar) / 2),
-		);
-		return commonPrefix + midChar;
-	}
-
-	// Characters are adjacent (e.g., '0' and '1', or 'a' and 'b')
-	// We need to extend the `before` value
-	if (beforeSuffix.length === 0) {
-		// before ended at common prefix, after has more
-		// Insert between common prefix and afterSuffix
-		const midChar = Math.floor((47 + afterChar) / 2);
-		if (midChar > 47 && midChar < afterChar) {
-			return commonPrefix + String.fromCharCode(midChar);
-		}
-	}
-
-	// Append to before to make it slightly larger but still less than after
-	return `${before}n`;
+	// The library uses null/undefined for boundaries
+	const result = generateKeyBetween(before ?? null, after ?? null);
+	return result;
 }
 
 /**
@@ -252,12 +176,32 @@ export function calculateTreePositionFromBrowserMove(
 	}
 
 	// Get prev and next tabs at the new position (excluding moved tab and its descendants)
-	const prevTab =
-		newBrowserIndex > 0 ? withoutMovedAndDescendants[newBrowserIndex - 1] : null;
-	const nextTab =
-		newBrowserIndex < withoutMovedAndDescendants.length
-			? withoutMovedAndDescendants[newBrowserIndex]
-			: null;
+	// We need to look at the BROWSER order, not tree order, to find adjacent tabs
+	// Build a map of browser index to tab for tabs that aren't the moved tab or its descendants
+	const tabsByBrowserIndex = new Map<number, Tab>();
+	for (const tab of allTabs) {
+		if (tab.browserTabId !== movedTabId && !descendants.has(tab.browserTabId)) {
+			tabsByBrowserIndex.set(tab.tabIndex, tab);
+		}
+	}
+	
+	// Find the prev tab (highest browser index < newBrowserIndex)
+	let prevTab: Tab | null = null;
+	for (let i = newBrowserIndex - 1; i >= 0; i--) {
+		if (tabsByBrowserIndex.has(i)) {
+			prevTab = tabsByBrowserIndex.get(i)!;
+			break;
+		}
+	}
+	
+	// Find the next tab (lowest browser index > newBrowserIndex)
+	let nextTab: Tab | null = null;
+	for (let i = newBrowserIndex + 1; i < allTabs.length + 10; i++) { // +10 buffer for safety
+		if (tabsByBrowserIndex.has(i)) {
+			nextTab = tabsByBrowserIndex.get(i)!;
+			break;
+		}
+	}
 
 	// Determine new parent
 	let newParentId: number | null = null;
