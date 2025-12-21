@@ -4,6 +4,7 @@ import { useDndContext, useDraggable, useDroppable } from "@dnd-kit/core";
 // 	useSortable,
 // 	verticalListSortingStrategy,
 // } from "@dnd-kit/sortable";
+import { X } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
 import type * as schema from "@/schema/src/schema";
 import { cn } from "../lib/cn";
@@ -188,6 +189,7 @@ interface SortableTabProps {
 		options: { ctrlKey: boolean; shiftKey: boolean },
 	) => void;
 	onToggleCollapse: (tabId: number) => void;
+	onClose: (tabId: number) => void;
 	// activeDropData: DropData | null;
 	depth: number;
 	hasChildren: boolean;
@@ -207,6 +209,7 @@ function SortableTab({
 	isDragging,
 	onSelect,
 	onToggleCollapse,
+	onClose,
 	depth,
 	hasChildren,
 	isLastChild,
@@ -253,6 +256,7 @@ function SortableTab({
 				isSelected={isSelected}
 				onSelect={onSelect}
 				onToggleCollapse={onToggleCollapse}
+				onClose={onClose}
 				// activeDropData={activeDropData}
 				isDragging={isDragging}
 				depth={depth}
@@ -299,6 +303,8 @@ export const WindowGroup = ({
 	lastSelectedTabId,
 	setLastSelectedTabId,
 	onToggleCollapse,
+	onCloseTab,
+	onCloseWindow,
 }: {
 	window: schema.Window;
 	tabs: schema.Tab[];
@@ -309,6 +315,8 @@ export const WindowGroup = ({
 	lastSelectedTabId: number | undefined;
 	setLastSelectedTabId: (id: number | undefined) => void;
 	onToggleCollapse: (tabId: number) => void;
+	onCloseTab: (tabId: number) => void;
+	onCloseWindow: (windowId: number) => void;
 }) => {
 	const { active } = useDndContext();
 	const isDragging = active !== null;
@@ -520,6 +528,14 @@ export const WindowGroup = ({
 		setIsCollapsed((prev) => !prev);
 	}, []);
 
+	const handleCloseWindow = useCallback(
+		(e: React.MouseEvent) => {
+			e.stopPropagation();
+			onCloseWindow(win.browserWindowId);
+		},
+		[win.browserWindowId, onCloseWindow],
+	);
+
 	return (
 		<div className="flex flex-col">
 			{/* Window header as tree node */}
@@ -535,7 +551,7 @@ export const WindowGroup = ({
 				{/* biome-ignore lint/a11y/useSemanticElements: div with role used for nested button */}
 				<div
 					className={cn(
-						"flex-1 flex items-center gap-0 cursor-pointer",
+						"flex-1 flex items-center gap-0 cursor-pointer group",
 						isCurrentWindow && "text-blue-600 dark:text-blue-400",
 					)}
 					onClick={handleWindowClick}
@@ -562,6 +578,14 @@ export const WindowGroup = ({
 					<span className="text-xs text-slate-400 dark:text-slate-500">
 						• {tabs.length} tabs
 					</span>
+					<button
+						type="button"
+						className="ml-auto mr-2 p-1 opacity-0 group-hover:opacity-100 hover:bg-red-100 dark:hover:bg-red-900/30 rounded text-slate-400 hover:text-red-600 dark:hover:text-red-400 transition-all"
+						onClick={handleCloseWindow}
+						title="Close window"
+					>
+						<X size={14} />
+					</button>
 				</div>
 			</div>
 
@@ -620,6 +644,7 @@ export const WindowGroup = ({
 									isDragging={isDragging}
 									onSelect={handleTabSelect}
 									onToggleCollapse={onToggleCollapse}
+									onClose={onCloseTab}
 									depth={item.depth}
 									hasChildren={item.hasChildren}
 									isLastChild={item.isLastChild}

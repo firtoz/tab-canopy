@@ -175,6 +175,7 @@ export function createExtensionClientTransport<TClientMsg, TServerMsg>(
 ): ExtensionClientTransport<TClientMsg> {
 	const { portName, onMessage, onDisconnect } = options;
 	const port = browser.runtime.connect({ name: portName });
+	let isDisconnected = false;
 
 	// Handle messages from server
 	port.onMessage.addListener((message: PortMessage<TClientMsg, TServerMsg>) => {
@@ -186,21 +187,43 @@ export function createExtensionClientTransport<TClientMsg, TServerMsg>(
 	// Handle disconnection
 	port.onDisconnect.addListener(() => {
 		console.log("[Client] Disconnected from server");
+		isDisconnected = true;
 		onDisconnect?.();
 	});
 
 	return {
 		send: (message: TClientMsg) => {
+			if (isDisconnected) {
+				console.warn("[Client] Attempted to send on disconnected port");
+				return;
+			}
+			
 			const portMessage: PortMessage<TClientMsg, TServerMsg> = {
 				direction: "toServer",
 				payload: message,
 			};
-			port.postMessage(portMessage);
+			
+			try {
+				port.postMessage(portMessage);
+			} catch (e) {
+				if (e instanceof Error && e.message.includes("disconnected port")) {
+					console.warn("[Client] Port disconnected during send");
+					isDisconnected = true;
+				} else {
+					throw e;
+				}
+			}
 		},
 		getPort: () => port,
 		dispose: () => {
 			console.log("[Client] Disposing transport");
-			port.disconnect();
+			if (!isDisconnected) {
+				try {
+					port.disconnect();
+				} catch (e) {
+					console.warn("[Client] Error disconnecting port:", e);
+				}
+			}
 		},
 	};
 }
@@ -224,6 +247,32 @@ export interface UiMoveIntentData {
 	treeOrder: string;
 }
 
+export interface TabCreatedEvent {
+	tabId: number;
+	openerTabId: number | undefined;
+	tabIndex: number;
+	decidedParentId: number | null;
+	reason: string;
+	timestamp: number;
+}
+
+/**
+ * Generic browser event injection for testing
+ * Allows tests to inject fake browser events to test event handlers
+ * Using discriminated unions for type safety
+ */
+export type InjectBrowserEvent =
+	| { eventType: "tabs.onCreated"; eventData: Browser.tabs.Tab }
+	| { eventType: "tabs.onUpdated"; eventData: { tabId: number; changeInfo: Browser.tabs.OnUpdatedInfo; tab: Browser.tabs.Tab } }
+	| { eventType: "tabs.onMoved"; eventData: { tabId: number; moveInfo: Browser.tabs.OnMovedInfo } }
+	| { eventType: "tabs.onRemoved"; eventData: { tabId: number; removeInfo: Browser.tabs.OnRemovedInfo } }
+	| { eventType: "tabs.onActivated"; eventData: Browser.tabs.OnActivatedInfo }
+	| { eventType: "tabs.onDetached"; eventData: { tabId: number; detachInfo: Browser.tabs.OnDetachedInfo } }
+	| { eventType: "tabs.onAttached"; eventData: { tabId: number; attachInfo: Browser.tabs.OnAttachedInfo } }
+	| { eventType: "windows.onCreated"; eventData: Browser.windows.Window }
+	| { eventType: "windows.onRemoved"; eventData: number }
+	| { eventType: "windows.onFocusChanged"; eventData: number };
+
 /**
  * Messages sent from client to server
  */
@@ -231,7 +280,12 @@ export type ClientMessage =
 	| { type: "idbRequest"; payload: IDBProxyRequest }
 	| { type: "broadcast"; channel: string; data: unknown }
 	| { type: "resetDatabase" }
-	| { type: "uiMoveIntent"; moves: UiMoveIntentData[] };
+	| { type: "uiMoveIntent"; moves: UiMoveIntentData[] }
+	| { type: "getTabCreatedEvents" }
+	| { type: "clearTabCreatedEvents" }
+	| { type: "enableTestMode" }
+	| { type: "disableTestMode" }
+	| { type: "injectBrowserEvent"; event: InjectBrowserEvent };
 
 /**
  * Messages sent from server to client
@@ -245,7 +299,8 @@ export type ServerMessage =
 			data: unknown;
 			fromClientId?: string;
 	  }
-	| { type: "resetDatabaseComplete" };
+	| { type: "resetDatabaseComplete" }
+	| { type: "tabCreatedEvents"; events: TabCreatedEvent[] };
 
 /** Port name for the transport */
 export const IDB_PORT_NAME = "tabcanopy";

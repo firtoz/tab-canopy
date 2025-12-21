@@ -24,6 +24,61 @@ const uiMoveIntents = new Map<number, UiMoveIntent>();
 // Clean up stale intents after 5 seconds
 const UI_MOVE_INTENT_TTL = 5000;
 
+/**
+ * Event tracking for tests - stores tab creation events with their decisions
+ * Only active when test mode is enabled to prevent memory leaks in production
+ */
+export interface TabCreatedEvent {
+	tabId: number;
+	openerTabId: number | undefined;
+	tabIndex: number;
+	decidedParentId: number | null;
+	reason: string;
+	timestamp: number;
+}
+
+let isTestMode = false;
+const tabCreatedEvents: TabCreatedEvent[] = [];
+const MAX_EVENT_HISTORY = 100;
+
+export function enableTestMode(): void {
+	log("[Background] Test mode enabled - event tracking active");
+	isTestMode = true;
+}
+
+export function disableTestMode(): void {
+	log("[Background] Test mode disabled - clearing events");
+	isTestMode = false;
+	tabCreatedEvents.length = 0;
+}
+
+export function isTestModeEnabled(): boolean {
+	return isTestMode;
+}
+
+function trackTabCreatedEvent(event: Omit<TabCreatedEvent, "timestamp">) {
+	// Only track events in test mode
+	if (!isTestMode) return;
+	
+	tabCreatedEvents.push({
+		...event,
+		timestamp: Date.now(),
+	});
+	
+	// Keep only last MAX_EVENT_HISTORY events
+	if (tabCreatedEvents.length > MAX_EVENT_HISTORY) {
+		tabCreatedEvents.shift();
+	}
+}
+
+export function getTabCreatedEvents(): TabCreatedEvent[] {
+	return [...tabCreatedEvents];
+}
+
+export function clearTabCreatedEvents(): void {
+	tabCreatedEvents.length = 0;
+}
+
 export function registerUiMoveIntent(
 	tabId: number,
 	parentTabId: number | null,
@@ -233,79 +288,145 @@ export const setupTabListeners = (dbOps: DbOperations) => {
 		let treeOrder = "a0";
 
 		if (openerTabId && existingMap.has(openerTabId)) {
-			// This tab was opened from another tab (e.g., middle click)
-			// Make it a child of the opener tab
-			parentTabId = openerTabId;
+			// This tab was opened from another tab (e.g., middle click, Ctrl+T)
+			// But we need to check if the browser position allows it to be a child
+			
+			const openerTab = existingMap.get(openerTabId);
+			if (!openerTab) {
+				// Shouldn't happen, but handle it
+				log("[Background] Opener tab not found in DB, treating as root level");
+			} else {
+				// Get all tabs in the window to determine browser positions
+				const windowTabs = await browser.tabs.query({ windowId: tab.windowId });
+				const tabIndexMap = new Map<number, number>();
+				for (const wt of windowTabs.filter(hasTabIds)) {
+					tabIndexMap.set(wt.id, wt.index);
+				}
 
-			// Find siblings (other children of the opener)
-			const siblings = existingTabs
-				.filter((t) => t.parentTabId === openerTabId)
-				.sort((a, b) =>
-					a.treeOrder < b.treeOrder ? -1 : a.treeOrder > b.treeOrder ? 1 : 0,
+				const openerIndex = tabIndexMap.get(openerTabId);
+				
+				// Find the last descendant of the opener to determine valid child position range
+				const getLastDescendantIndex = (parentId: number): number => {
+					const children = existingTabs.filter((t) => t.parentTabId === parentId);
+					if (children.length === 0) {
+						return tabIndexMap.get(parentId) ?? -1;
+					}
+					// Find the last child and recursively get its last descendant
+					const lastChild = children.sort((a, b) =>
+						a.treeOrder < b.treeOrder ? -1 : a.treeOrder > b.treeOrder ? 1 : 0,
+					)[children.length - 1];
+					return getLastDescendantIndex(lastChild.browserTabId);
+				};
+
+				const lastDescendantIndex = getLastDescendantIndex(openerTabId);
+				
+				log(
+					"[Background] Tab opened from",
+					openerTabId,
+					"at index",
+					tab.index,
+					"- opener at",
+					openerIndex,
+					", last descendant at",
+					lastDescendantIndex,
 				);
 
-			// Get all tabs in the window to determine browser positions
-			const windowTabs = await browser.tabs.query({ windowId: tab.windowId });
+				// Check if the new tab is placed in a position that allows it to be a child
+				// It should be placed after the opener and before any sibling of the opener
+				if (
+					openerIndex !== undefined &&
+					tab.index > openerIndex &&
+					tab.index <= lastDescendantIndex + 1
+				) {
+					// Position allows child relationship - make it a child
+					parentTabId = openerTabId;
 
-			// Build a map of tab ID to browser index for quick lookup
-			const tabIndexMap = new Map<number, number>();
-			for (const wt of windowTabs.filter(hasTabIds)) {
-				tabIndexMap.set(wt.id, wt.index);
-			}
+					// Find siblings (other children of the opener)
+					const siblings = existingTabs
+						.filter((t) => t.parentTabId === openerTabId)
+						.sort((a, b) =>
+							a.treeOrder < b.treeOrder ? -1 : a.treeOrder > b.treeOrder ? 1 : 0,
+						);
 
-			// Find the position among siblings based on browser index
-			// Build a list of sibling indices in browser order
-			const siblingWithIndices = siblings
-				.map((s) => {
-					const browserIndex = tabIndexMap.get(s.browserTabId);
-					return browserIndex !== undefined ? { tab: s, browserIndex } : null;
-				})
-				.filter((s): s is { tab: Tab; browserIndex: number } => s !== null);
+					// Find where to insert based on the new tab's browser index
+					const siblingWithIndices = siblings
+						.map((s) => {
+							const browserIndex = tabIndexMap.get(s.browserTabId);
+							return browserIndex !== undefined ? { tab: s, browserIndex } : null;
+						})
+						.filter((s): s is { tab: Tab; browserIndex: number } => s !== null);
 
-			// Find where to insert based on the new tab's browser index
-			let insertAfter: Tab | undefined;
-			let insertBefore: Tab | undefined;
+					let insertAfter: Tab | undefined;
+					let insertBefore: Tab | undefined;
 
-			for (const sibling of siblingWithIndices) {
-				if (sibling.browserIndex < tab.index) {
-					// This sibling is before the new tab
-					if (
-						!insertAfter ||
-						sibling.browserIndex >
-							(tabIndexMap.get(insertAfter.browserTabId) ?? -1)
-					) {
-						insertAfter = sibling.tab;
+					for (const sibling of siblingWithIndices) {
+						if (sibling.browserIndex < tab.index) {
+							if (
+								!insertAfter ||
+								sibling.browserIndex >
+									(tabIndexMap.get(insertAfter.browserTabId) ?? -1)
+							) {
+								insertAfter = sibling.tab;
+							}
+						} else {
+							if (
+								!insertBefore ||
+								sibling.browserIndex <
+									(tabIndexMap.get(insertBefore.browserTabId) ?? Number.MAX_VALUE)
+							) {
+								insertBefore = sibling.tab;
+							}
+						}
 					}
+
+					treeOrder = generateTreeOrder(
+						insertAfter?.treeOrder,
+						insertBefore?.treeOrder,
+					);
+
+					log(
+						"[Background] Position allows child - setting as child with treeOrder:",
+						treeOrder,
+					);
+					
+					trackTabCreatedEvent({
+						tabId: tab.id,
+						openerTabId,
+						tabIndex: tab.index,
+						decidedParentId: parentTabId,
+						reason: `Position allows child: index ${tab.index} is after opener ${openerIndex} and within descendant range ${lastDescendantIndex + 1}`,
+					});
 				} else {
-					// This sibling is after the new tab
-					if (
-						!insertBefore ||
-						sibling.browserIndex <
-							(tabIndexMap.get(insertBefore.browserTabId) ?? Number.MAX_VALUE)
-					) {
-						insertBefore = sibling.tab;
-					}
+					// Position doesn't allow child relationship - treat as sibling at root level
+					log(
+						"[Background] Position prevents child relationship - treating as root level sibling",
+					);
+					parentTabId = null;
+					
+					// Place at root level, positioned based on browser index
+					const rootTabs = existingTabs
+						.filter(
+							(t) => t.parentTabId === null && t.browserWindowId === tab.windowId,
+						)
+						.sort((a, b) =>
+							a.treeOrder < b.treeOrder ? -1 : a.treeOrder > b.treeOrder ? 1 : 0,
+						);
+
+					const lastRoot = rootTabs[rootTabs.length - 1];
+					treeOrder = generateTreeOrder(lastRoot?.treeOrder, undefined);
+					
+					trackTabCreatedEvent({
+						tabId: tab.id,
+						openerTabId,
+						tabIndex: tab.index,
+						decidedParentId: null,
+						reason: `Position prevents child: index ${tab.index} is not in valid range (opener ${openerIndex}, last descendant ${lastDescendantIndex})`,
+					});
 				}
 			}
+		}
 
-			treeOrder = generateTreeOrder(
-				insertAfter?.treeOrder,
-				insertBefore?.treeOrder,
-			);
-
-			log(
-				"[Background] Tab opened from",
-				openerTabId,
-				"at index",
-				tab.index,
-				"- setting as child with treeOrder:",
-				treeOrder,
-				"between siblings:",
-				insertAfter?.browserTabId,
-				"and",
-				insertBefore?.browserTabId,
-			);
-		} else {
+		if (parentTabId === null && !openerTabId) {
 			// Root level tab - place at end of root tabs in this window
 			const rootTabs = existingTabs
 				.filter(
@@ -317,6 +438,14 @@ export const setupTabListeners = (dbOps: DbOperations) => {
 
 			const lastRoot = rootTabs[rootTabs.length - 1];
 			treeOrder = generateTreeOrder(lastRoot?.treeOrder, undefined);
+			
+			trackTabCreatedEvent({
+				tabId: tab.id,
+				openerTabId: undefined,
+				tabIndex: tab.index,
+				decidedParentId: null,
+				reason: "No openerTabId - creating as root level tab",
+			});
 		}
 
 		// Create the new tab record
@@ -988,4 +1117,15 @@ export const setupTabListeners = (dbOps: DbOperations) => {
 	browser.tabs.onAttached.addListener(
 		queuedHandler("tabs.onAttached", handleTabAttached),
 	);
+
+	// Export handlers for testing (so we can inject fake events)
+	return {
+		handleTabCreated,
+		handleTabUpdated,
+		handleTabRemoved,
+		handleTabMoved,
+		handleTabActivated,
+		handleTabDetached,
+		handleTabAttached,
+	};
 };

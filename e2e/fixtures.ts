@@ -13,6 +13,7 @@ import type {
 	WindowInfo,
 } from "../packages/extension/entrypoints/sidepanel/lib/test-helpers";
 import type * as schema from "../packages/extension/schema/src/schema";
+import type { InjectBrowserEvent } from "../packages/extension/src/idb-transport";
 
 // Re-export types for convenience
 export type { TabTreeNode, TreeTestHelpers, WindowInfo };
@@ -27,11 +28,6 @@ export interface TestTreeHelpers {
 	 * Wait for a tab with specific URL to appear
 	 */
 	waitForTab: (url: string, timeout?: number) => Promise<TabTreeNode>;
-
-	/**
-	 * Wait for a specific number of tabs
-	 */
-	waitForTabCount: (count: number, timeout?: number) => Promise<void>;
 
 	/**
 	 * Get tab by URL
@@ -73,6 +69,33 @@ export interface TestTreeHelpers {
 	 * Get the treeOrder for a tab by ID
 	 */
 	getTreeOrder: (tabId: number) => Promise<string | undefined>;
+	
+	/**
+	 * Get tab created events from background script (for testing)
+	 */
+	getTabCreatedEvents: () => Promise<Array<{
+		tabId: number;
+		openerTabId: number | undefined;
+		tabIndex: number;
+		decidedParentId: number | null;
+		reason: string;
+		timestamp: number;
+	}>>;
+	
+	/**
+	 * Clear tab created events from background script (for testing)
+	 */
+	clearTabCreatedEvents: () => Promise<void>;
+	
+	/**
+	 * Create a tab with openerTabId (for testing Ctrl+T-like scenarios)
+	 */
+	createTabWithOpener: (url: string, openerTabId: number, index?: number) => Promise<number>;
+	
+	/**
+	 * Inject a fake browser event for testing (bypasses real browser APIs)
+	 */
+	injectBrowserEvent: (event: InjectBrowserEvent) => Promise<void>;
 }
 
 // ES module equivalent of __dirname (Playwright runs in Node.js, not Bun)
@@ -356,20 +379,6 @@ export const test = base.extend<ExtensionFixtures>({
 				throw new Error(`Tab with URL ${url} not found within ${timeout}ms`);
 			},
 
-			waitForTabCount: async (count: number, timeout = 10000) => {
-				const start = Date.now();
-				while (Date.now() - start < timeout) {
-					const helpers = await getTestHelpers();
-					const tabs = helpers.getAllTabs();
-					if (tabs.length === count) return;
-
-					await sidepanel.waitForTimeout(100);
-				}
-				throw new Error(
-					`Expected ${count} tabs, but timeout reached after ${timeout}ms`,
-				);
-			},
-
 			getTabByUrl: async (url: string) => {
 				const helpers = await getTestHelpers();
 				return helpers.getAllTabs().find((t) => t.url.includes(url));
@@ -423,6 +432,64 @@ export const test = base.extend<ExtensionFixtures>({
 					(t) => t.browserTabId === tabId,
 				);
 				return tab?.treeOrder;
+			},
+			
+			getTabCreatedEvents: async () => {
+				return await sidepanel.evaluate(() => {
+					// @ts-ignore - window is available in browser context
+					const actions = window.__tabCanopyBrowserActions;
+					if (!actions) {
+						throw new Error(
+							"Browser test actions not exposed. Make sure the app is in test mode.",
+						);
+					}
+					return actions.getTabCreatedEvents();
+				});
+			},
+			
+			clearTabCreatedEvents: async () => {
+				await sidepanel.evaluate(() => {
+					// @ts-ignore - window is available in browser context
+					const actions = window.__tabCanopyBrowserActions;
+					if (!actions) {
+						throw new Error(
+							"Browser test actions not exposed. Make sure the app is in test mode.",
+						);
+					}
+					return actions.clearTabCreatedEvents();
+				});
+			},
+			
+			createTabWithOpener: async (url: string, openerTabId: number, index?: number) => {
+				return await sidepanel.evaluate(
+					({ url, openerTabId, index }) => {
+						// @ts-ignore - window is available in browser context
+						const actions = window.__tabCanopyBrowserActions;
+						if (!actions) {
+							throw new Error(
+								"Browser test actions not exposed. Make sure the app is in test mode.",
+							);
+						}
+						return actions.createTab({ url, openerTabId, index });
+					},
+					{ url, openerTabId, index },
+				);
+			},
+			
+			injectBrowserEvent: async (event: unknown) => {
+				await sidepanel.evaluate(
+					(event) => {
+						// @ts-ignore - window is available in browser context
+						const actions = window.__tabCanopyBrowserActions;
+						if (!actions) {
+							throw new Error(
+								"Browser test actions not exposed. Make sure the app is in test mode.",
+							);
+						}
+						return actions.injectBrowserEvent(event);
+					},
+					event,
+				);
 			},
 		};
 

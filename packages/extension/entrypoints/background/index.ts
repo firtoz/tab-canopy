@@ -18,8 +18,13 @@ import {
 import { log } from "./constants";
 import { type BroadcastSyncFn, createDbOperations } from "./db-operations";
 import { performFullReset, performInitialSync } from "./initial-sync";
-import { registerUiMoveIntent, setupTabListeners } from "./tab-handlers";
+import { clearTabCreatedEvents, disableTestMode, enableTestMode, getTabCreatedEvents, isTestModeEnabled, registerUiMoveIntent, setupTabListeners } from "./tab-handlers";
 import { setupWindowListeners } from "./window-handlers";
+
+function exhaustiveGuard(value: never): never {
+	throw new Error(`Exhaustive guard triggered with value: ${value}`);
+}
+
 
 export default defineBackground(() => {
 	browser.runtime.onInstalled.addListener(() => {
@@ -37,8 +42,8 @@ export default defineBackground(() => {
 	);
 
 	// Setup browser event listeners
-	setupTabListeners(dbOps);
-	setupWindowListeners(dbOps);
+	const tabHandlers = setupTabListeners(dbOps);
+	const windowHandlers = setupWindowListeners(dbOps);
 
 	// IDB Proxy Server Setup
 	const migratingDbCreator = async (dbName: string) => {
@@ -50,6 +55,9 @@ export default defineBackground(() => {
 		| ((request: IDBProxyRequest) => Promise<IDBProxyResponse>)
 		| null = null;
 
+	// Track which client enabled test mode
+	let testModeClientId: string | null = null;
+
 	// Create the extension transport
 	const serverTransport = createExtensionServerTransport<
 		ClientMessage,
@@ -57,7 +65,8 @@ export default defineBackground(() => {
 	>({
 		portName: IDB_PORT_NAME,
 		onMessage: async (message, client, broadcast) => {
-			if (message.type === "idbRequest") {
+			switch (message.type) {
+				case "idbRequest":
 				if (!requestHandler) {
 					client.port.postMessage({
 						direction: "toClient",
@@ -80,7 +89,8 @@ export default defineBackground(() => {
 					direction: "toClient",
 					payload: { type: "idbResponse", payload: response },
 				});
-			} else if (message.type === "broadcast") {
+				break;
+			case "broadcast":
 				broadcast(
 					{
 						type: "broadcast",
@@ -90,12 +100,14 @@ export default defineBackground(() => {
 					},
 					client.clientId,
 				);
-			} else if (message.type === "resetDatabase") {
+				break;
+			case "resetDatabase":
 				log("[Background] Received reset database request");
 				await performFullReset(dbOps);
 				// Notify all clients that reset is complete
 				broadcast({ type: "resetDatabaseComplete" });
-			} else if (message.type === "uiMoveIntent") {
+				break;
+			case "uiMoveIntent":
 				// Register UI move intents to prevent race conditions with onMoved handler
 				const moves = message.moves as Array<{
 					tabId: number;
@@ -106,6 +118,112 @@ export default defineBackground(() => {
 				for (const move of moves) {
 					registerUiMoveIntent(move.tabId, move.parentTabId, move.treeOrder);
 				}
+				break;
+			case "getTabCreatedEvents":
+				// Return tab created events for tests
+				client.port.postMessage({
+					direction: "toClient",
+					payload: {
+						type: "tabCreatedEvents",
+						events: getTabCreatedEvents(),
+					},
+				});
+				break;
+			case "clearTabCreatedEvents":
+				// Clear tab created events for tests
+				clearTabCreatedEvents();
+				break;
+			case "enableTestMode":
+				console.log("[Background] Received enable test mode request");
+				// Enable test mode
+				enableTestMode();
+				testModeClientId = client.clientId;
+				log("[Background] Test mode enabled by client:", client.clientId);
+				break;
+			case "disableTestMode":
+				console.log("[Background] Received disable test mode request");
+				// Disable test mode and clear events
+				disableTestMode();
+				if (testModeClientId === client.clientId) {
+					testModeClientId = null;
+				}
+				break;
+			case "injectBrowserEvent":
+				// Only allow event injection in test mode
+				if (!isTestModeEnabled()) {
+					log("[Background] Ignoring event injection - not in test mode");
+					return;
+				}
+				
+				log("[Background] Injecting browser event:", message.event.eventType);
+				
+				// Route to appropriate handler based on event type
+				// TypeScript will narrow the type based on eventType
+				try {
+					switch (message.event.eventType) {
+						case "tabs.onCreated":
+							await tabHandlers.handleTabCreated(message.event.eventData);
+							break;
+						case "tabs.onUpdated":
+							await tabHandlers.handleTabUpdated(
+								message.event.eventData.tabId,
+								message.event.eventData.changeInfo,
+								message.event.eventData.tab
+							);
+							break;
+						case "tabs.onMoved":
+							await tabHandlers.handleTabMoved(
+								message.event.eventData.tabId,
+								message.event.eventData.moveInfo
+							);
+							break;
+						case "tabs.onRemoved":
+							await tabHandlers.handleTabRemoved(
+								message.event.eventData.tabId,
+								message.event.eventData.removeInfo
+							);
+							break;
+						case "tabs.onActivated":
+							await tabHandlers.handleTabActivated(message.event.eventData);
+							break;
+						case "tabs.onDetached":
+							await tabHandlers.handleTabDetached(
+								message.event.eventData.tabId,
+								message.event.eventData.detachInfo
+							);
+							break;
+						case "tabs.onAttached":
+							await tabHandlers.handleTabAttached(
+								message.event.eventData.tabId,
+								message.event.eventData.attachInfo
+							);
+							break;
+						case "windows.onCreated":
+							await windowHandlers.handleWindowCreated(message.event.eventData);
+							break;
+						case "windows.onRemoved":
+							await windowHandlers.handleWindowRemoved(message.event.eventData);
+							break;
+						case "windows.onFocusChanged":
+							await windowHandlers.handleWindowFocusChanged(message.event.eventData);
+							break;
+					}
+				} catch (error) {
+					log("[Background] Error injecting event:", error);
+				}
+				break;
+			default:
+				exhaustiveGuard(message);
+				break;
+			}
+		},
+		onDisconnect: (clientId) => {
+			console.log("[Background] Client disconnected:", clientId);
+			// If the test client disconnects, disable test mode
+			if (testModeClientId === clientId) {
+				log("[Background] Test client disconnected, disabling test mode");
+				disableTestMode();
+				testModeClientId = null;
 			}
 		},
 	});

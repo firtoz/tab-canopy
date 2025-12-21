@@ -224,6 +224,7 @@ export const TabCard = ({
 	isSelected,
 	onSelect,
 	onToggleCollapse,
+	onClose,
 	// activeDropData,
 	isDragging,
 	depth = 0,
@@ -239,6 +240,7 @@ export const TabCard = ({
 		options: { ctrlKey: boolean; shiftKey: boolean },
 	) => void;
 	onToggleCollapse: (tabId: number) => void;
+	onClose: (tabId: number) => void;
 	// activeDropData: DropData | null;
 	isDragging?: boolean;
 	depth?: number;
@@ -274,19 +276,9 @@ export const TabCard = ({
 	const handleClose = useCallback(
 		(e: React.MouseEvent) => {
 			e.stopPropagation();
-
-			// Record tab close event
-			recordUserEvent({
-				type: "user.tabClose",
-				data: {
-					tabId: tab.browserTabId,
-					windowId: tab.browserWindowId,
-				},
-			});
-
-			browser.tabs.remove(tab.browserTabId);
+			onClose(tab.browserTabId);
 		},
-		[tab.browserTabId, tab.browserWindowId, recordUserEvent],
+		[tab.browserTabId, onClose],
 	);
 
 	const handleToggleInfo = useCallback((e: React.MouseEvent) => {
@@ -365,9 +357,6 @@ export const TabCard = ({
 						"bg-blue-50 dark:bg-blue-900/20": tab.active && !isSelected,
 						// Selected tab (indigo) - distinct from active
 						"bg-indigo-50 dark:bg-indigo-900/20": isSelected,
-						// Frozen/discarded tab (faded slate) - clearly inactive
-						"bg-slate-50/50 dark:bg-slate-900/30 opacity-60":
-							(tab.frozen || tab.discarded) && !tab.active && !isSelected,
 						// Drop target - sibling (emerald) or child (blue)
 						"ring-2 ring-emerald-500 ring-inset": isDropTargetSibling,
 						"ring-2 ring-blue-500 ring-inset": isDropTargetChild,
@@ -412,7 +401,19 @@ export const TabCard = ({
 						)}
 					</button>
 					<div className="flex-1 min-w-0 flex items-center gap-2 pl-2 py-1">
-						<div className="shrink-0 size-4 flex items-center justify-center">
+						<div
+							className={cn(
+								"shrink-0 size-4 flex items-center justify-center rounded-full transition-all",
+								{
+									// Discarded tab - orange/amber circle (priority over frozen)
+									"ring-2 ring-amber-400 dark:ring-amber-500 bg-amber-50/30 dark:bg-amber-900/20":
+										tab.discarded && !tab.active,
+									// Frozen tab - cyan circle (only if not discarded)
+									"ring-2 ring-cyan-400 dark:ring-cyan-500 bg-cyan-50/30 dark:bg-cyan-900/20":
+										tab.frozen && !tab.discarded && !tab.active,
+								},
+							)}
+						>
 							{tab.audible ? (
 								<Volume2
 									size={16}

@@ -12,6 +12,7 @@ import {
 	type UiMoveIntentData,
 } from "@/src/idb-transport";
 import { log } from "../background/constants";
+import type { Browser } from "wxt/browser";
 
 // ============================================================================
 // Date Serialization Helpers
@@ -89,10 +90,37 @@ function transformSyncMessage(
 // ============================================================================
 // Create IDBProxyClientTransport from Extension Transport
 // ============================================================================
-export function createIDBTransportAdapter(): {
+export interface TabCreatedEvent {
+	tabId: number;
+	openerTabId: number | undefined;
+	tabIndex: number;
+	decidedParentId: number | null;
+	reason: string;
+	timestamp: number;
+}
+
+export type InjectBrowserEvent =
+	| { eventType: "tabs.onCreated"; eventData: Browser.tabs.Tab }
+	| { eventType: "tabs.onUpdated"; eventData: { tabId: number; changeInfo: Browser.tabs.OnUpdatedInfo; tab: Browser.tabs.Tab } }
+	| { eventType: "tabs.onMoved"; eventData: { tabId: number; moveInfo: Browser.tabs.OnMovedInfo } }
+	| { eventType: "tabs.onRemoved"; eventData: { tabId: number; removeInfo: Browser.tabs.OnRemovedInfo } }
+	| { eventType: "tabs.onActivated"; eventData: Browser.tabs.OnActivatedInfo }
+	| { eventType: "tabs.onDetached"; eventData: { tabId: number; detachInfo: Browser.tabs.OnDetachedInfo } }
+	| { eventType: "tabs.onAttached"; eventData: { tabId: number; attachInfo: Browser.tabs.OnAttachedInfo } }
+	| { eventType: "windows.onCreated"; eventData: Browser.windows.Window }
+	| { eventType: "windows.onRemoved"; eventData: number }
+	| { eventType: "windows.onFocusChanged"; eventData: number };
+
+export function createIDBTransportAdapter(options?: {
+	onDisconnect?: () => void;
+}): {
 	transport: IDBProxyClientTransport;
 	resetDatabase: () => Promise<void>;
 	sendMoveIntent: (moves: UiMoveIntentData[]) => void;
+	enableTestMode: () => void;
+	injectBrowserEvent: (event: InjectBrowserEvent) => void;
+	getTabCreatedEvents: () => Promise<TabCreatedEvent[]>;
+	clearTabCreatedEvents: () => void;
 	dispose: () => void;
 } {
 	const pendingRequests = new Map<
@@ -104,6 +132,7 @@ export function createIDBTransportAdapter(): {
 	>();
 	let syncHandler: ((message: IDBProxySyncMessage) => void) | null = null;
 	let resetResolve: (() => void) | null = null;
+	let tabCreatedEventsResolve: ((events: TabCreatedEvent[]) => void) | null = null;
 
 	const extensionTransport = createExtensionClientTransport<
 		ClientMessage,
@@ -132,6 +161,12 @@ export function createIDBTransportAdapter(): {
 					resetResolve();
 					resetResolve = null;
 				}
+			} else if (message.type === "tabCreatedEvents") {
+				console.log("[Sidepanel] Received tab created events");
+				if (tabCreatedEventsResolve) {
+					tabCreatedEventsResolve(message.events);
+					tabCreatedEventsResolve = null;
+				}
 			}
 		},
 		onDisconnect: () => {
@@ -140,6 +175,8 @@ export function createIDBTransportAdapter(): {
 				pending.reject(new Error("Connection closed"));
 			}
 			pendingRequests.clear();
+			// Notify App component to reconnect
+			options?.onDisconnect?.();
 		},
 	});
 
@@ -173,10 +210,34 @@ export function createIDBTransportAdapter(): {
 		extensionTransport.send({ type: "uiMoveIntent", moves });
 	};
 
+	const enableTestMode = (): void => {
+		console.log("[Sidepanel] Enabling test mode");
+		extensionTransport.send({ type: "enableTestMode" });
+	};
+
+	const getTabCreatedEvents = (): Promise<TabCreatedEvent[]> => {
+		return new Promise((resolve) => {
+			tabCreatedEventsResolve = resolve;
+			extensionTransport.send({ type: "getTabCreatedEvents" });
+		});
+	};
+
+	const clearTabCreatedEvents = (): void => {
+		extensionTransport.send({ type: "clearTabCreatedEvents" });
+	};
+
+	const injectBrowserEvent = (event: InjectBrowserEvent): void => {
+		extensionTransport.send({ type: "injectBrowserEvent", event });
+	};
+
 	return {
 		transport,
 		resetDatabase,
 		sendMoveIntent,
+		enableTestMode,
+		injectBrowserEvent,
+		getTabCreatedEvents,
+		clearTabCreatedEvents,
 		dispose: () => transport.dispose?.(),
 	};
 }

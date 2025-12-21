@@ -4,7 +4,9 @@
  * to Playwright tests via window.__tabCanopyTestHelpers
  */
 
+import { browser } from "wxt/browser";
 import type * as schema from "@/schema/src/schema";
+import type { TabCreatedEvent } from "../createIDBTransportAdapter";
 
 // Types for test helpers
 export interface TabTreeNode {
@@ -187,6 +189,18 @@ export function createTestHelpers(
 	};
 }
 
+export type InjectBrowserEvent =
+	| { eventType: "tabs.onCreated"; eventData: Browser.tabs.Tab }
+	| { eventType: "tabs.onUpdated"; eventData: { tabId: number; changeInfo: Browser.tabs.OnUpdatedInfo; tab: Browser.tabs.Tab } }
+	| { eventType: "tabs.onMoved"; eventData: { tabId: number; moveInfo: Browser.tabs.OnMovedInfo } }
+	| { eventType: "tabs.onRemoved"; eventData: { tabId: number; removeInfo: Browser.tabs.OnRemovedInfo } }
+	| { eventType: "tabs.onActivated"; eventData: Browser.tabs.OnActivatedInfo }
+	| { eventType: "tabs.onDetached"; eventData: { tabId: number; detachInfo: Browser.tabs.OnDetachedInfo } }
+	| { eventType: "tabs.onAttached"; eventData: { tabId: number; attachInfo: Browser.tabs.OnAttachedInfo } }
+	| { eventType: "windows.onCreated"; eventData: Browser.windows.Window }
+	| { eventType: "windows.onRemoved"; eventData: number }
+	| { eventType: "windows.onFocusChanged"; eventData: number };
+
 /**
  * Browser API test actions interface
  */
@@ -198,6 +212,28 @@ export interface BrowserTestActions {
 		tabId: number,
 		moveProperties: { windowId?: number; index: number },
 	) => Promise<void>;
+	
+	/**
+	 * Create a tab with specific properties (for testing openerTabId scenarios)
+	 */
+	createTab: (
+		createProperties: { url?: string; openerTabId?: number; index?: number },
+	) => Promise<number>; // Returns the new tab ID
+	
+	/**
+	 * Inject a fake browser event for testing (only works in test mode)
+	 */
+	injectBrowserEvent: (event: InjectBrowserEvent) => Promise<void>;
+	
+	/**
+	 * Get tab created events from background script (for testing)
+	 */
+	getTabCreatedEvents: () => Promise<TabCreatedEvent[]>;
+	
+	/**
+	 * Clear tab created events from background script (for testing)
+	 */
+	clearTabCreatedEvents: () => Promise<void>;
 }
 
 /**
@@ -225,7 +261,12 @@ export function exposeCurrentTreeStateForTests(
  * Expose browser API test actions to Playwright tests
  * This allows tests to trigger actual browser API calls
  */
-export function exposeBrowserTestActions(): void {
+export function exposeBrowserTestActions(testActions?: {
+	enableTestMode: () => void;
+	injectBrowserEvent: (event: InjectBrowserEvent) => void;
+	getTabCreatedEvents: () => Promise<TabCreatedEvent[]>;
+	clearTabCreatedEvents: () => void;
+}): void {
 	if (typeof window === "undefined") return;
 
 	// Check if we're in test mode
@@ -235,11 +276,34 @@ export function exposeBrowserTestActions(): void {
 
 	if (!isTestMode) return;
 
+	// Enable test mode in background if test actions are available
+	if (testActions) {
+		console.log("[Sidepanel] Enabling test mode via test actions");
+		testActions.enableTestMode();
+	}
+
 	// Expose browser API actions
 	const actions: BrowserTestActions = {
 		moveTab: async (tabId: number, moveProperties) => {
 			await browser.tabs.move(tabId, moveProperties);
 		},
+		
+		createTab: async (createProperties) => {
+			const tab = await browser.tabs.create(createProperties);
+			if (!tab.id) {
+				throw new Error("Created tab has no ID");
+			}
+			return tab.id;
+		},
+		
+		injectBrowserEvent: testActions
+			? async (event) => { testActions.injectBrowserEvent(event); }
+			: async () => {},
+		
+		getTabCreatedEvents: testActions?.getTabCreatedEvents || (async () => []),
+		clearTabCreatedEvents: testActions
+			? async () => { testActions.clearTabCreatedEvents(); }
+			: async () => {},
 	};
 
 	(window as Window & { __tabCanopyBrowserActions?: BrowserTestActions }).__tabCanopyBrowserActions = actions;

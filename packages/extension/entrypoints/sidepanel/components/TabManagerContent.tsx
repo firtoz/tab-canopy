@@ -24,11 +24,13 @@ import {
 	useRegisterStateGetter,
 	useResetDatabase,
 	useSendMoveIntent,
+	useTestActions,
 } from "../App";
 import { cn } from "../lib/cn";
 import { useDevTools } from "../lib/devtools";
 import { type DropDataNewWindow, isDropData } from "../lib/dnd-types";
 import { exposeBrowserTestActions, exposeCurrentTreeStateForTests } from "../lib/test-helpers";
+import { generateKeyBetween, generateNKeysBetween } from "fractional-indexing";
 import {
 	buildTabTree,
 	calculateTreeMove,
@@ -140,6 +142,7 @@ export const TabManagerContent = () => {
 	const resetDatabase = useResetDatabase();
 	const sendMoveIntent = useSendMoveIntent();
 	const registerStateGetter = useRegisterStateGetter();
+	const testActions = useTestActions();
 	const { recordUserEvent } = useDevTools();
 	const [isResetting, setIsResetting] = useState(false);
 
@@ -169,8 +172,8 @@ export const TabManagerContent = () => {
 
 	// Expose browser test actions once on mount
 	useEffect(() => {
-		exposeBrowserTestActions();
-	}, []);
+		exposeBrowserTestActions(testActions);
+	}, [testActions]);
 
 	const [currentWindowId, setCurrentWindowId] = useState<number | undefined>();
 	const [selectedTabIds, setSelectedTabIds] = useState<Set<number>>(new Set());
@@ -310,6 +313,110 @@ export const TabManagerContent = () => {
 			});
 		},
 		[tabs, tabCollection, recordUserEvent],
+	);
+
+	// Handle tab close with children
+	const handleCloseTab = useCallback(
+		async (browserTabId: number) => {
+			if (!tabs) return;
+
+			const tab = tabs.find((t) => t.browserTabId === browserTabId);
+			if (!tab) return;
+
+			// Record user event for DevTools
+			recordUserEvent({
+				type: "user.tabClose",
+				data: {
+					tabId: browserTabId,
+					windowId: tab.browserWindowId,
+				},
+			});
+
+			// Find all children of this tab
+			const children = tabs.filter((t) => t.parentTabId === browserTabId);
+
+			if (children.length > 0) {
+				if (tab.isCollapsed) {
+					// If collapsed, close all children recursively first, then the parent
+					const allDescendantIds = getDescendantIds(tabs, browserTabId);
+					// Close all descendants
+					await browser.tabs.remove(allDescendantIds);
+				} else {
+					// If expanded, detach children and reconnect to parent's parent
+					const newParentId = tab.parentTabId; // null for root, or parent's parent
+					const windowTabs = tabs.filter(
+						(t) => t.browserWindowId === tab.browserWindowId,
+					);
+
+					// Get siblings of the closing tab at its current level
+					const siblings = windowTabs
+						.filter((t) => t.parentTabId === tab.parentTabId)
+						.sort((a, b) => a.treeOrder.localeCompare(b.treeOrder));
+					
+					const currentIndex = siblings.findIndex(
+						(t) => t.browserTabId === browserTabId,
+					);
+
+					// Calculate tree order positions for children
+					// They should be inserted where the parent was
+					const prevSibling = currentIndex > 0 ? siblings[currentIndex - 1] : null;
+					const nextSibling = currentIndex < siblings.length - 1 ? siblings[currentIndex + 1] : null;
+
+					// Sort children by their current tree order to maintain relative positions
+					const sortedChildren = [...children].sort((a, b) => a.treeOrder.localeCompare(b.treeOrder));
+					
+					// Generate new tree orders for all children at once
+					const newTreeOrders = generateNKeysBetween(
+						prevSibling?.treeOrder || null,
+						nextSibling?.treeOrder || null,
+						sortedChildren.length
+					);
+					
+					const childUpdates = sortedChildren.map((child, index) => ({
+						childId: child.id,
+						parentTabId: newParentId,
+						treeOrder: newTreeOrders[index],
+					}));
+
+					// Apply all updates to database
+					for (const update of childUpdates) {
+						tabCollection.update(update.childId, (draft) => {
+							draft.parentTabId = update.parentTabId;
+							draft.treeOrder = update.treeOrder;
+						});
+					}
+
+					// Small delay to let database updates propagate
+					await new Promise(resolve => setTimeout(resolve, 50));
+				}
+			}
+
+			// Finally, close the tab itself
+			await browser.tabs.remove(browserTabId);
+		},
+		[tabs, tabCollection, recordUserEvent],
+	);
+
+	// Handle window close
+	const handleCloseWindow = useCallback(
+		async (browserWindowId: number) => {
+			if (!windows) return;
+
+			const win = windows.find((w) => w.browserWindowId === browserWindowId);
+			if (!win) return;
+
+			// Record user event for DevTools
+			recordUserEvent({
+				type: "user.windowClose",
+				data: {
+					windowId: browserWindowId,
+				},
+			});
+
+			// Close the window (all tabs will be closed automatically)
+			await browser.windows.remove(browserWindowId);
+		},
+		[windows, recordUserEvent],
 	);
 
 	const handleDragEnd = useCallback(
@@ -717,6 +824,7 @@ export const TabManagerContent = () => {
 		return <div className="p-4 text-center text-zinc-500">Loading tabs...</div>;
 	}
 
+
 	return (
 		<DndContext
 			sensors={sensors}
@@ -732,11 +840,13 @@ export const TabManagerContent = () => {
 					"p-4 max-w-full min-h-screen bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white/90 flex flex-col",
 				)}
 			>
-				<div className="flex items-center justify-between mb-4">
-					<h1 className="text-2xl font-semibold m-0">
-						{import.meta.env.EXT_NAME ?? "Tab Canopy"}
-					</h1>
-					<div className="flex items-center gap-2">
+			<div className="flex items-center justify-between">
+				<img
+					src={import.meta.env.DEV ? "/icon-dev/128.png" : "/icon/128.png"}
+					alt="Tab Canopy"
+					className="size-6"
+				/>
+				<div className="flex items-center gap-2">
 						<button
 							type="button"
 							className={cn(
@@ -782,6 +892,8 @@ export const TabManagerContent = () => {
 							lastSelectedTabId={lastSelectedTabId}
 							setLastSelectedTabId={setLastSelectedTabId}
 							onToggleCollapse={handleToggleCollapse}
+							onCloseTab={handleCloseTab}
+							onCloseWindow={handleCloseWindow}
 						/>
 					))}
 				</div>

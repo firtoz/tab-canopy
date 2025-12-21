@@ -25,6 +25,7 @@
 		"@dnd-kit/utilities": "^3.2.2",
 		"@firtoz/drizzle-indexeddb": "^0.5.0",
 		"@firtoz/drizzle-utils": "^0.3.0",
+		"@firtoz/maybe-error": "^1.5.1",
 		"@tanstack/db": "^0.5.11",
 		"@tanstack/react-db": "^0.1.55",
 		"@webext-core/messaging": "^2.3.0",

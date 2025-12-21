@@ -41,4 +41,11 @@ export const setupWindowListeners = (dbOps: DbOperations) => {
 	browser.windows.onFocusChanged.addListener(
 		queuedHandler("windows.onFocusChanged", handleWindowFocusChanged),
 	);
+
+	// Export handlers for testing (so we can inject fake events)
+	return {
+		handleWindowCreated,
+		handleWindowRemoved,
+		handleWindowFocusChanged,
+	};
 };

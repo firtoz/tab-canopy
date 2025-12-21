@@ -193,6 +193,14 @@ export interface UserSelectionChangeEvent {
 	};
 }
 
+export interface UserWindowCloseEvent {
+	type: "user.windowClose";
+	timestamp: number;
+	data: {
+		windowId: number;
+	};
+}
+
 // ============================================================================
 // Chrome State Snapshot - captures actual browser tab order
 // ============================================================================
@@ -223,6 +231,7 @@ export type UserEvent =
 	| UserTabActivateEvent
 	| UserToggleCollapseEvent
 	| UserSelectionChangeEvent
+	| UserWindowCloseEvent
 	| ChromeStateSnapshotEvent;
 
 // ============================================================================

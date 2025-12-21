@@ -17,7 +17,6 @@ import { createTab, expect, test } from "./fixtures";
  *   - isAncestor(ancestorId, descendantId): Check ancestry
  *
  * - waitForTab(url): Wait for a tab with specific URL to appear
- * - waitForTabCount(count): Wait for a specific number of tabs
  * - getTabByUrl(url): Get tab info by URL
  * - getTabElement(tabId): Get Playwright locator for a tab by its ID
  * - verifyParentChild(parentId, childId): Check parent-child relationship
@@ -36,20 +35,11 @@ test.describe("Tab Tree Management", () => {
 		sidepanel,
 		treeHelpers,
 	}) => {
-		// Get initial tab count using test helpers
-		const helpers = await treeHelpers.getHelpers();
-		const initialCount = helpers.getAllTabs().length;
-
-		console.log("Initial tab count:", initialCount);
-
 		// Create a new tab
 		const newPage = await createTab(context, "https://example.com", sidepanel);
 
 		// Wait for the new tab to appear
-		await treeHelpers.waitForTabCount(initialCount + 1);
-
-		// Get the new tab info
-		const newTabInfo = await treeHelpers.getTabByUrl("example.com");
+		const newTabInfo = await treeHelpers.waitForTab("example.com");
 		expect(newTabInfo).toBeDefined();
 		expect(newTabInfo?.url).toContain("example.com");
 
@@ -564,5 +554,218 @@ test.describe("Tab Movement with Children", () => {
 		await tabB.close();
 		await tabC.close();
 		await tabD.close();
+	});
+
+	test("window.open from tab should create child when position allows", async ({
+		context,
+		sidepanel,
+		treeHelpers,
+	}) => {
+		// Clear any previous events
+		await treeHelpers.clearTabCreatedEvents();
+		
+		// Create 3 tabs in order: about:blank/?1, about:blank/?2, about:blank/?3
+		const tab1 = await createTab(context, "about:blank/?1", sidepanel);
+		await treeHelpers.waitForTab("about:blank/?1");
+		
+		const tab2 = await createTab(context, "about:blank/?2", sidepanel);
+		await treeHelpers.waitForTab("about:blank/?2");
+		
+		const tab3 = await createTab(context, "about:blank/?3", sidepanel);
+		await treeHelpers.waitForTab("about:blank/?3");
+
+		// Get tab1's browser ID for verification
+		const tab1Info = await treeHelpers.getTabByUrl("about:blank/?1");
+		expect(tab1Info).toBeDefined();
+		console.log("Tab1 browser ID:", tab1Info!.id);
+
+		// Focus tab1 and open a new tab from it
+		// window.open() will place the new tab right after tab1, which allows it to be a child
+		await tab1.bringToFront();
+		
+		// Get the current tab count before opening new tab
+		const helpers = await treeHelpers.getHelpers();
+		const tabCountBefore = helpers.getAllTabs().length;
+		
+		// Open a new tab from tab1 using window.open() which sets openerTabId
+		// Use a unique URL so we can identify it
+		const [newTab4] = await Promise.all([
+			context.waitForEvent('page'),
+			tab1.evaluate(() => {
+				// @ts-ignore - window is available in browser context
+				window.open('about:blank?child-of-1', '_blank');
+			}),
+		]);
+		
+		// Wait for the new tab to appear
+		const newTab = await treeHelpers.waitForTab("about:blank?child-of-1");
+		
+		expect(newTab).toBeDefined();
+		console.log("New tab:", newTab);
+		
+		// Get the tab created events from the background script
+		const events = await treeHelpers.getTabCreatedEvents();
+		console.log("Tab created events:", JSON.stringify(events, null, 2));
+		
+		// Find the event for the new tab using the unique URL
+		const newTabEvent = events.find(e => e.tabId === newTab.id);
+		expect(newTabEvent).toBeDefined();
+		console.log("New tab event:", newTabEvent);
+		
+		// Verify the event has the correct openerTabId
+		expect(newTabEvent!.openerTabId).toBe(tab1Info!.id);
+		
+		// Verify the extension decided to make it a child (because position allows it)
+		// window.open() places the new tab right after tab1, which is a valid child position
+		expect(newTabEvent!.decidedParentId).toBe(tab1Info!.id);
+		expect(newTabEvent!.reason).toContain("allows child");
+		
+		// The new tab SHOULD be a child of tab1 because it was placed right after tab1
+		expect(newTab!.parentId).toBe(tab1Info!.id);
+		
+		// Verify tab1 has one child - get fresh helpers after the tab was created
+		const helpersAfter = await treeHelpers.getHelpers();
+		const tab1Children = helpersAfter.getChildren(tab1Info!.id);
+		expect(tab1Children.length).toBe(1);
+		expect(tab1Children[0].id).toBe(newTab.id);
+
+		await tab1.close();
+		await tab2.close();
+		await tab3.close();
+		await newTab4.close();
+	});
+
+	test("attempting real ctrl-t keyboard shortcut (expected to fail)", async ({
+		context,
+		sidepanel,
+		treeHelpers,
+	}) => {
+		// This test attempts to use keyboard.press('Control+t') to open a new tab
+		// According to Playwright docs, this should NOT work because:
+		// "events injected via CDP are marked as 'untrusted' and won't trigger browser UI actions"
+		
+		// Clear any previous events
+		await treeHelpers.clearTabCreatedEvents();
+		
+		// Create a tab
+		const tab1 = await createTab(context, "about:blank/?1", sidepanel);
+		await treeHelpers.waitForTab("about:blank/?1");
+		
+		const tab1Info = await treeHelpers.getTabByUrl("about:blank/?1");
+		expect(tab1Info).toBeDefined();
+		
+		// Get initial tab count
+		const helpers = await treeHelpers.getHelpers();
+		const tabCountBefore = helpers.getAllTabs().length;
+		
+		// Focus tab1 and try Ctrl+T
+		await tab1.bringToFront();
+		
+		// Try the keyboard shortcut
+		await tab1.keyboard.press('Control+t');
+		
+		// Wait a bit to see if a new tab appears
+		await sidepanel.waitForTimeout(1000);
+		
+		// Check if tab count changed
+		const helpersAfter = await treeHelpers.getHelpers();
+		const tabCountAfter = helpersAfter.getAllTabs().length;
+		
+		console.log(`Tab count before: ${tabCountBefore}, after: ${tabCountAfter}`);
+		
+		// We expect this to NOT work (tab count should be the same)
+		expect(tabCountAfter).toBe(tabCountBefore);
+		console.log("✓ Confirmed: keyboard.press('Control+t') does NOT open a new tab (as expected)");
+		
+		await tab1.close();
+	});
+
+	test("tab with openerTabId placed at end should become sibling (ctrl-t scenario)", async ({
+		context,
+		sidepanel,
+		treeHelpers,
+	}) => {
+		// This test simulates what happens with Ctrl+T:
+		// - Tab has an openerTabId (opened FROM another tab)
+		// - But browser places it at the end of the tab list
+		// - So it should NOT be a child (position prevents it)
+		
+		// Clear any previous events
+		await treeHelpers.clearTabCreatedEvents();
+		
+		// Create 3 tabs in order
+		const tab1 = await createTab(context, "about:blank/?1", sidepanel);
+		await treeHelpers.waitForTab("about:blank/?1");
+		
+		const tab2 = await createTab(context, "about:blank/?2", sidepanel);
+		await treeHelpers.waitForTab("about:blank/?2");
+		
+		const tab3 = await createTab(context, "about:blank/?3", sidepanel);
+		await treeHelpers.waitForTab("about:blank/?3");
+
+		// Get tab1's info and current state
+		const tab1Info = await treeHelpers.getTabByUrl("about:blank/?1");
+		expect(tab1Info).toBeDefined();
+		
+		const helpers = await treeHelpers.getHelpers();
+		const allTabs = helpers.getAllTabs();
+		const maxIndex = Math.max(...allTabs.map(t => t.index));
+		
+		// Get the window ID from one of the existing tabs
+		const windowId = tab1Info!.windowId;
+		
+		// Generate a fake tab ID (high number to avoid conflicts)
+		const fakeTabId = 999999;
+		
+		// Inject a fake tabs.onCreated event with openerTabId but placed at the end
+		// This simulates Ctrl+T: has opener but browser places it at the end
+		await treeHelpers.injectBrowserEvent({
+			eventType: "tabs.onCreated",
+			eventData: {
+				id: fakeTabId,
+				windowId: windowId,
+				index: maxIndex + 1, // Place at the end
+				url: "about:blank?ctrl-t-injected",
+				title: "Ctrl+T Test",
+				openerTabId: tab1Info!.id, // Has opener (like Ctrl+T)
+			},
+		});
+		
+		// Wait a bit for the event to be processed
+		await sidepanel.waitForTimeout(200);
+		
+		// Get the tab created events
+		const events = await treeHelpers.getTabCreatedEvents();
+		console.log("Tab created events:", JSON.stringify(events, null, 2));
+		
+		// Find the event for the injected tab
+		const newTabEvent = events.find(e => e.tabId === fakeTabId);
+		expect(newTabEvent).toBeDefined();
+		console.log("Injected tab event:", newTabEvent);
+		
+		// Verify the event has the correct openerTabId
+		expect(newTabEvent!.openerTabId).toBe(tab1Info!.id);
+		
+		// Verify the extension decided NOT to make it a child (because position prevents it)
+		expect(newTabEvent!.decidedParentId).toBeNull();
+		expect(newTabEvent!.reason).toContain("prevents child");
+		
+		// Verify in the tree structure
+		const helpersAfter = await treeHelpers.getHelpers();
+		const injectedTab = helpersAfter.getTabById(fakeTabId);
+		
+		if (injectedTab) {
+			// The injected tab should NOT be a child of tab1 because it was placed at the end
+			expect(injectedTab.parentId).toBeNull();
+		}
+		
+		// Verify tab1 has no children
+		const tab1Children = helpersAfter.getChildren(tab1Info!.id);
+		expect(tab1Children.length).toBe(0);
+
+		// Close real tabs
+		await tab1.close();
+		await tab2.close();
+		await tab3.close();
 	});
 });

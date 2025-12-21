@@ -69,33 +69,86 @@ export const useRegisterStateGetter = () => {
 };
 
 // ============================================================================
+// Test Actions Context (for test helpers)
+// ============================================================================
+
+import type { TabCreatedEvent } from "./createIDBTransportAdapter";
+
+export interface TestActions {
+	enableTestMode: () => void;
+	injectBrowserEvent: (event: import("./createIDBTransportAdapter").InjectBrowserEvent) => void;
+	getTabCreatedEvents: () => Promise<TabCreatedEvent[]>;
+	clearTabCreatedEvents: () => void;
+}
+
+const TestActionsContext = createContext<TestActions | null>(null);
+
+export const useTestActions = () => {
+	const ctx = useContext(TestActionsContext);
+	if (!ctx) {
+		throw new Error("useTestActions must be used within App");
+	}
+	return ctx;
+};
+
+// ============================================================================
 // Main App with Provider
 // ============================================================================
 
 function App() {
 	const [isReady, setIsReady] = useState(false);
-	const adapterRef = useRef<ReturnType<
-		typeof createIDBTransportAdapter
-	> | null>(null);
+	const [connectionKey, setConnectionKey] = useState(0);
 	const stateGetterRef = useRef<StateGetter>(() => ({ windows: [], tabs: [] }));
+	const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+	const prevAdapterRef = useRef<ReturnType<typeof createIDBTransportAdapter> | null>(null);
 
-	// Create transport adapter
-	const { dbCreator, handleSyncReady, resetDatabase, sendMoveIntent } =
-		useMemo(() => {
-			const adapter = createIDBTransportAdapter();
-			adapterRef.current = adapter;
+	// Create transport adapter - only when connectionKey changes
+	const { dbCreator, handleSyncReady, resetDatabase, sendMoveIntent, enableTestMode, injectBrowserEvent, getTabCreatedEvents, clearTabCreatedEvents } = useMemo(() => {
+		// Clean up previous adapter if it exists
+		if (prevAdapterRef.current) {
+			console.log("[App] Disposing previous adapter");
+			try {
+				prevAdapterRef.current.dispose();
+			} catch (e) {
+				console.warn("[App] Error disposing adapter:", e);
+			}
+		}
 
-			const dbCreator = createProxyDbCreator(adapter.transport);
+		console.log("[App] Creating new adapter (connectionKey:", connectionKey, ")");
+		const adapter = createIDBTransportAdapter({
+			onDisconnect: () => {
+				console.log("[App] Connection lost, will reconnect");
+				setIsReady(false);
+				
+				// Clear any existing reconnect timer
+				if (reconnectTimerRef.current) {
+					clearTimeout(reconnectTimerRef.current);
+				}
+				
+				// Debounce reconnection to avoid rapid reconnects during HMR
+				reconnectTimerRef.current = setTimeout(() => {
+					console.log("[App] Triggering reconnection");
+					setConnectionKey((prev) => prev + 1);
+				}, 100);
+			},
+		});
+		
+		prevAdapterRef.current = adapter;
+		const dbCreator = createProxyDbCreator(adapter.transport);
 
-			return {
-				dbCreator,
-				handleSyncReady: (handler: (message: IDBProxySyncMessage) => void) => {
-					adapter.transport.onSync(handler);
-				},
-				resetDatabase: adapter.resetDatabase,
-				sendMoveIntent: adapter.sendMoveIntent,
-			};
-		}, []);
+		return {
+			dbCreator,
+			handleSyncReady: (handler: (message: IDBProxySyncMessage) => void) => {
+				adapter.transport.onSync(handler);
+			},
+			resetDatabase: adapter.resetDatabase,
+			sendMoveIntent: adapter.sendMoveIntent,
+			enableTestMode: adapter.enableTestMode,
+			injectBrowserEvent: adapter.injectBrowserEvent,
+			getTabCreatedEvents: adapter.getTabCreatedEvents,
+			clearTabCreatedEvents: adapter.clearTabCreatedEvents,
+		};
+	}, [connectionKey]);
 
 	const stateGetterContextValue = useMemo(
 		() => ({
@@ -106,16 +159,35 @@ function App() {
 		[],
 	);
 
+	const testActionsValue = useMemo<TestActions>(
+		() => ({
+			enableTestMode,
+			injectBrowserEvent,
+			getTabCreatedEvents,
+			clearTabCreatedEvents,
+		}),
+		[enableTestMode, injectBrowserEvent, getTabCreatedEvents, clearTabCreatedEvents],
+	);
+
 	const getCurrentState = useMemo(() => {
 		return () => stateGetterRef.current();
 	}, []);
 
 	useEffect(() => {
-		setIsReady(true);
+		// Small delay to ensure connection is established
+		const timer = setTimeout(() => {
+			setIsReady(true);
+		}, 50);
+		
 		return () => {
-			adapterRef.current?.dispose();
+			clearTimeout(timer);
+			if (reconnectTimerRef.current) {
+				clearTimeout(reconnectTimerRef.current);
+			}
+			// Only dispose on unmount, not on connectionKey change
+			// (disposal is handled in the ref logic above)
 		};
-	}, []);
+	}, [connectionKey]);
 
 	if (!isReady) {
 		return <div className="p-4 text-center text-zinc-500">Connecting...</div>;
@@ -124,20 +196,23 @@ function App() {
 	return (
 		<ResetDatabaseContext.Provider value={resetDatabase}>
 			<SendMoveIntentContext.Provider value={sendMoveIntent}>
-				<StateGetterContext.Provider value={stateGetterContextValue}>
-					<DevToolsProvider getCurrentState={getCurrentState}>
-						<DrizzleIndexedDBProvider
-							dbName={DB_NAME}
-							schema={schema}
-							dbCreator={dbCreator}
-							onSyncReady={handleSyncReady}
-						>
-							<TabManagerContent />
-							<DevToolsPanel />
-							<DevToolsToggle />
-						</DrizzleIndexedDBProvider>
-					</DevToolsProvider>
-				</StateGetterContext.Provider>
+				<TestActionsContext.Provider value={testActionsValue}>
+					<StateGetterContext.Provider value={stateGetterContextValue}>
+						<DevToolsProvider getCurrentState={getCurrentState}>
+							<DrizzleIndexedDBProvider
+								key={connectionKey}
+								dbName={DB_NAME}
+								schema={schema}
+								dbCreator={dbCreator}
+								onSyncReady={handleSyncReady}
+							>
+								<TabManagerContent />
+								<DevToolsPanel />
+								<DevToolsToggle />
+							</DrizzleIndexedDBProvider>
+						</DevToolsProvider>
+					</StateGetterContext.Provider>
+				</TestActionsContext.Provider>
 			</SendMoveIntentContext.Provider>
 		</ResetDatabaseContext.Provider>
 	);
