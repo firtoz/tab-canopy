@@ -191,12 +191,31 @@ export function createTestHelpers(
 
 export type InjectBrowserEvent =
 	| { eventType: "tabs.onCreated"; eventData: Browser.tabs.Tab }
-	| { eventType: "tabs.onUpdated"; eventData: { tabId: number; changeInfo: Browser.tabs.OnUpdatedInfo; tab: Browser.tabs.Tab } }
-	| { eventType: "tabs.onMoved"; eventData: { tabId: number; moveInfo: Browser.tabs.OnMovedInfo } }
-	| { eventType: "tabs.onRemoved"; eventData: { tabId: number; removeInfo: Browser.tabs.OnRemovedInfo } }
+	| {
+			eventType: "tabs.onUpdated";
+			eventData: {
+				tabId: number;
+				changeInfo: Browser.tabs.OnUpdatedInfo;
+				tab: Browser.tabs.Tab;
+			};
+	  }
+	| {
+			eventType: "tabs.onMoved";
+			eventData: { tabId: number; moveInfo: Browser.tabs.OnMovedInfo };
+	  }
+	| {
+			eventType: "tabs.onRemoved";
+			eventData: { tabId: number; removeInfo: Browser.tabs.OnRemovedInfo };
+	  }
 	| { eventType: "tabs.onActivated"; eventData: Browser.tabs.OnActivatedInfo }
-	| { eventType: "tabs.onDetached"; eventData: { tabId: number; detachInfo: Browser.tabs.OnDetachedInfo } }
-	| { eventType: "tabs.onAttached"; eventData: { tabId: number; attachInfo: Browser.tabs.OnAttachedInfo } }
+	| {
+			eventType: "tabs.onDetached";
+			eventData: { tabId: number; detachInfo: Browser.tabs.OnDetachedInfo };
+	  }
+	| {
+			eventType: "tabs.onAttached";
+			eventData: { tabId: number; attachInfo: Browser.tabs.OnAttachedInfo };
+	  }
 	| { eventType: "windows.onCreated"; eventData: Browser.windows.Window }
 	| { eventType: "windows.onRemoved"; eventData: number }
 	| { eventType: "windows.onFocusChanged"; eventData: number };
@@ -212,24 +231,26 @@ export interface BrowserTestActions {
 		tabId: number,
 		moveProperties: { windowId?: number; index: number },
 	) => Promise<void>;
-	
+
 	/**
 	 * Create a tab with specific properties (for testing openerTabId scenarios)
 	 */
-	createTab: (
-		createProperties: { url?: string; openerTabId?: number; index?: number },
-	) => Promise<number>; // Returns the new tab ID
-	
+	createTab: (createProperties: {
+		url?: string;
+		openerTabId?: number;
+		index?: number;
+	}) => Promise<number>; // Returns the new tab ID
+
 	/**
 	 * Inject a fake browser event for testing (only works in test mode)
 	 */
 	injectBrowserEvent: (event: InjectBrowserEvent) => Promise<void>;
-	
+
 	/**
 	 * Get tab created events from background script (for testing)
 	 */
 	getTabCreatedEvents: () => Promise<TabCreatedEvent[]>;
-	
+
 	/**
 	 * Clear tab created events from background script (for testing)
 	 */
@@ -270,9 +291,9 @@ export function exposeBrowserTestActions(testActions?: {
 	if (typeof window === "undefined") return;
 
 	// Check if we're in test mode
-	const isTestMode = (
-		window as Window & { __reportTabTreeState?: unknown }
-	).__reportTabTreeState !== undefined;
+	const isTestMode =
+		(window as Window & { __reportTabTreeState?: unknown })
+			.__reportTabTreeState !== undefined;
 
 	if (!isTestMode) return;
 
@@ -287,7 +308,7 @@ export function exposeBrowserTestActions(testActions?: {
 		moveTab: async (tabId: number, moveProperties) => {
 			await browser.tabs.move(tabId, moveProperties);
 		},
-		
+
 		createTab: async (createProperties) => {
 			const tab = await browser.tabs.create(createProperties);
 			if (!tab.id) {
@@ -295,18 +316,24 @@ export function exposeBrowserTestActions(testActions?: {
 			}
 			return tab.id;
 		},
-		
+
 		injectBrowserEvent: testActions
-			? async (event) => { testActions.injectBrowserEvent(event); }
+			? async (event) => {
+					testActions.injectBrowserEvent(event);
+				}
 			: async () => {},
-		
+
 		getTabCreatedEvents: testActions?.getTabCreatedEvents || (async () => []),
 		clearTabCreatedEvents: testActions
-			? async () => { testActions.clearTabCreatedEvents(); }
+			? async () => {
+					testActions.clearTabCreatedEvents();
+				}
 			: async () => {},
 	};
 
-	(window as Window & { __tabCanopyBrowserActions?: BrowserTestActions }).__tabCanopyBrowserActions = actions;
+	(
+		window as Window & { __tabCanopyBrowserActions?: BrowserTestActions }
+	).__tabCanopyBrowserActions = actions;
 
 	// Set up message listener to receive debug logs from background script
 	browser.runtime.onMessage.addListener((message) => {

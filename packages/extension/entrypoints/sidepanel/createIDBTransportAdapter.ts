@@ -4,6 +4,7 @@ import type {
 	IDBProxyResponse,
 	IDBProxySyncMessage,
 } from "@firtoz/drizzle-indexeddb";
+import type { Browser } from "wxt/browser";
 import {
 	type ClientMessage,
 	createExtensionClientTransport,
@@ -12,7 +13,6 @@ import {
 	type UiMoveIntentData,
 } from "@/src/idb-transport";
 import { log } from "../background/constants";
-import type { Browser } from "wxt/browser";
 
 // ============================================================================
 // Date Serialization Helpers
@@ -101,12 +101,31 @@ export interface TabCreatedEvent {
 
 export type InjectBrowserEvent =
 	| { eventType: "tabs.onCreated"; eventData: Browser.tabs.Tab }
-	| { eventType: "tabs.onUpdated"; eventData: { tabId: number; changeInfo: Browser.tabs.OnUpdatedInfo; tab: Browser.tabs.Tab } }
-	| { eventType: "tabs.onMoved"; eventData: { tabId: number; moveInfo: Browser.tabs.OnMovedInfo } }
-	| { eventType: "tabs.onRemoved"; eventData: { tabId: number; removeInfo: Browser.tabs.OnRemovedInfo } }
+	| {
+			eventType: "tabs.onUpdated";
+			eventData: {
+				tabId: number;
+				changeInfo: Browser.tabs.OnUpdatedInfo;
+				tab: Browser.tabs.Tab;
+			};
+	  }
+	| {
+			eventType: "tabs.onMoved";
+			eventData: { tabId: number; moveInfo: Browser.tabs.OnMovedInfo };
+	  }
+	| {
+			eventType: "tabs.onRemoved";
+			eventData: { tabId: number; removeInfo: Browser.tabs.OnRemovedInfo };
+	  }
 	| { eventType: "tabs.onActivated"; eventData: Browser.tabs.OnActivatedInfo }
-	| { eventType: "tabs.onDetached"; eventData: { tabId: number; detachInfo: Browser.tabs.OnDetachedInfo } }
-	| { eventType: "tabs.onAttached"; eventData: { tabId: number; attachInfo: Browser.tabs.OnAttachedInfo } }
+	| {
+			eventType: "tabs.onDetached";
+			eventData: { tabId: number; detachInfo: Browser.tabs.OnDetachedInfo };
+	  }
+	| {
+			eventType: "tabs.onAttached";
+			eventData: { tabId: number; attachInfo: Browser.tabs.OnAttachedInfo };
+	  }
 	| { eventType: "windows.onCreated"; eventData: Browser.windows.Window }
 	| { eventType: "windows.onRemoved"; eventData: number }
 	| { eventType: "windows.onFocusChanged"; eventData: number };
@@ -132,7 +151,8 @@ export function createIDBTransportAdapter(options?: {
 	>();
 	let syncHandler: ((message: IDBProxySyncMessage) => void) | null = null;
 	let resetResolve: (() => void) | null = null;
-	let tabCreatedEventsResolve: ((events: TabCreatedEvent[]) => void) | null = null;
+	let tabCreatedEventsResolve: ((events: TabCreatedEvent[]) => void) | null =
+		null;
 
 	const extensionTransport = createExtensionClientTransport<
 		ClientMessage,

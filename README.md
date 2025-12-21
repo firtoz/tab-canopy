@@ -132,7 +132,7 @@ bun lint:ci
 bun format
 
 # Type check
-bun compile
+bun typecheck
 ```
 
 ### Database

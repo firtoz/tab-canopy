@@ -16,7 +16,7 @@
 		"zip": "turbo run zip",
 		"zip:firefox": "turbo run zip:firefox",
 		"db:generate": "turbo run db:generate",
-		"compile": "turbo run compile",
+		"typecheck": "turbo run typecheck",
 		"lint": "turbo run lint",
 		"lint:ci": "turbo run lint:ci",
 		"format": "turbo run format",

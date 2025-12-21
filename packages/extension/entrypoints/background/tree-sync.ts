@@ -1,5 +1,5 @@
-import type { Tab } from "@/schema/src/schema";
 import { generateKeyBetween } from "fractional-indexing";
+import type { Tab } from "@/schema/src/schema";
 
 /**
  * Tree structure for a tab node
@@ -124,7 +124,11 @@ export function calculateTreePositionFromBrowserMove(
 	allTabs: Tab[],
 	movedTabId: number,
 	newBrowserIndex: number,
-): { parentTabId: number | null; treeOrder: string; childrenToFlatten?: number[] } {
+): {
+	parentTabId: number | null;
+	treeOrder: string;
+	childrenToFlatten?: number[];
+} {
 	// Build tree and flatten to get current logical order
 	const tree = buildTree(allTabs);
 	const flatList = flattenTree(tree);
@@ -137,7 +141,7 @@ export function calculateTreePositionFromBrowserMove(
 
 	// Check if the moved tab has any descendants
 	const descendants = getAllDescendants(allTabs, movedTabId);
-	
+
 	// Remove the moved tab (and its descendants) from flat list to see what's at each position
 	const withoutMovedAndDescendants = flatList.filter(
 		(t) => t.browserTabId !== movedTabId && !descendants.has(t.browserTabId),
@@ -151,7 +155,9 @@ export function calculateTreePositionFromBrowserMove(
 	if (descendants.size > 0) {
 		// Get the current browser index of each descendant in the flat list
 		for (const descendantId of descendants) {
-			const descendantTab = allTabs.find((t) => t.browserTabId === descendantId);
+			const descendantTab = allTabs.find(
+				(t) => t.browserTabId === descendantId,
+			);
 			if (!descendantTab) continue;
 
 			// Find where the descendant appears in the current flat list (tree order)
@@ -184,7 +190,7 @@ export function calculateTreePositionFromBrowserMove(
 			tabsByBrowserIndex.set(tab.tabIndex, tab);
 		}
 	}
-	
+
 	// Find the prev tab (highest browser index < newBrowserIndex)
 	let prevTab: Tab | null = null;
 	for (let i = newBrowserIndex - 1; i >= 0; i--) {
@@ -193,10 +199,11 @@ export function calculateTreePositionFromBrowserMove(
 			break;
 		}
 	}
-	
+
 	// Find the next tab (lowest browser index > newBrowserIndex)
 	let nextTab: Tab | null = null;
-	for (let i = newBrowserIndex + 1; i < allTabs.length + 10; i++) { // +10 buffer for safety
+	for (let i = newBrowserIndex + 1; i < allTabs.length + 10; i++) {
+		// +10 buffer for safety
 		if (tabsByBrowserIndex.has(i)) {
 			nextTab = tabsByBrowserIndex.get(i)!;
 			break;
@@ -268,7 +275,8 @@ export function calculateTreePositionFromBrowserMove(
 	return {
 		parentTabId: newParentId,
 		treeOrder,
-		childrenToFlatten: childrenToFlatten.length > 0 ? childrenToFlatten : undefined,
+		childrenToFlatten:
+			childrenToFlatten.length > 0 ? childrenToFlatten : undefined,
 	};
 }
 

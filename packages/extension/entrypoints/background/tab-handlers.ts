@@ -59,12 +59,12 @@ export function isTestModeEnabled(): boolean {
 function trackTabCreatedEvent(event: Omit<TabCreatedEvent, "timestamp">) {
 	// Only track events in test mode
 	if (!isTestMode) return;
-	
+
 	tabCreatedEvents.push({
 		...event,
 		timestamp: Date.now(),
 	});
-	
+
 	// Keep only last MAX_EVENT_HISTORY events
 	if (tabCreatedEvents.length > MAX_EVENT_HISTORY) {
 		tabCreatedEvents.shift();
@@ -290,7 +290,7 @@ export const setupTabListeners = (dbOps: DbOperations) => {
 		if (openerTabId && existingMap.has(openerTabId)) {
 			// This tab was opened from another tab (e.g., middle click, Ctrl+T)
 			// But we need to check if the browser position allows it to be a child
-			
+
 			const openerTab = existingMap.get(openerTabId);
 			if (!openerTab) {
 				// Shouldn't happen, but handle it
@@ -304,10 +304,12 @@ export const setupTabListeners = (dbOps: DbOperations) => {
 				}
 
 				const openerIndex = tabIndexMap.get(openerTabId);
-				
+
 				// Find the last descendant of the opener to determine valid child position range
 				const getLastDescendantIndex = (parentId: number): number => {
-					const children = existingTabs.filter((t) => t.parentTabId === parentId);
+					const children = existingTabs.filter(
+						(t) => t.parentTabId === parentId,
+					);
 					if (children.length === 0) {
 						return tabIndexMap.get(parentId) ?? -1;
 					}
@@ -319,7 +321,7 @@ export const setupTabListeners = (dbOps: DbOperations) => {
 				};
 
 				const lastDescendantIndex = getLastDescendantIndex(openerTabId);
-				
+
 				log(
 					"[Background] Tab opened from",
 					openerTabId,
@@ -345,14 +347,20 @@ export const setupTabListeners = (dbOps: DbOperations) => {
 					const siblings = existingTabs
 						.filter((t) => t.parentTabId === openerTabId)
 						.sort((a, b) =>
-							a.treeOrder < b.treeOrder ? -1 : a.treeOrder > b.treeOrder ? 1 : 0,
+							a.treeOrder < b.treeOrder
+								? -1
+								: a.treeOrder > b.treeOrder
+									? 1
+									: 0,
 						);
 
 					// Find where to insert based on the new tab's browser index
 					const siblingWithIndices = siblings
 						.map((s) => {
 							const browserIndex = tabIndexMap.get(s.browserTabId);
-							return browserIndex !== undefined ? { tab: s, browserIndex } : null;
+							return browserIndex !== undefined
+								? { tab: s, browserIndex }
+								: null;
 						})
 						.filter((s): s is { tab: Tab; browserIndex: number } => s !== null);
 
@@ -372,7 +380,8 @@ export const setupTabListeners = (dbOps: DbOperations) => {
 							if (
 								!insertBefore ||
 								sibling.browserIndex <
-									(tabIndexMap.get(insertBefore.browserTabId) ?? Number.MAX_VALUE)
+									(tabIndexMap.get(insertBefore.browserTabId) ??
+										Number.MAX_VALUE)
 							) {
 								insertBefore = sibling.tab;
 							}
@@ -388,7 +397,7 @@ export const setupTabListeners = (dbOps: DbOperations) => {
 						"[Background] Position allows child - setting as child with treeOrder:",
 						treeOrder,
 					);
-					
+
 					trackTabCreatedEvent({
 						tabId: tab.id,
 						openerTabId,
@@ -402,19 +411,24 @@ export const setupTabListeners = (dbOps: DbOperations) => {
 						"[Background] Position prevents child relationship - treating as root level sibling",
 					);
 					parentTabId = null;
-					
+
 					// Place at root level, positioned based on browser index
 					const rootTabs = existingTabs
 						.filter(
-							(t) => t.parentTabId === null && t.browserWindowId === tab.windowId,
+							(t) =>
+								t.parentTabId === null && t.browserWindowId === tab.windowId,
 						)
 						.sort((a, b) =>
-							a.treeOrder < b.treeOrder ? -1 : a.treeOrder > b.treeOrder ? 1 : 0,
+							a.treeOrder < b.treeOrder
+								? -1
+								: a.treeOrder > b.treeOrder
+									? 1
+									: 0,
 						);
 
 					const lastRoot = rootTabs[rootTabs.length - 1];
 					treeOrder = generateTreeOrder(lastRoot?.treeOrder, undefined);
-					
+
 					trackTabCreatedEvent({
 						tabId: tab.id,
 						openerTabId,
@@ -438,7 +452,7 @@ export const setupTabListeners = (dbOps: DbOperations) => {
 
 			const lastRoot = rootTabs[rootTabs.length - 1];
 			treeOrder = generateTreeOrder(lastRoot?.treeOrder, undefined);
-			
+
 			trackTabCreatedEvent({
 				tabId: tab.id,
 				openerTabId: undefined,
@@ -550,12 +564,14 @@ export const setupTabListeners = (dbOps: DbOperations) => {
 	// Helper to log to test context by sending message to sidepanel
 	const testLog = (message: string) => {
 		// Send message to all extension pages (sidepanel will receive it)
-		browser.runtime.sendMessage({
-			type: "TEST_DEBUG_LOG",
-			log: message,
-		}).catch(() => {
-			// Ignore errors if no listeners (not in test mode)
-		});
+		browser.runtime
+			.sendMessage({
+				type: "TEST_DEBUG_LOG",
+				log: message,
+			})
+			.catch(() => {
+				// Ignore errors if no listeners (not in test mode)
+			});
 	};
 
 	// Handler for tab moves
@@ -564,7 +580,9 @@ export const setupTabListeners = (dbOps: DbOperations) => {
 		moveInfo: Browser.tabs.OnMovedInfo,
 	) => {
 		log("[Background] Tab moved:", tabId, moveInfo);
-		testLog(`Tab moved: ${tabId} from ${moveInfo.fromIndex} to ${moveInfo.toIndex}`);
+		testLog(
+			`Tab moved: ${tabId} from ${moveInfo.fromIndex} to ${moveInfo.toIndex}`,
+		);
 
 		// First, check if this move was initiated by our UI
 		// The UI registers intent before calling browser.tabs.move() to avoid race conditions
@@ -737,7 +755,7 @@ export const setupTabListeners = (dbOps: DbOperations) => {
 		// After moving the tab, check if any of its descendants are now at a browser index
 		// before the parent. If so, flatten those descendants.
 		// This handles the case where a parent tab is moved past its children.
-		
+
 		// Get all descendants of the moved tab BEFORE the move (from existing DB state)
 		const getAllDescendantIds = (parentId: number): number[] => {
 			const descendants: number[] = [];
@@ -750,7 +768,9 @@ export const setupTabListeners = (dbOps: DbOperations) => {
 		};
 
 		const descendantIds = getAllDescendantIds(tabId);
-		testLog(`Found descendants: [${descendantIds.join(", ")}] for moved tab: ${tabId}`);
+		testLog(
+			`Found descendants: [${descendantIds.join(", ")}] for moved tab: ${tabId}`,
+		);
 
 		// Track which descendants were actually flattened so we don't overwrite them later
 		const flattenedDescendantIds: number[] = [];
@@ -780,7 +800,9 @@ export const setupTabListeners = (dbOps: DbOperations) => {
 
 				if (descendantsToFlatten.length > 0) {
 					log("[Background] Flattening descendants:", descendantsToFlatten);
-					testLog(`Flattening descendants: [${descendantsToFlatten.join(", ")}]`);
+					testLog(
+						`Flattening descendants: [${descendantsToFlatten.join(", ")}]`,
+					);
 					const childRecords: TabRecord[] = [];
 
 					// Get all tabs at the new parent level to calculate proper tree orders
@@ -792,7 +814,11 @@ export const setupTabListeners = (dbOps: DbOperations) => {
 								!descendantsToFlatten.includes(t.browserTabId),
 						)
 						.sort((a, b) =>
-							a.treeOrder < b.treeOrder ? -1 : a.treeOrder > b.treeOrder ? 1 : 0,
+							a.treeOrder < b.treeOrder
+								? -1
+								: a.treeOrder > b.treeOrder
+									? 1
+									: 0,
 						);
 
 					// For each child to flatten, give it the same parent as the moved tab
@@ -843,7 +869,9 @@ export const setupTabListeners = (dbOps: DbOperations) => {
 		// Also update indices of other affected tabs (preserve their tree structure)
 		// BUT exclude the flattened descendants, as we've already updated them
 		// ALSO: fix treeOrders for tabs that come after the moved section
-		testLog(`Flattened descendant IDs to exclude from other tabs update: [${flattenedDescendantIds.join(", ")}]`);
+		testLog(
+			`Flattened descendant IDs to exclude from other tabs update: [${flattenedDescendantIds.join(", ")}]`,
+		);
 
 		const existingMap = new Map<number, Tab>();
 		for (const tab of existingTabs) {
@@ -859,13 +887,15 @@ export const setupTabListeners = (dbOps: DbOperations) => {
 		const updatedTreeOrders = new Map<number, string>();
 		updatedTreeOrders.set(tabId, newTreeOrder);
 		for (const flattenedId of flattenedDescendantIds) {
-			const flattenedTab = existingTabs.find((t) => t.browserTabId === flattenedId);
+			const flattenedTab = existingTabs.find(
+				(t) => t.browserTabId === flattenedId,
+			);
 			// The flattened tab got a new treeOrder, but we need to know what it was
 			// For now, we'll regenerate it
 		}
 
 		const otherTabRecords: TabRecord[] = [];
-		
+
 		// For tabs that come after the moved tab, we need to ensure their treeOrders
 		// are greater than the moved tab's treeOrder to maintain correct sort order
 		let lastTreeOrderAtSameLevel = newTreeOrder;
@@ -926,7 +956,9 @@ export const setupTabListeners = (dbOps: DbOperations) => {
 			testLog(`Updating ${otherTabRecords.length} other tab records`);
 			// Log each tab's treeOrder for debugging
 			for (const record of otherTabRecords) {
-				testLog(`  Tab ${record.browserTabId}: treeOrder=${record.treeOrder}, parentId=${record.parentTabId}, index=${record.tabIndex}`);
+				testLog(
+					`  Tab ${record.browserTabId}: treeOrder=${record.treeOrder}, parentId=${record.parentTabId}, index=${record.tabIndex}`,
+				);
 			}
 			await putItems("tab", otherTabRecords);
 		}
@@ -939,7 +971,9 @@ export const setupTabListeners = (dbOps: DbOperations) => {
 		testLog("Final tab state after move:");
 		for (const bt of finalBrowserTabs.filter(hasTabIds)) {
 			const existing = finalExistingTabs.find((t) => t.browserTabId === bt.id);
-			testLog(`  Tab ${bt.id} @ index ${bt.index}: treeOrder=${existing?.treeOrder}, parentId=${existing?.parentTabId}`);
+			testLog(
+				`  Tab ${bt.id} @ index ${bt.index}: treeOrder=${existing?.treeOrder}, parentId=${existing?.parentTabId}`,
+			);
 		}
 	};
 

@@ -95,7 +95,7 @@
 				"biome.json"
 			]
 		},
-		"compile": {
+		"typecheck": {
 			"outputs": [],
 			"inputs": [
 				"packages/extension/entrypoints/**",

@@ -12,7 +12,7 @@
 		"zip": "wxt zip",
 		"zip:firefox": "wxt zip -b firefox",
 		"db:generate": "bun --bun drizzle-kit generate --config ./schema/drizzle.config.ts && bun --bun drizzle-indexeddb-generate -d './schema/drizzle'",
-		"compile": "tsc --noEmit",
+		"typecheck": "tsc --noEmit",
 		"postinstall": "wxt prepare",
 		"lint": "biome check --write .",
 		"lint:ci": "biome ci .",

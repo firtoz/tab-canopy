@@ -76,7 +76,9 @@ import type { TabCreatedEvent } from "./createIDBTransportAdapter";
 
 export interface TestActions {
 	enableTestMode: () => void;
-	injectBrowserEvent: (event: import("./createIDBTransportAdapter").InjectBrowserEvent) => void;
+	injectBrowserEvent: (
+		event: import("./createIDBTransportAdapter").InjectBrowserEvent,
+	) => void;
 	getTabCreatedEvents: () => Promise<TabCreatedEvent[]>;
 	clearTabCreatedEvents: () => void;
 }
@@ -100,10 +102,21 @@ function App() {
 	const [connectionKey, setConnectionKey] = useState(0);
 	const stateGetterRef = useRef<StateGetter>(() => ({ windows: [], tabs: [] }));
 	const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-	const prevAdapterRef = useRef<ReturnType<typeof createIDBTransportAdapter> | null>(null);
+	const prevAdapterRef = useRef<ReturnType<
+		typeof createIDBTransportAdapter
+	> | null>(null);
 
 	// Create transport adapter - only when connectionKey changes
-	const { dbCreator, handleSyncReady, resetDatabase, sendMoveIntent, enableTestMode, injectBrowserEvent, getTabCreatedEvents, clearTabCreatedEvents } = useMemo(() => {
+	const {
+		dbCreator,
+		handleSyncReady,
+		resetDatabase,
+		sendMoveIntent,
+		enableTestMode,
+		injectBrowserEvent,
+		getTabCreatedEvents,
+		clearTabCreatedEvents,
+	} = useMemo(() => {
 		// Clean up previous adapter if it exists
 		if (prevAdapterRef.current) {
 			console.log("[App] Disposing previous adapter");
@@ -114,17 +127,21 @@ function App() {
 			}
 		}
 
-		console.log("[App] Creating new adapter (connectionKey:", connectionKey, ")");
+		console.log(
+			"[App] Creating new adapter (connectionKey:",
+			connectionKey,
+			")",
+		);
 		const adapter = createIDBTransportAdapter({
 			onDisconnect: () => {
 				console.log("[App] Connection lost, will reconnect");
 				setIsReady(false);
-				
+
 				// Clear any existing reconnect timer
 				if (reconnectTimerRef.current) {
 					clearTimeout(reconnectTimerRef.current);
 				}
-				
+
 				// Debounce reconnection to avoid rapid reconnects during HMR
 				reconnectTimerRef.current = setTimeout(() => {
 					console.log("[App] Triggering reconnection");
@@ -132,7 +149,7 @@ function App() {
 				}, 100);
 			},
 		});
-		
+
 		prevAdapterRef.current = adapter;
 		const dbCreator = createProxyDbCreator(adapter.transport);
 
@@ -166,7 +183,12 @@ function App() {
 			getTabCreatedEvents,
 			clearTabCreatedEvents,
 		}),
-		[enableTestMode, injectBrowserEvent, getTabCreatedEvents, clearTabCreatedEvents],
+		[
+			enableTestMode,
+			injectBrowserEvent,
+			getTabCreatedEvents,
+			clearTabCreatedEvents,
+		],
 	);
 
 	const getCurrentState = useMemo(() => {
@@ -178,7 +200,7 @@ function App() {
 		const timer = setTimeout(() => {
 			setIsReady(true);
 		}, 50);
-		
+
 		return () => {
 			clearTimeout(timer);
 			if (reconnectTimerRef.current) {

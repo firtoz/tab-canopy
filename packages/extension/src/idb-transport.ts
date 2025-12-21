@@ -197,12 +197,12 @@ export function createExtensionClientTransport<TClientMsg, TServerMsg>(
 				console.warn("[Client] Attempted to send on disconnected port");
 				return;
 			}
-			
+
 			const portMessage: PortMessage<TClientMsg, TServerMsg> = {
 				direction: "toServer",
 				payload: message,
 			};
-			
+
 			try {
 				port.postMessage(portMessage);
 			} catch (e) {
@@ -263,12 +263,31 @@ export interface TabCreatedEvent {
  */
 export type InjectBrowserEvent =
 	| { eventType: "tabs.onCreated"; eventData: Browser.tabs.Tab }
-	| { eventType: "tabs.onUpdated"; eventData: { tabId: number; changeInfo: Browser.tabs.OnUpdatedInfo; tab: Browser.tabs.Tab } }
-	| { eventType: "tabs.onMoved"; eventData: { tabId: number; moveInfo: Browser.tabs.OnMovedInfo } }
-	| { eventType: "tabs.onRemoved"; eventData: { tabId: number; removeInfo: Browser.tabs.OnRemovedInfo } }
+	| {
+			eventType: "tabs.onUpdated";
+			eventData: {
+				tabId: number;
+				changeInfo: Browser.tabs.OnUpdatedInfo;
+				tab: Browser.tabs.Tab;
+			};
+	  }
+	| {
+			eventType: "tabs.onMoved";
+			eventData: { tabId: number; moveInfo: Browser.tabs.OnMovedInfo };
+	  }
+	| {
+			eventType: "tabs.onRemoved";
+			eventData: { tabId: number; removeInfo: Browser.tabs.OnRemovedInfo };
+	  }
 	| { eventType: "tabs.onActivated"; eventData: Browser.tabs.OnActivatedInfo }
-	| { eventType: "tabs.onDetached"; eventData: { tabId: number; detachInfo: Browser.tabs.OnDetachedInfo } }
-	| { eventType: "tabs.onAttached"; eventData: { tabId: number; attachInfo: Browser.tabs.OnAttachedInfo } }
+	| {
+			eventType: "tabs.onDetached";
+			eventData: { tabId: number; detachInfo: Browser.tabs.OnDetachedInfo };
+	  }
+	| {
+			eventType: "tabs.onAttached";
+			eventData: { tabId: number; attachInfo: Browser.tabs.OnAttachedInfo };
+	  }
 	| { eventType: "windows.onCreated"; eventData: Browser.windows.Window }
 	| { eventType: "windows.onRemoved"; eventData: number }
 	| { eventType: "windows.onFocusChanged"; eventData: number };

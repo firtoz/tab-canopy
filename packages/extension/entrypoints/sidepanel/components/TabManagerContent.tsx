@@ -17,6 +17,7 @@ import {
 // import { sortableKeyboardCoordinates } from "@dnd-kit/sortable";
 import { useDrizzleIndexedDB } from "@firtoz/drizzle-indexeddb";
 import { useLiveQuery } from "@tanstack/react-db";
+import { generateKeyBetween, generateNKeysBetween } from "fractional-indexing";
 import { RefreshCw, Settings } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type * as schema from "@/schema/src/schema";
@@ -29,8 +30,10 @@ import {
 import { cn } from "../lib/cn";
 import { useDevTools } from "../lib/devtools";
 import { type DropDataNewWindow, isDropData } from "../lib/dnd-types";
-import { exposeBrowserTestActions, exposeCurrentTreeStateForTests } from "../lib/test-helpers";
-import { generateKeyBetween, generateNKeysBetween } from "fractional-indexing";
+import {
+	exposeBrowserTestActions,
+	exposeCurrentTreeStateForTests,
+} from "../lib/test-helpers";
 import {
 	buildTabTree,
 	calculateTreeMove,
@@ -352,26 +355,32 @@ export const TabManagerContent = () => {
 					const siblings = windowTabs
 						.filter((t) => t.parentTabId === tab.parentTabId)
 						.sort((a, b) => a.treeOrder.localeCompare(b.treeOrder));
-					
+
 					const currentIndex = siblings.findIndex(
 						(t) => t.browserTabId === browserTabId,
 					);
 
 					// Calculate tree order positions for children
 					// They should be inserted where the parent was
-					const prevSibling = currentIndex > 0 ? siblings[currentIndex - 1] : null;
-					const nextSibling = currentIndex < siblings.length - 1 ? siblings[currentIndex + 1] : null;
+					const prevSibling =
+						currentIndex > 0 ? siblings[currentIndex - 1] : null;
+					const nextSibling =
+						currentIndex < siblings.length - 1
+							? siblings[currentIndex + 1]
+							: null;
 
 					// Sort children by their current tree order to maintain relative positions
-					const sortedChildren = [...children].sort((a, b) => a.treeOrder.localeCompare(b.treeOrder));
-					
+					const sortedChildren = [...children].sort((a, b) =>
+						a.treeOrder.localeCompare(b.treeOrder),
+					);
+
 					// Generate new tree orders for all children at once
 					const newTreeOrders = generateNKeysBetween(
 						prevSibling?.treeOrder || null,
 						nextSibling?.treeOrder || null,
-						sortedChildren.length
+						sortedChildren.length,
 					);
-					
+
 					const childUpdates = sortedChildren.map((child, index) => ({
 						childId: child.id,
 						parentTabId: newParentId,
@@ -387,7 +396,7 @@ export const TabManagerContent = () => {
 					}
 
 					// Small delay to let database updates propagate
-					await new Promise(resolve => setTimeout(resolve, 50));
+					await new Promise((resolve) => setTimeout(resolve, 50));
 				}
 			}
 
@@ -824,7 +833,6 @@ export const TabManagerContent = () => {
 		return <div className="p-4 text-center text-zinc-500">Loading tabs...</div>;
 	}
 
-
 	return (
 		<DndContext
 			sensors={sensors}
@@ -840,13 +848,13 @@ export const TabManagerContent = () => {
 					"p-4 max-w-full min-h-screen bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white/90 flex flex-col",
 				)}
 			>
-			<div className="flex items-center justify-between">
-				<img
-					src={import.meta.env.DEV ? "/icon-dev/128.png" : "/icon/128.png"}
-					alt="Tab Canopy"
-					className="size-6"
-				/>
-				<div className="flex items-center gap-2">
+				<div className="flex items-center justify-between">
+					<img
+						src={import.meta.env.DEV ? "/icon-dev/128.png" : "/icon/128.png"}
+						alt="Tab Canopy"
+						className="size-6"
+					/>
+					<div className="flex items-center gap-2">
 						<button
 							type="button"
 							className={cn(
