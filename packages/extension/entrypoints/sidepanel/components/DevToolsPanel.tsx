@@ -2,6 +2,7 @@
  * DevTools Panel - UI for recording, replaying, and testing events
  */
 
+import { generateKeyBetween } from "fractional-indexing";
 import {
 	ChevronDown,
 	ChevronRight,
@@ -345,7 +346,7 @@ function applyEventToState(
 				browserWindowId: newTab.windowId,
 				tabIndex: newTab.index ?? 0,
 				parentTabId: null,
-				treeOrder: "n",
+				treeOrder: generateKeyBetween(null, null),
 				title: newTab.title,
 			});
 			break;

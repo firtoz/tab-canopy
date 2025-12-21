@@ -44,7 +44,7 @@ test.describe("Tab Tree Management", () => {
 		expect(newTabInfo?.url).toContain("example.com");
 
 		// Verify it appears in the DOM
-		const tabElement = treeHelpers.getTabElement(newTabInfo!.id);
+		const tabElement = treeHelpers.getTabElement(newTabInfo?.id);
 		await expect(tabElement).toBeVisible();
 
 		console.log("New tab info:", newTabInfo);
@@ -74,50 +74,24 @@ test.describe("Tab Tree Management", () => {
 		expect(tab1Info.parentId).toBeNull();
 		expect(tab2Info.parentId).toBeNull();
 
-		// Get tab elements by their actual IDs
-		const tab1Element = treeHelpers.getTabElement(tab1Info.id);
-		const tab2Element = treeHelpers.getTabElement(tab2Info.id);
+		// Perform drag and drop - drag tab2 onto tab1 to make it a child
+		await treeHelpers.dragTabToTab(tab2Info.id, tab1Info.id);
 
-		// Get bounding boxes for drag and drop
-		const sourceBox = await tab2Element.boundingBox();
-		const targetBox = await tab1Element.boundingBox();
+		// Verify the parent-child relationship using test helpers
+		const result = await treeHelpers.verifyParentChild(
+			tab1Info.id,
+			tab2Info.id,
+		);
+		console.log("Parent-child verification:", result);
 
-		if (sourceBox && targetBox) {
-			// Perform drag and drop - drag tab2 onto tab1 to make it a child
-			await sidepanel.mouse.move(
-				sourceBox.x + 200,
-				sourceBox.y + sourceBox.height / 2,
-			);
-			await sidepanel.mouse.down();
-			await sidepanel.mouse.move(
-				targetBox.x + 200,
-				targetBox.y + targetBox.height / 2,
-				{
-					steps: 10,
-				},
-			);
-			await sidepanel.waitForTimeout(100);
-			await sidepanel.mouse.up();
+		expect(result.isChild).toBe(true);
+		expect(result.childDepth).toBe(1);
 
-			// Wait for the drop to be processed
-			await sidepanel.waitForTimeout(500);
-
-			// Verify the parent-child relationship using test helpers
-			const result = await treeHelpers.verifyParentChild(
-				tab1Info.id,
-				tab2Info.id,
-			);
-			console.log("Parent-child verification:", result);
-
-			expect(result.isChild).toBe(true);
-			expect(result.childDepth).toBe(1);
-
-			// Verify via helpers API
-			const helpers = await treeHelpers.getHelpers();
-			const updatedTab2 = helpers.getTabById(tab2Info.id);
-			expect(updatedTab2?.parentId).toBe(tab1Info.id);
-			expect(updatedTab2?.depth).toBe(1);
-		}
+		// Verify via helpers API
+		const helpers = await treeHelpers.getHelpers();
+		const updatedTab2 = helpers.getTabById(tab2Info.id);
+		expect(updatedTab2?.parentId).toBe(tab1Info.id);
+		expect(updatedTab2?.depth).toBe(1);
 
 		await tab1.close();
 		await tab2.close();
@@ -241,7 +215,7 @@ test.describe("Tab Movement with Children", () => {
 		// Wait for tabs to appear
 		const parentInfo = await treeHelpers.waitForTab("example.com/parent");
 		const childInfo = await treeHelpers.waitForTab("example.com/child");
-		const targetInfo = await treeHelpers.waitForTab("example.com/target");
+		const _targetInfo = await treeHelpers.waitForTab("example.com/target");
 
 		// First, make childTab a child of parentTab
 		const parentElement = treeHelpers.getTabElement(parentInfo.id);
@@ -302,21 +276,9 @@ test.describe("Tab Movement with Children", () => {
 		// Expected: the child should be flattened (no longer a child), and parent moves after it
 
 		// Create tabs a, b, c
-		const tabA = await createTab(
-			context,
-			"about:blank?title=a",
-			sidepanel,
-		);
-		const tabB = await createTab(
-			context,
-			"about:blank?title=b",
-			sidepanel,
-		);
-		const tabC = await createTab(
-			context,
-			"about:blank?title=c",
-			sidepanel,
-		);
+		const tabA = await createTab(context, "about:blank?title=a", sidepanel);
+		const tabB = await createTab(context, "about:blank?title=b", sidepanel);
+		const tabC = await createTab(context, "about:blank?title=c", sidepanel);
 
 		// Wait for tabs to appear
 		const aInfo = await treeHelpers.waitForTab("about:blank?title=a");
@@ -334,16 +296,11 @@ test.describe("Tab Movement with Children", () => {
 
 		if (cBox && bBox) {
 			// Drag c onto b to make c a child of b
-			await sidepanel.mouse.move(
-				cBox.x + 200,
-				cBox.y + cBox.height / 2,
-			);
+			await sidepanel.mouse.move(cBox.x + 200, cBox.y + cBox.height / 2);
 			await sidepanel.mouse.down();
-			await sidepanel.mouse.move(
-				bBox.x + 200,
-				bBox.y + bBox.height / 2,
-				{ steps: 10 },
-			);
+			await sidepanel.mouse.move(bBox.x + 200, bBox.y + bBox.height / 2, {
+				steps: 10,
+			});
 			await sidepanel.waitForTimeout(100);
 			await sidepanel.mouse.up();
 			await sidepanel.waitForTimeout(500);
@@ -364,11 +321,19 @@ test.describe("Tab Movement with Children", () => {
 		// Get current positions
 		helpers = await treeHelpers.getHelpers();
 		const allTabs = helpers.getAllTabs();
-		console.log("Before browser move - all tabs:", allTabs.map(t => ({ id: t.id, index: t.index, parentId: t.parentId })));
+		console.log(
+			"Before browser move - all tabs:",
+			allTabs.map((t) => ({ id: t.id, index: t.index, parentId: t.parentId })),
+		);
 
 		const updatedBBeforeMove = helpers.getTabById(bInfo.id);
 		const updatedCBeforeMove = helpers.getTabById(cInfo.id);
-		console.log("Before move - b index:", updatedBBeforeMove?.index, "c index:", updatedCBeforeMove?.index);
+		console.log(
+			"Before move - b index:",
+			updatedBBeforeMove?.index,
+			"c index:",
+			updatedCBeforeMove?.index,
+		);
 
 		// Move b to be after c using native browser API
 		// c is at index 4, so we want to move b to index 5 to be after c
@@ -393,7 +358,14 @@ test.describe("Tab Movement with Children", () => {
 		const updatedB = helpers.getTabById(bInfo.id);
 		const updatedA = helpers.getTabById(aInfo.id);
 
-		console.log("After browser move - a:", updatedA, "b:", updatedB, "c:", updatedC);
+		console.log(
+			"After browser move - a:",
+			updatedA,
+			"b:",
+			updatedB,
+			"c:",
+			updatedC,
+		);
 
 		// c should no longer be a child of b
 		expect(updatedC?.parentId).toBeNull();
@@ -422,26 +394,10 @@ test.describe("Tab Movement with Children", () => {
 		// the other tabs in the window maintain their correct positions
 
 		// Create tabs a, b, c, d
-		const tabA = await createTab(
-			context,
-			"about:blank?title=a",
-			sidepanel,
-		);
-		const tabB = await createTab(
-			context,
-			"about:blank?title=b",
-			sidepanel,
-		);
-		const tabC = await createTab(
-			context,
-			"about:blank?title=c",
-			sidepanel,
-		);
-		const tabD = await createTab(
-			context,
-			"about:blank?title=d",
-			sidepanel,
-		);
+		const tabA = await createTab(context, "about:blank?title=a", sidepanel);
+		const tabB = await createTab(context, "about:blank?title=b", sidepanel);
+		const tabC = await createTab(context, "about:blank?title=c", sidepanel);
+		const tabD = await createTab(context, "about:blank?title=d", sidepanel);
 
 		// Wait for tabs to appear
 		const aInfo = await treeHelpers.waitForTab("about:blank?title=a");
@@ -449,7 +405,16 @@ test.describe("Tab Movement with Children", () => {
 		const cInfo = await treeHelpers.waitForTab("about:blank?title=c");
 		const dInfo = await treeHelpers.waitForTab("about:blank?title=d");
 
-		console.log("Initial state - a:", aInfo, "b:", bInfo, "c:", cInfo, "d:", dInfo);
+		console.log(
+			"Initial state - a:",
+			aInfo,
+			"b:",
+			bInfo,
+			"c:",
+			cInfo,
+			"d:",
+			dInfo,
+		);
 
 		// Make c a child of b by dragging c onto b in the sidepanel
 		const bElement = treeHelpers.getTabElement(bInfo.id);
@@ -460,16 +425,11 @@ test.describe("Tab Movement with Children", () => {
 
 		if (cBox && bBox) {
 			// Drag c onto b to make c a child of b
-			await sidepanel.mouse.move(
-				cBox.x + 200,
-				cBox.y + cBox.height / 2,
-			);
+			await sidepanel.mouse.move(cBox.x + 200, cBox.y + cBox.height / 2);
 			await sidepanel.mouse.down();
-			await sidepanel.mouse.move(
-				bBox.x + 200,
-				bBox.y + bBox.height / 2,
-				{ steps: 10 },
-			);
+			await sidepanel.mouse.move(bBox.x + 200, bBox.y + bBox.height / 2, {
+				steps: 10,
+			});
 			await sidepanel.waitForTimeout(100);
 			await sidepanel.mouse.up();
 			await sidepanel.waitForTimeout(500);
@@ -484,7 +444,10 @@ test.describe("Tab Movement with Children", () => {
 		// Now move b to be after c using native browser API
 		helpers = await treeHelpers.getHelpers();
 		const allTabs = helpers.getAllTabs();
-		console.log("Before browser move - all tabs:", allTabs.map(t => ({ id: t.id, index: t.index, parentId: t.parentId })));
+		console.log(
+			"Before browser move - all tabs:",
+			allTabs.map((t) => ({ id: t.id, index: t.index, parentId: t.parentId })),
+		);
 
 		const updatedBBeforeMove = helpers.getTabById(bInfo.id);
 		console.log("Before move - b index:", updatedBBeforeMove?.index);
@@ -493,7 +456,9 @@ test.describe("Tab Movement with Children", () => {
 		treeHelpers.clearBackgroundLogs();
 
 		// Move b to after c (c is at index after b, so we move b forward)
-		await treeHelpers.moveBrowserTab(bInfo.id, { index: updatedBBeforeMove!.index + 1 });
+		await treeHelpers.moveBrowserTab(bInfo.id, {
+			index: (updatedBBeforeMove?.index ?? 0) + 1,
+		});
 
 		// Wait for changes to be processed
 		await sidepanel.waitForTimeout(1000);
@@ -519,14 +484,23 @@ test.describe("Tab Movement with Children", () => {
 		console.log("  d:", updatedD);
 
 		// Check tree orders to see if they're in the right order
-		const allTabsAfter = helpers.getAllTabs().filter(t => 
-			[aInfo.id, bInfo.id, cInfo.id, dInfo.id].includes(t.id)
-		);
+		const allTabsAfter = helpers
+			.getAllTabs()
+			.filter((t) => [aInfo.id, bInfo.id, cInfo.id, dInfo.id].includes(t.id));
 		console.log("Tree orders after move:");
 		for (const tab of allTabsAfter) {
-			const name = tab.id === aInfo.id ? 'a' : tab.id === bInfo.id ? 'b' : tab.id === cInfo.id ? 'c' : 'd';
+			const name =
+				tab.id === aInfo.id
+					? "a"
+					: tab.id === bInfo.id
+						? "b"
+						: tab.id === cInfo.id
+							? "c"
+							: "d";
 			const treeOrder = await treeHelpers.getTreeOrder(tab.id);
-			console.log(`  ${name}: treeOrder=${treeOrder}, index=${tab.index}, parentId=${tab.parentId}`);
+			console.log(
+				`  ${name}: treeOrder=${treeOrder}, index=${tab.index}, parentId=${tab.parentId}`,
+			);
 		}
 
 		// Expected order: a, c, b, d
@@ -563,69 +537,68 @@ test.describe("Tab Movement with Children", () => {
 	}) => {
 		// Clear any previous events
 		await treeHelpers.clearTabCreatedEvents();
-		
+
 		// Create 3 tabs in order: about:blank/?1, about:blank/?2, about:blank/?3
 		const tab1 = await createTab(context, "about:blank/?1", sidepanel);
 		await treeHelpers.waitForTab("about:blank/?1");
-		
+
 		const tab2 = await createTab(context, "about:blank/?2", sidepanel);
 		await treeHelpers.waitForTab("about:blank/?2");
-		
+
 		const tab3 = await createTab(context, "about:blank/?3", sidepanel);
 		await treeHelpers.waitForTab("about:blank/?3");
 
 		// Get tab1's browser ID for verification
 		const tab1Info = await treeHelpers.getTabByUrl("about:blank/?1");
 		expect(tab1Info).toBeDefined();
-		console.log("Tab1 browser ID:", tab1Info!.id);
+		console.log("Tab1 browser ID:", tab1Info?.id);
 
 		// Focus tab1 and open a new tab from it
 		// window.open() will place the new tab right after tab1, which allows it to be a child
 		await tab1.bringToFront();
-		
+
 		// Get the current tab count before opening new tab
 		const helpers = await treeHelpers.getHelpers();
-		const tabCountBefore = helpers.getAllTabs().length;
-		
+		const _tabCountBefore = helpers.getAllTabs().length;
+
 		// Open a new tab from tab1 using window.open() which sets openerTabId
 		// Use a unique URL so we can identify it
 		const [newTab4] = await Promise.all([
-			context.waitForEvent('page'),
+			context.waitForEvent("page"),
 			tab1.evaluate(() => {
-				// @ts-ignore - window is available in browser context
-				window.open('about:blank?child-of-1', '_blank');
+				window.open("about:blank?child-of-1", "_blank");
 			}),
 		]);
-		
+
 		// Wait for the new tab to appear
 		const newTab = await treeHelpers.waitForTab("about:blank?child-of-1");
-		
+
 		expect(newTab).toBeDefined();
 		console.log("New tab:", newTab);
-		
+
 		// Get the tab created events from the background script
 		const events = await treeHelpers.getTabCreatedEvents();
 		console.log("Tab created events:", JSON.stringify(events, null, 2));
-		
+
 		// Find the event for the new tab using the unique URL
-		const newTabEvent = events.find(e => e.tabId === newTab.id);
+		const newTabEvent = events.find((e) => e.tabId === newTab.id);
 		expect(newTabEvent).toBeDefined();
 		console.log("New tab event:", newTabEvent);
-		
+
 		// Verify the event has the correct openerTabId
-		expect(newTabEvent!.openerTabId).toBe(tab1Info!.id);
-		
+		expect(newTabEvent?.openerTabId).toBe(tab1Info?.id);
+
 		// Verify the extension decided to make it a child (because position allows it)
 		// window.open() places the new tab right after tab1, which is a valid child position
-		expect(newTabEvent!.decidedParentId).toBe(tab1Info!.id);
-		expect(newTabEvent!.reason).toContain("allows child");
-		
+		expect(newTabEvent?.decidedParentId).toBe(tab1Info?.id);
+		expect(newTabEvent?.reason).toContain("allows child");
+
 		// The new tab SHOULD be a child of tab1 because it was placed right after tab1
-		expect(newTab!.parentId).toBe(tab1Info!.id);
-		
+		expect(newTab?.parentId).toBe(tab1Info?.id);
+
 		// Verify tab1 has one child - get fresh helpers after the tab was created
 		const helpersAfter = await treeHelpers.getHelpers();
-		const tab1Children = helpersAfter.getChildren(tab1Info!.id);
+		const tab1Children = helpersAfter.getChildren(tab1Info?.id ?? -1);
 		expect(tab1Children.length).toBe(1);
 		expect(tab1Children[0].id).toBe(newTab.id);
 
@@ -643,40 +616,42 @@ test.describe("Tab Movement with Children", () => {
 		// This test attempts to use keyboard.press('Control+t') to open a new tab
 		// According to Playwright docs, this should NOT work because:
 		// "events injected via CDP are marked as 'untrusted' and won't trigger browser UI actions"
-		
+
 		// Clear any previous events
 		await treeHelpers.clearTabCreatedEvents();
-		
+
 		// Create a tab
 		const tab1 = await createTab(context, "about:blank/?1", sidepanel);
 		await treeHelpers.waitForTab("about:blank/?1");
-		
+
 		const tab1Info = await treeHelpers.getTabByUrl("about:blank/?1");
 		expect(tab1Info).toBeDefined();
-		
+
 		// Get initial tab count
 		const helpers = await treeHelpers.getHelpers();
 		const tabCountBefore = helpers.getAllTabs().length;
-		
+
 		// Focus tab1 and try Ctrl+T
 		await tab1.bringToFront();
-		
+
 		// Try the keyboard shortcut
-		await tab1.keyboard.press('Control+t');
-		
+		await tab1.keyboard.press("Control+t");
+
 		// Wait a bit to see if a new tab appears
 		await sidepanel.waitForTimeout(1000);
-		
+
 		// Check if tab count changed
 		const helpersAfter = await treeHelpers.getHelpers();
 		const tabCountAfter = helpersAfter.getAllTabs().length;
-		
+
 		console.log(`Tab count before: ${tabCountBefore}, after: ${tabCountAfter}`);
-		
+
 		// We expect this to NOT work (tab count should be the same)
 		expect(tabCountAfter).toBe(tabCountBefore);
-		console.log("✓ Confirmed: keyboard.press('Control+t') does NOT open a new tab (as expected)");
-		
+		console.log(
+			"✓ Confirmed: keyboard.press('Control+t') does NOT open a new tab (as expected)",
+		);
+
 		await tab1.close();
 	});
 
@@ -689,34 +664,34 @@ test.describe("Tab Movement with Children", () => {
 		// - Tab has an openerTabId (opened FROM another tab)
 		// - But browser places it at the end of the tab list
 		// - So it should NOT be a child (position prevents it)
-		
+
 		// Clear any previous events
 		await treeHelpers.clearTabCreatedEvents();
-		
+
 		// Create 3 tabs in order
 		const tab1 = await createTab(context, "about:blank/?1", sidepanel);
 		await treeHelpers.waitForTab("about:blank/?1");
-		
+
 		const tab2 = await createTab(context, "about:blank/?2", sidepanel);
 		await treeHelpers.waitForTab("about:blank/?2");
-		
+
 		const tab3 = await createTab(context, "about:blank/?3", sidepanel);
 		await treeHelpers.waitForTab("about:blank/?3");
 
 		// Get tab1's info and current state
 		const tab1Info = await treeHelpers.getTabByUrl("about:blank/?1");
 		expect(tab1Info).toBeDefined();
-		
+
 		const helpers = await treeHelpers.getHelpers();
 		const allTabs = helpers.getAllTabs();
-		const maxIndex = Math.max(...allTabs.map(t => t.index));
-		
+		const maxIndex = Math.max(...allTabs.map((t) => t.index));
+
 		// Get the window ID from one of the existing tabs
-		const windowId = tab1Info!.windowId;
-		
+		const windowId = tab1Info?.windowId;
+
 		// Generate a fake tab ID (high number to avoid conflicts)
 		const fakeTabId = 999999;
-		
+
 		// Inject a fake tabs.onCreated event with openerTabId but placed at the end
 		// This simulates Ctrl+T: has opener but browser places it at the end
 		await treeHelpers.injectBrowserEvent({
@@ -727,45 +702,212 @@ test.describe("Tab Movement with Children", () => {
 				index: maxIndex + 1, // Place at the end
 				url: "about:blank?ctrl-t-injected",
 				title: "Ctrl+T Test",
-				openerTabId: tab1Info!.id, // Has opener (like Ctrl+T)
+				openerTabId: tab1Info?.id, // Has opener (like Ctrl+T)
 			},
 		});
-		
+
 		// Wait a bit for the event to be processed
 		await sidepanel.waitForTimeout(200);
-		
+
 		// Get the tab created events
 		const events = await treeHelpers.getTabCreatedEvents();
 		console.log("Tab created events:", JSON.stringify(events, null, 2));
-		
+
 		// Find the event for the injected tab
-		const newTabEvent = events.find(e => e.tabId === fakeTabId);
+		const newTabEvent = events.find((e) => e.tabId === fakeTabId);
 		expect(newTabEvent).toBeDefined();
 		console.log("Injected tab event:", newTabEvent);
-		
+
 		// Verify the event has the correct openerTabId
-		expect(newTabEvent!.openerTabId).toBe(tab1Info!.id);
-		
+		expect(newTabEvent?.openerTabId).toBe(tab1Info?.id);
+
 		// Verify the extension decided NOT to make it a child (because position prevents it)
-		expect(newTabEvent!.decidedParentId).toBeNull();
-		expect(newTabEvent!.reason).toContain("prevents child");
-		
+		expect(newTabEvent?.decidedParentId).toBeNull();
+		expect(newTabEvent?.reason).toContain("prevents child");
+
 		// Verify in the tree structure
 		const helpersAfter = await treeHelpers.getHelpers();
 		const injectedTab = helpersAfter.getTabById(fakeTabId);
-		
+
 		if (injectedTab) {
 			// The injected tab should NOT be a child of tab1 because it was placed at the end
 			expect(injectedTab.parentId).toBeNull();
 		}
-		
+
 		// Verify tab1 has no children
-		const tab1Children = helpersAfter.getChildren(tab1Info!.id);
+		const tab1Children = helpersAfter.getChildren(tab1Info?.id ?? -1);
 		expect(tab1Children.length).toBe(0);
 
 		// Close real tabs
 		await tab1.close();
 		await tab2.close();
 		await tab3.close();
+	});
+
+	test("closing expanded parent tab should move children up", async ({
+		context,
+		sidepanel,
+		treeHelpers,
+	}) => {
+		// Create parent and children tabs
+		const _parentTab = await createTab(
+			context,
+			"https://example.com/parent",
+			sidepanel,
+		);
+		const child1Tab = await createTab(
+			context,
+			"https://example.com/child1",
+			sidepanel,
+		);
+		const child2Tab = await createTab(
+			context,
+			"https://example.com/child2",
+			sidepanel,
+		);
+
+		// Wait for tabs to appear
+		const parentInfo = await treeHelpers.waitForTab("example.com/parent");
+		const child1Info = await treeHelpers.waitForTab("example.com/child1");
+		const child2Info = await treeHelpers.waitForTab("example.com/child2");
+
+		console.log("Parent info:", parentInfo);
+		console.log("Child1 info:", child1Info);
+		console.log("Child2 info:", child2Info);
+
+		// Drag child1 onto parent to make it a child
+		await treeHelpers.dragTabToTab(child1Info.id, parentInfo.id);
+
+		// Drag child2 onto parent to make it a child
+		await treeHelpers.dragTabToTab(child2Info.id, parentInfo.id);
+
+		// Verify parent-child relationships
+		const updatedChild1 = await treeHelpers.getTabByUrl("example.com/child1");
+		const updatedChild2 = await treeHelpers.getTabByUrl("example.com/child2");
+		expect(updatedChild1?.parentId).toBe(parentInfo.id);
+		expect(updatedChild2?.parentId).toBe(parentInfo.id);
+		expect(updatedChild1?.depth).toBe(1);
+		expect(updatedChild2?.depth).toBe(1);
+
+		console.log("Before closing parent - child1:", updatedChild1);
+		console.log("Before closing parent - child2:", updatedChild2);
+
+		// Parent should be expanded by default, click the close button
+		const closeButton = sidepanel.locator(
+			`[data-tab-id="${parentInfo.id}"] button[title="Close tab"]`,
+		);
+		await closeButton.click();
+		await sidepanel.waitForTimeout(500);
+
+		// Verify parent tab is closed (should throw or return null)
+		const parentAfterClose =
+			await treeHelpers.getTabByUrl("example.com/parent");
+		expect(parentAfterClose).toBeUndefined();
+
+		// Verify children moved up to root level
+		const child1AfterClose =
+			await treeHelpers.getTabByUrl("example.com/child1");
+		const child2AfterClose =
+			await treeHelpers.getTabByUrl("example.com/child2");
+
+		console.log("After closing parent - child1:", child1AfterClose);
+		console.log("After closing parent - child2:", child2AfterClose);
+
+		expect(child1AfterClose).toBeDefined();
+		expect(child2AfterClose).toBeDefined();
+		expect(child1AfterClose?.parentId).toBeNull();
+		expect(child2AfterClose?.parentId).toBeNull();
+		expect(child1AfterClose?.depth).toBe(0);
+		expect(child2AfterClose?.depth).toBe(0);
+
+		// Clean up
+		await child1Tab.close();
+		await child2Tab.close();
+	});
+
+	test("closing collapsed parent tab should close all children", async ({
+		context,
+		sidepanel,
+		treeHelpers,
+	}) => {
+		// Create parent and children tabs
+		const _parentTab = await createTab(
+			context,
+			"https://example.com/parent2",
+			sidepanel,
+		);
+		const _child1Tab = await createTab(
+			context,
+			"https://example.com/child3",
+			sidepanel,
+		);
+		const _child2Tab = await createTab(
+			context,
+			"https://example.com/child4",
+			sidepanel,
+		);
+
+		// Wait for tabs to appear
+		const parentInfo = await treeHelpers.waitForTab("example.com/parent2");
+		const child1Info = await treeHelpers.waitForTab("example.com/child3");
+		const child2Info = await treeHelpers.waitForTab("example.com/child4");
+
+		console.log("Parent2 info:", parentInfo);
+		console.log("Child3 info:", child1Info);
+		console.log("Child4 info:", child2Info);
+
+		// Drag child1 onto parent to make it a child
+		await treeHelpers.dragTabToTab(child1Info.id, parentInfo.id);
+
+		// Drag child2 onto parent to make it a child
+		await treeHelpers.dragTabToTab(child2Info.id, parentInfo.id);
+
+		// Verify parent-child relationships
+		const updatedChild1 = await treeHelpers.getTabByUrl("example.com/child3");
+		const updatedChild2 = await treeHelpers.getTabByUrl("example.com/child4");
+		expect(updatedChild1?.parentId).toBe(parentInfo.id);
+		expect(updatedChild2?.parentId).toBe(parentInfo.id);
+		expect(updatedChild1?.depth).toBe(1);
+		expect(updatedChild2?.depth).toBe(1);
+
+		console.log("Before collapsing - child1:", updatedChild1);
+		console.log("Before collapsing - child2:", updatedChild2);
+
+		// Click the collapse button to collapse the parent
+		// The collapse button is the first button in the tab card (expand/collapse indicator)
+		const collapseButton = sidepanel
+			.locator(`[data-tab-id="${parentInfo.id}"] button`)
+			.first();
+		await collapseButton.click();
+		await sidepanel.waitForTimeout(300);
+
+		console.log("Parent collapsed, now closing parent tab");
+
+		// Click the close button
+		const closeButton = sidepanel.locator(
+			`[data-tab-id="${parentInfo.id}"] button[title="Close tab"]`,
+		);
+		await closeButton.click();
+		await sidepanel.waitForTimeout(500);
+
+		// Verify parent tab is closed
+		const parentAfterClose = await treeHelpers.getTabByUrl(
+			"example.com/parent2",
+		);
+		expect(parentAfterClose).toBeUndefined();
+
+		// Verify all children are also closed
+		const child1AfterClose =
+			await treeHelpers.getTabByUrl("example.com/child3");
+		const child2AfterClose =
+			await treeHelpers.getTabByUrl("example.com/child4");
+
+		console.log("After closing parent - child1:", child1AfterClose);
+		console.log("After closing parent - child2:", child2AfterClose);
+
+		expect(child1AfterClose).toBeUndefined();
+		expect(child2AfterClose).toBeUndefined();
+
+		// Note: No cleanup needed as all tabs should be closed
 	});
 });

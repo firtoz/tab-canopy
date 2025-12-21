@@ -17,9 +17,10 @@ import {
 // import { sortableKeyboardCoordinates } from "@dnd-kit/sortable";
 import { useDrizzleIndexedDB } from "@firtoz/drizzle-indexeddb";
 import { useLiveQuery } from "@tanstack/react-db";
-import { generateNKeysBetween } from "fractional-indexing";
+import { generateKeyBetween, generateNKeysBetween } from "fractional-indexing";
 import { RefreshCw, Settings } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { browser } from "wxt/browser";
 import type * as schema from "@/schema/src/schema";
 import {
 	useRegisterStateGetter,
@@ -785,7 +786,7 @@ export const TabManagerContent = () => {
 				return {
 					tabId: browserTabId,
 					parentTabId: tabData?.parentTabId ?? null,
-					treeOrder: tabData?.treeOrder ?? "a0",
+					treeOrder: tabData?.treeOrder ?? generateKeyBetween(null, null),
 				};
 			});
 			sendMoveIntent(moveIntents);

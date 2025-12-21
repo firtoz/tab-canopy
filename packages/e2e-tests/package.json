@@ -7,11 +7,9 @@
 	"scripts": {
 		"test": "playwright test",
 		"test:ui": "playwright test --ui",
-		"test:headed": "playwright test --headed"
-	},
-	"devDependencies": {
-		"@playwright/test": "^1.57.0",
-		"playwright": "^1.57.0"
+		"test:headed": "playwright test --headed",
+		"lint": "biome check --write .",
+		"lint:ci": "biome ci .",
+		"format": "biome format . --write ."
 	}
 }
-

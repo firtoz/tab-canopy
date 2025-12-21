@@ -137,7 +137,7 @@ export function calculateTreePositionFromBrowserMove(
 	// Find the moved tab
 	const movedTab = allTabs.find((t) => t.browserTabId === movedTabId);
 	if (!movedTab) {
-		return { parentTabId: null, treeOrder: "n" };
+		return { parentTabId: null, treeOrder: generateKeyBetween(null, null) };
 	}
 
 	// Check if the moved tab has any descendants

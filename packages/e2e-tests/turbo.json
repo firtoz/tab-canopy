@@ -14,7 +14,15 @@
 		"test:headed": {
 			"dependsOn": ["@tabcanopy/extension#build"],
 			"cache": false
+		},
+		"lint": {
+			"inputs": ["e2e/**", "playwright.config.ts"]
+		},
+		"lint:ci": {
+			"inputs": ["e2e/**", "playwright.config.ts"]
+		},
+		"format": {
+			"inputs": ["e2e/**", "playwright.config.ts"]
 		}
 	}
 }
-

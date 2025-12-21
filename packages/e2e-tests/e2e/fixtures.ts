@@ -69,33 +69,51 @@ export interface TestTreeHelpers {
 	 * Get the treeOrder for a tab by ID
 	 */
 	getTreeOrder: (tabId: number) => Promise<string | undefined>;
-	
+
 	/**
 	 * Get tab created events from background script (for testing)
 	 */
-	getTabCreatedEvents: () => Promise<Array<{
-		tabId: number;
-		openerTabId: number | undefined;
-		tabIndex: number;
-		decidedParentId: number | null;
-		reason: string;
-		timestamp: number;
-	}>>;
-	
+	getTabCreatedEvents: () => Promise<
+		Array<{
+			tabId: number;
+			openerTabId: number | undefined;
+			tabIndex: number;
+			decidedParentId: number | null;
+			reason: string;
+			timestamp: number;
+		}>
+	>;
+
 	/**
 	 * Clear tab created events from background script (for testing)
 	 */
 	clearTabCreatedEvents: () => Promise<void>;
-	
+
 	/**
 	 * Create a tab with openerTabId (for testing Ctrl+T-like scenarios)
 	 */
-	createTabWithOpener: (url: string, openerTabId: number, index?: number) => Promise<number>;
-	
+	createTabWithOpener: (
+		url: string,
+		openerTabId: number,
+		index?: number,
+	) => Promise<number>;
+
 	/**
 	 * Inject a fake browser event for testing (bypasses real browser APIs)
 	 */
 	injectBrowserEvent: (event: InjectBrowserEvent) => Promise<void>;
+
+	/**
+	 * Drag a tab element onto another tab element to make it a child or sibling
+	 * @param sourceTabId The tab to drag
+	 * @param targetTabId The tab to drop onto
+	 * @param waitAfter Wait time in ms after the drag completes (default: 500)
+	 */
+	dragTabToTab: (
+		sourceTabId: number,
+		targetTabId: number,
+		waitAfter?: number,
+	) => Promise<void>;
 }
 
 // ES module equivalent of __dirname (Playwright runs in Node.js, not Bun)
@@ -212,7 +230,10 @@ export const test = base.extend<ExtensionFixtures>({
 
 		// Expose test helper callbacks early, before any pages load
 		await context.exposeFunction("__reportTabTreeState", testState.updateState);
-		await context.exposeFunction("__backgroundDebugLog", testState.addBackgroundLog);
+		await context.exposeFunction(
+			"__backgroundDebugLog",
+			testState.addBackgroundLog,
+		);
 
 		await use(context);
 		await context.close();
@@ -406,7 +427,7 @@ export const test = base.extend<ExtensionFixtures>({
 				// Call the exposed browser API action
 				await sidepanel.evaluate(
 					({ tabId, moveProperties }) => {
-						// @ts-ignore - window is available in browser context
+						// @ts-expect-error - window is available in browser context
 						const actions = window.__tabCanopyBrowserActions;
 
 						if (!actions) {
@@ -439,10 +460,10 @@ export const test = base.extend<ExtensionFixtures>({
 				);
 				return tab?.treeOrder;
 			},
-			
+
 			getTabCreatedEvents: async () => {
 				return await sidepanel.evaluate(() => {
-					// @ts-ignore - window is available in browser context
+					// @ts-expect-error - window is available in browser context
 					const actions = window.__tabCanopyBrowserActions;
 					if (!actions) {
 						throw new Error(
@@ -452,10 +473,10 @@ export const test = base.extend<ExtensionFixtures>({
 					return actions.getTabCreatedEvents();
 				});
 			},
-			
+
 			clearTabCreatedEvents: async () => {
 				await sidepanel.evaluate(() => {
-					// @ts-ignore - window is available in browser context
+					// @ts-expect-error - window is available in browser context
 					const actions = window.__tabCanopyBrowserActions;
 					if (!actions) {
 						throw new Error(
@@ -465,11 +486,15 @@ export const test = base.extend<ExtensionFixtures>({
 					return actions.clearTabCreatedEvents();
 				});
 			},
-			
-			createTabWithOpener: async (url: string, openerTabId: number, index?: number) => {
+
+			createTabWithOpener: async (
+				url: string,
+				openerTabId: number,
+				index?: number,
+			) => {
 				return await sidepanel.evaluate(
 					({ url, openerTabId, index }) => {
-						// @ts-ignore - window is available in browser context
+						// @ts-expect-error - window is available in browser context
 						const actions = window.__tabCanopyBrowserActions;
 						if (!actions) {
 							throw new Error(
@@ -481,21 +506,55 @@ export const test = base.extend<ExtensionFixtures>({
 					{ url, openerTabId, index },
 				);
 			},
-			
+
 			injectBrowserEvent: async (event: unknown) => {
-				await sidepanel.evaluate(
-					(event) => {
-						// @ts-ignore - window is available in browser context
-						const actions = window.__tabCanopyBrowserActions;
-						if (!actions) {
-							throw new Error(
-								"Browser test actions not exposed. Make sure the app is in test mode.",
-							);
-						}
-						return actions.injectBrowserEvent(event);
-					},
-					event,
+				await sidepanel.evaluate((event) => {
+					// @ts-expect-error - window is available in browser context
+					const actions = window.__tabCanopyBrowserActions;
+					if (!actions) {
+						throw new Error(
+							"Browser test actions not exposed. Make sure the app is in test mode.",
+						);
+					}
+					return actions.injectBrowserEvent(event);
+				}, event);
+			},
+
+			dragTabToTab: async (
+				sourceTabId: number,
+				targetTabId: number,
+				waitAfter = 500,
+			) => {
+				const sourceElement = sidepanel.locator(
+					`[data-tab-id="${sourceTabId}"]`,
 				);
+				const targetElement = sidepanel.locator(
+					`[data-tab-id="${targetTabId}"]`,
+				);
+
+				const sourceBox = await sourceElement.boundingBox();
+				const targetBox = await targetElement.boundingBox();
+
+				if (!sourceBox || !targetBox) {
+					throw new Error(
+						`Could not get bounding boxes for drag operation. Source: ${sourceBox}, Target: ${targetBox}`,
+					);
+				}
+
+				// Perform drag and drop
+				await sidepanel.mouse.move(
+					sourceBox.x + 200,
+					sourceBox.y + sourceBox.height / 2,
+				);
+				await sidepanel.mouse.down();
+				await sidepanel.mouse.move(
+					targetBox.x + 200,
+					targetBox.y + targetBox.height / 2,
+					{ steps: 10 },
+				);
+				await sidepanel.waitForTimeout(100);
+				await sidepanel.mouse.up();
+				await sidepanel.waitForTimeout(waitAfter);
 			},
 		};
 

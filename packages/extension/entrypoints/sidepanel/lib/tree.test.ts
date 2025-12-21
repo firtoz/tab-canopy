@@ -109,7 +109,7 @@ describe("generateTreeOrder", () => {
 
 	test("can generate many values in order", () => {
 		// Test that we can keep generating values in sequence
-		let current = "n";
+		let current = "a0";
 		const values = [current];
 		for (let i = 0; i < 10; i++) {
 			const next = generateTreeOrder(current, undefined);

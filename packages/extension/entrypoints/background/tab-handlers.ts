@@ -1,3 +1,4 @@
+import { generateKeyBetween } from "fractional-indexing";
 import type { Tab } from "@/schema/src/schema";
 import { log, makeTabId } from "./constants";
 import type { DbOperations } from "./db-operations";
@@ -124,9 +125,9 @@ function consumeUiMoveIntent(tabId: number): UiMoveIntent | undefined {
  * ASCII order: '0'-'9' (48-57) < 'A'-'Z' (65-90) < 'a'-'z' (97-122)
  */
 function generateTreeOrder(before?: string, after?: string): string {
-	// Default midpoint
+	// Default midpoint - use fractional-indexing library
 	if (!before && !after) {
-		return "n"; // middle of alphabet
+		return generateKeyBetween(null, null);
 	}
 
 	if (!before) {
@@ -217,7 +218,7 @@ const updateTabIndicesInWindow = async (
 		const existing = existingMap.get(tab.id);
 		return tabToRecord(tab, {
 			parentTabId: existing?.parentTabId ?? null,
-			treeOrder: existing?.treeOrder ?? "a0",
+			treeOrder: existing?.treeOrder ?? generateKeyBetween(null, null),
 		});
 	});
 
@@ -253,7 +254,7 @@ const _updateTabIndicesInRange = async (
 		const existing = existingMap.get(tab.id);
 		return tabToRecord(tab, {
 			parentTabId: existing?.parentTabId ?? null,
-			treeOrder: existing?.treeOrder ?? "a0",
+			treeOrder: existing?.treeOrder ?? generateKeyBetween(null, null),
 		});
 	});
 
@@ -285,7 +286,7 @@ export const setupTabListeners = (dbOps: DbOperations) => {
 		// Check for openerTabId - if present, this tab was opened from another tab
 		const openerTabId = (tab as { openerTabId?: number }).openerTabId;
 		let parentTabId: number | null = null;
-		let treeOrder = "a0";
+		let treeOrder = generateKeyBetween(null, null);
 
 		if (openerTabId && existingMap.has(openerTabId)) {
 			// This tab was opened from another tab (e.g., middle click, Ctrl+T)
@@ -475,7 +476,7 @@ export const setupTabListeners = (dbOps: DbOperations) => {
 			otherRecords.push(
 				tabToRecord(t, {
 					parentTabId: existing?.parentTabId ?? null,
-					treeOrder: existing?.treeOrder ?? "a0",
+					treeOrder: existing?.treeOrder ?? generateKeyBetween(null, null),
 				}),
 			);
 		}
@@ -504,7 +505,7 @@ export const setupTabListeners = (dbOps: DbOperations) => {
 		await putItems("tab", [
 			tabToRecord(tab, {
 				parentTabId: existing?.parentTabId ?? null,
-				treeOrder: existing?.treeOrder ?? "a0",
+				treeOrder: existing?.treeOrder ?? generateKeyBetween(null, null),
 			}),
 		]);
 	};
@@ -623,7 +624,10 @@ export const setupTabListeners = (dbOps: DbOperations) => {
 					tabToRecord(bt, {
 						parentTabId:
 							otherIntent?.parentTabId ?? existing?.parentTabId ?? null,
-						treeOrder: otherIntent?.treeOrder ?? existing?.treeOrder ?? "a0",
+						treeOrder:
+							otherIntent?.treeOrder ??
+							existing?.treeOrder ??
+							generateKeyBetween(null, null),
 					}),
 				);
 			}
@@ -729,7 +733,7 @@ export const setupTabListeners = (dbOps: DbOperations) => {
 		} else {
 			// Preserve the existing tree position (set by extension UI)
 			newParentId = existingTab?.parentTabId ?? null;
-			newTreeOrder = existingTab?.treeOrder ?? "a0";
+			newTreeOrder = existingTab?.treeOrder ?? generateKeyBetween(null, null);
 			log("[Background] Preserving existing tree position:", {
 				newParentId,
 				newTreeOrder,
@@ -922,7 +926,8 @@ export const setupTabListeners = (dbOps: DbOperations) => {
 			}
 
 			const existing = existingMap.get(bt.id);
-			let treeOrderToUse = existing?.treeOrder ?? "a0";
+			let treeOrderToUse =
+				existing?.treeOrder ?? generateKeyBetween(null, null);
 			const parentIdToUse = existing?.parentTabId ?? null;
 
 			// If this tab is at root level AND comes after the moved tab in browser order,
@@ -999,7 +1004,7 @@ export const setupTabListeners = (dbOps: DbOperations) => {
 			const existing = existingMap.get(tab.id);
 			return tabToRecord(tab, {
 				parentTabId: existing?.parentTabId ?? null,
-				treeOrder: existing?.treeOrder ?? "a0",
+				treeOrder: existing?.treeOrder ?? generateKeyBetween(null, null),
 			});
 		});
 
@@ -1138,7 +1143,7 @@ export const setupTabListeners = (dbOps: DbOperations) => {
 			otherTabRecords.push(
 				tabToRecord(bt, {
 					parentTabId: existing?.parentTabId ?? null,
-					treeOrder: existing?.treeOrder ?? "a0",
+					treeOrder: existing?.treeOrder ?? generateKeyBetween(null, null),
 				}),
 			);
 		}

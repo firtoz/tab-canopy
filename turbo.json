@@ -84,15 +84,15 @@
 				"biome.json"
 			]
 		},
-		"typecheck": {
-			"outputs": [],
-			"inputs": [
-				"packages/extension/entrypoints/**",
-				"packages/extension/src/**",
-				"packages/extension/schema/**",
-				"packages/extension/tsconfig.json"
-			]
-		},
+	"typecheck": {
+		"outputs": [],
+		"inputs": [
+			"packages/extension/entrypoints/**",
+			"packages/extension/src/**",
+			"packages/extension/schema/**",
+			"packages/extension/tsconfig.json"
+		]
+	},
 		"zip": {
 			"dependsOn": ["build"],
 			"outputs": ["*.zip"]
