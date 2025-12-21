@@ -1,0 +1,20 @@
+{
+	"$schema": "https://turbo.build/schema.json",
+	"extends": ["//"],
+	"tasks": {
+		"test": {
+			"dependsOn": ["@tabcanopy/extension#build"],
+			"outputs": ["playwright-report/**", "test-results/**"],
+			"cache": false
+		},
+		"test:ui": {
+			"dependsOn": ["@tabcanopy/extension#build"],
+			"cache": false
+		},
+		"test:headed": {
+			"dependsOn": ["@tabcanopy/extension#build"],
+			"cache": false
+		}
+	}
+}
+

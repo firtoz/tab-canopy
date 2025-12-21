@@ -5,7 +5,6 @@
 import type { Tab, Window } from "@/schema/src/schema";
 import type {
 	RecordedEvent,
-	RecordingSession,
 	ReplayAssertion,
 	ReplayStep,
 	ReplayTestCase,
@@ -52,7 +51,7 @@ export function validateAssertion(
 	context: ReplayContext,
 ): AssertionResult {
 	const tabs = context.getTabs();
-	const windows = context.getWindows();
+	const _windows = context.getWindows();
 
 	switch (assertion.type) {
 		case "tabExists": {

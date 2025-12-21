@@ -34,7 +34,11 @@ class BrowserEventQueue {
 		}
 
 		this.isProcessing = true;
-		const event = this.queue.shift()!;
+		const event = this.queue.shift();
+		if (!event) {
+			this.isProcessing = false;
+			return;
+		}
 
 		log(
 			`[EventQueue] Processing: ${event.name} (remaining: ${this.queue.length})`,

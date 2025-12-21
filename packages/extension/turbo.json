@@ -1,0 +1,14 @@
+{
+	"$schema": "https://turbo.build/schema.json",
+	"extends": ["//"],
+	"tasks": {
+		"build": {
+			"dependsOn": ["db:generate"],
+			"outputs": [".output/**"]
+		},
+		"build:firefox": {
+			"dependsOn": ["db:generate"],
+			"outputs": [".output/**"]
+		}
+	}
+}

@@ -12,7 +12,7 @@ const buildDir = isDev ? "chrome-mv3-dev" : "chrome-mv3";
 // Path to the built extension
 const extensionPath = path.join(
 	__dirname,
-	"packages",
+	"..",
 	"extension",
 	".output",
 	buildDir,
@@ -38,7 +38,7 @@ export default defineConfig({
 			// url: "http://localhost:3003",
 			reuseExistingServer: true, // Use existing server if already running
 			timeout: 120000, // 2 minutes for initial build
-			cwd: path.join(__dirname, "packages", "extension"),
+			cwd: path.join(__dirname, "..", "extension"),
 			stdout: "pipe",
 			stderr: "pipe",
 			port: 3003,

@@ -209,7 +209,7 @@ function App() {
 			// Only dispose on unmount, not on connectionKey change
 			// (disposal is handled in the ref logic above)
 		};
-	}, [connectionKey]);
+	}, []);
 
 	if (!isReady) {
 		return <div className="p-4 text-center text-zinc-500">Connecting...</div>;

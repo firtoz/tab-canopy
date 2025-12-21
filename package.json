@@ -21,20 +21,14 @@
 		"lint:ci": "turbo run lint:ci",
 		"format": "turbo run format",
 		"test": "turbo run test",
-		"test:unit": "turbo run test:unit",
-		"test:e2e": "turbo run build && playwright test",
-		"test:e2e:ui": "turbo run build && playwright test --ui",
-		"test:e2e:headed": "turbo run build && playwright test --headed",
-		"test:e2e:dev": "E2E_DEV=true playwright test",
-		"test:e2e:dev:ui": "E2E_DEV=true playwright test --ui",
-		"test:e2e:dev:headed": "E2E_DEV=true playwright test --headed"
+		"test:unit": "turbo run test:unit"
 	},
 	"devDependencies": {
 		"@playwright/test": "^1.57.0",
-		"@types/node": "^25.0.1",
-		"bun-types": "^1.3.4",
+		"@types/node": "^25.0.3",
+		"bun-types": "^1.3.5",
 		"playwright": "^1.57.0",
-		"turbo": "^2.6.3"
+		"turbo": "^2.7.1"
 	},
 	"dependencies": {
 		"fractional-indexing": "^3.2.0"

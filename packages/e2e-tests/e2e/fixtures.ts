@@ -11,9 +11,9 @@ import type {
 	TabTreeNode,
 	TreeTestHelpers,
 	WindowInfo,
-} from "../packages/extension/entrypoints/sidepanel/lib/test-helpers";
-import type * as schema from "../packages/extension/schema/src/schema";
-import type { InjectBrowserEvent } from "../packages/extension/src/idb-transport";
+} from "../../extension/entrypoints/sidepanel/lib/test-helpers";
+import type * as schema from "../../extension/schema/src/schema";
+import type { InjectBrowserEvent } from "../../extension/src/idb-transport";
 
 // Re-export types for convenience
 export type { TabTreeNode, TreeTestHelpers, WindowInfo };
@@ -109,7 +109,7 @@ const buildDir =
 const extensionPath = path.join(
 	__dirname,
 	"..",
-	"packages",
+	"..",
 	"extension",
 	".output",
 	buildDir,
@@ -190,18 +190,24 @@ export const test = base.extend<ExtensionFixtures>({
 	},
 
 	// Override the default context to load our extension
-	context: async ({ testState }, use) => {
+	context: async ({ testState, headless }, use) => {
 		// Wait for extension to be built before launching browser
 		await waitForExtensionBuild();
 
+		const args = [
+			`--disable-extensions-except=${extensionPath}`,
+			`--load-extension=${extensionPath}`,
+			"--no-first-run",
+			"--disable-infobars",
+		];
+
+		if (headless) {
+			args.push("--headless");
+		}
+
 		const context = await chromium.launchPersistentContext("", {
 			headless: false, // Extensions require headed mode
-			args: [
-				`--disable-extensions-except=${extensionPath}`,
-				`--load-extension=${extensionPath}`,
-				"--no-first-run",
-				"--disable-infobars",
-			],
+			args: args,
 		});
 
 		// Expose test helper callbacks early, before any pages load

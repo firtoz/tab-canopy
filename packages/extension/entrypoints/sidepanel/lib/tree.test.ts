@@ -9,7 +9,6 @@ import {
 	getDescendantIds,
 	getSiblings,
 	isAncestor,
-	type TreeDropPosition,
 } from "./tree";
 
 // Helper to create mock tabs
@@ -505,19 +504,20 @@ describe("tree movement scenarios from user requirements", () => {
 	 */
 	function createExampleTree() {
 		return [
-			createMockTab(1, null, "b"), // a
-			createMockTab(2, null, "d"), // b
-			createMockTab(3, null, "f"), // c
-			createMockTab(31, 3, "m"), // c.1 (using 'm' as middle value)
-			createMockTab(32, 3, "t"), // c.2
-			createMockTab(4, null, "h"), // d
+			createMockTab(1, null, "a0"), // a
+			createMockTab(2, null, "a1"), // b
+			createMockTab(3, null, "a2"), // c
+			createMockTab(31, 3, "a0"), // c.1
+			createMockTab(32, 3, "a1"), // c.2
+			createMockTab(4, null, "a3"), // d
 		];
 	}
 
 	test("move b between c and c.1 - should become child of c", () => {
 		// User scenario: "if we move b between c and c.1, it will be added inside c before c.1"
 		const tabs = createExampleTree();
-		const c1Order = tabs.find((t) => t.browserTabId === 31)!.treeOrder;
+		const c1Order = tabs.find((t) => t.browserTabId === 31)?.treeOrder;
+		if (!c1Order) throw new Error("c1Order not found");
 
 		// Moving b (tab 2) to be a child of c (tab 3), inserted at beginning of children
 		const result = calculateTreeMove(tabs, 2, {
@@ -531,7 +531,8 @@ describe("tree movement scenarios from user requirements", () => {
 
 	test("move c.1 after c.2 - stays child of c", () => {
 		const tabs = createExampleTree();
-		const c2Order = tabs.find((t) => t.browserTabId === 32)!.treeOrder;
+		const c2Order = tabs.find((t) => t.browserTabId === 32)?.treeOrder;
+		if (!c2Order) throw new Error("c2Order not found");
 
 		// Moving c.1 (tab 31) after c.2 (tab 32)
 		const result = calculateTreeMove(tabs, 31, {
@@ -546,7 +547,8 @@ describe("tree movement scenarios from user requirements", () => {
 	test("move c.1 after d - breaks out of c, becomes root sibling", () => {
 		// User scenario: "if it's moved after d, it will no longer be under c because d being outside of c 'breaks' it out"
 		const tabs = createExampleTree();
-		const dOrder = tabs.find((t) => t.browserTabId === 4)!.treeOrder;
+		const dOrder = tabs.find((t) => t.browserTabId === 4)?.treeOrder;
+		if (!dOrder) throw new Error("dOrder not found");
 
 		// Moving c.1 (tab 31) after d (tab 4) as sibling
 		const result = calculateTreeMove(tabs, 31, {

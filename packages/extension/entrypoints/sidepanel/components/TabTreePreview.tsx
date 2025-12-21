@@ -441,17 +441,15 @@ export function TabTreePreview({
 					</div>
 				) : showChromeOrder ? (
 					// Flat Chrome order view
-					<>
-						{windowsWithTabs.map((wt) => (
-							<ChromeOrderView
-								key={wt.window.browserWindowId}
-								window={wt.window}
-								tabs={wt.tabs}
-								highlightTabId={highlightTabId}
-								tabChanges={tabChanges}
-							/>
-						))}
-					</>
+					windowsWithTabs.map((wt) => (
+						<ChromeOrderView
+							key={wt.window.browserWindowId}
+							window={wt.window}
+							tabs={wt.tabs}
+							highlightTabId={highlightTabId}
+							tabChanges={tabChanges}
+						/>
+					))
 				) : (
 					// Tree structure view
 					<>

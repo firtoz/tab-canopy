@@ -90,11 +90,15 @@ export class EventRecorder {
 
 		this.removeChromeListeners();
 
+		if (!this.initialState) {
+			throw new Error("Cannot stop recording without initial state");
+		}
+
 		const session: RecordingSession = {
 			id: `session-${this.startTime}`,
 			startTime: this.startTime,
 			events: [...this.events],
-			initialState: this.initialState!,
+			initialState: this.initialState,
 		};
 
 		this.state = "idle";
@@ -145,8 +149,8 @@ export class EventRecorder {
 					tabs: chromeTabs
 						.filter((t) => t.id !== undefined && t.windowId !== undefined)
 						.map((t) => ({
-							id: t.id!,
-							windowId: t.windowId!,
+							id: t.id as number,
+							windowId: t.windowId as number,
 							index: t.index,
 							title: t.title,
 							url: t.url,

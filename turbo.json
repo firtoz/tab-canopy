@@ -40,11 +40,15 @@
 			]
 		},
 		"test": {
-			"dependsOn": [],
+			"dependsOn": ["^build"],
 			"inputs": [
 				"packages/extension/entrypoints/**/*.test.ts",
-				"packages/extension/entrypoints/**/*.test.tsx"
-			]
+				"packages/extension/entrypoints/**/*.test.tsx",
+				"packages/e2e-tests/e2e/**",
+				"packages/e2e-tests/playwright.config.ts",
+				"packages/extension/.output/**"
+			],
+			"outputs": ["playwright-report/**", "test-results/**"]
 		},
 		"test:unit": {
 			"dependsOn": [],
@@ -53,26 +57,11 @@
 				"packages/extension/entrypoints/**/*.test.tsx"
 			]
 		},
-		"test:e2e": {
-			"dependsOn": ["build"],
-			"outputs": ["playwright-report/**", "test-results/**"],
-			"inputs": ["e2e/**", "playwright.config.ts"]
-		},
-		"test:e2e:ui": {
-			"dependsOn": ["build"],
-			"outputs": ["playwright-report/**", "test-results/**"],
-			"inputs": ["e2e/**", "playwright.config.ts"]
-		},
-		"test:e2e:headed": {
-			"dependsOn": ["build"],
-			"outputs": ["playwright-report/**", "test-results/**"],
-			"inputs": ["e2e/**", "playwright.config.ts"]
-		},
 		"lint": {
 			"outputs": [],
 			"inputs": [
 				"packages/extension/**",
-				"e2e/**",
+				"packages/e2e-tests/**",
 				"*.{ts,tsx,js,jsx}",
 				"biome.json"
 			]
@@ -81,7 +70,7 @@
 			"outputs": [],
 			"inputs": [
 				"packages/extension/**",
-				"e2e/**",
+				"packages/e2e-tests/**",
 				"*.{ts,tsx,js,jsx}",
 				"biome.json"
 			]
@@ -90,7 +79,7 @@
 			"outputs": [],
 			"inputs": [
 				"packages/extension/**",
-				"e2e/**",
+				"packages/e2e-tests/**",
 				"*.{ts,tsx,js,jsx}",
 				"biome.json"
 			]

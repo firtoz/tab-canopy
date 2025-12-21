@@ -131,11 +131,11 @@ function generateTreeOrder(before?: string, after?: string): string {
 
 	if (!before) {
 		// Insert before `after` - we need something that sorts before it
-		const firstChar = after!.charCodeAt(0);
+		const firstChar = after?.charCodeAt(0);
 
 		// Try to find a character that sorts before the first character
 		// '0' is ASCII 48, which is a safe lower bound for printable chars
-		if (firstChar > 48) {
+		if (firstChar !== undefined && firstChar > 48) {
 			// There's room before the first character
 			const midChar = Math.floor((48 + firstChar) / 2);
 			if (midChar < firstChar && midChar >= 48) {
@@ -145,8 +145,8 @@ function generateTreeOrder(before?: string, after?: string): string {
 
 		// First char is already at or near the minimum ('0')
 		// Prepend '0' and recurse on the rest
-		if (after!.length > 1) {
-			return "0" + generateTreeOrder(undefined, after!.slice(1));
+		if (after !== undefined && after.length > 1) {
+			return `0${generateTreeOrder(undefined, after.slice(1))}`;
 		}
 		// Single character at minimum - just prepend '0'
 		return "0";
@@ -155,7 +155,7 @@ function generateTreeOrder(before?: string, after?: string): string {
 	if (!after) {
 		// Insert after `before` - we need something that sorts after it
 		// Append a character to make it larger
-		return before + "n";
+		return `${before}n`;
 	}
 
 	// Insert between two values
@@ -195,7 +195,7 @@ function generateTreeOrder(before?: string, after?: string): string {
 	}
 
 	// Append to before to make it slightly larger but still less than after
-	return before + "n";
+	return `${before}n`;
 }
 
 // Helper to update tab indices while preserving tree structure
@@ -227,7 +227,7 @@ const updateTabIndicesInWindow = async (
 };
 
 // Helper to update only tabs in a specific index range (for moves)
-const updateTabIndicesInRange = async (
+const _updateTabIndicesInRange = async (
 	windowId: number,
 	fromIndex: number,
 	toIndex: number,
@@ -646,7 +646,7 @@ export const setupTabListeners = (dbOps: DbOperations) => {
 
 		if (existingTab) {
 			// Build tree with current DB state and see where this tab would be
-			const sortedByTree = [...windowTabs].sort((a, b) => {
+			const _sortedByTree = [...windowTabs].sort((a, b) => {
 				// Sort by tree structure (depth-first)
 				const aOrder = `${a.parentTabId ?? ""}-${a.treeOrder}`;
 				const bOrder = `${b.parentTabId ?? ""}-${b.treeOrder}`;
@@ -664,7 +664,7 @@ export const setupTabListeners = (dbOps: DbOperations) => {
 					if (!childrenMap.has(parentId)) {
 						childrenMap.set(parentId, []);
 					}
-					childrenMap.get(parentId)!.push(tab);
+					childrenMap.get(parentId)?.push(tab);
 				}
 
 				// Sort children by treeOrder (using ASCII order, not locale)
@@ -887,7 +887,7 @@ export const setupTabListeners = (dbOps: DbOperations) => {
 		const updatedTreeOrders = new Map<number, string>();
 		updatedTreeOrders.set(tabId, newTreeOrder);
 		for (const flattenedId of flattenedDescendantIds) {
-			const flattenedTab = existingTabs.find(
+			const _flattenedTab = existingTabs.find(
 				(t) => t.browserTabId === flattenedId,
 			);
 			// The flattened tab got a new treeOrder, but we need to know what it was

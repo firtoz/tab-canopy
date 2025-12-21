@@ -99,7 +99,8 @@ function getAllDescendants(allTabs: Tab[], parentId: number): Set<number> {
 	const queue = [parentId];
 
 	while (queue.length > 0) {
-		const currentId = queue.shift()!;
+		const currentId = queue.shift();
+		if (currentId === undefined) break;
 		const children = allTabs.filter((t) => t.parentTabId === currentId);
 		for (const child of children) {
 			descendants.add(child.browserTabId);
@@ -195,8 +196,11 @@ export function calculateTreePositionFromBrowserMove(
 	let prevTab: Tab | null = null;
 	for (let i = newBrowserIndex - 1; i >= 0; i--) {
 		if (tabsByBrowserIndex.has(i)) {
-			prevTab = tabsByBrowserIndex.get(i)!;
-			break;
+			const tab = tabsByBrowserIndex.get(i);
+			if (tab) {
+				prevTab = tab;
+				break;
+			}
 		}
 	}
 
@@ -205,8 +209,11 @@ export function calculateTreePositionFromBrowserMove(
 	for (let i = newBrowserIndex + 1; i < allTabs.length + 10; i++) {
 		// +10 buffer for safety
 		if (tabsByBrowserIndex.has(i)) {
-			nextTab = tabsByBrowserIndex.get(i)!;
-			break;
+			const tab = tabsByBrowserIndex.get(i);
+			if (tab) {
+				nextTab = tab;
+				break;
+			}
 		}
 	}
 

@@ -8,14 +8,12 @@ import {
 	buildTabTree,
 	calculateTreeMove,
 	flattenTree,
-	getDescendantIds,
 	type TreeDropPosition,
 } from "../tree";
 import type {
 	RecordedEvent,
 	RecordingSession,
 	UserDragEndEvent,
-	UserSelectionChangeEvent,
 } from "./event-types";
 
 // ============================================================================

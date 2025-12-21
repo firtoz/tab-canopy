@@ -62,7 +62,7 @@ export function buildTabTree(tabs: Tab[]): TabTreeNode[] {
 		if (!childrenMap.has(parentId)) {
 			childrenMap.set(parentId, []);
 		}
-		childrenMap.get(parentId)!.push(tab);
+		childrenMap.get(parentId)?.push(tab);
 	}
 
 	// Sort children by treeOrder (using ASCII order, not locale)
@@ -136,7 +136,8 @@ export function getDescendantIds(tabs: Tab[], parentId: number): number[] {
 	const queue = [parentId];
 
 	while (queue.length > 0) {
-		const currentId = queue.shift()!;
+		const currentId = queue.shift();
+		if (currentId === undefined) break;
 		for (const tab of tabs) {
 			if (tab.parentTabId === currentId) {
 				descendants.push(tab.browserTabId);
@@ -207,11 +208,11 @@ export function generateTreeOrder(before?: string, after?: string): string {
 
 	if (!before) {
 		// Insert before `after` - we need something that sorts before it
-		const firstChar = after!.charCodeAt(0);
+		const firstChar = after?.charCodeAt(0);
 
 		// Try to find a character that sorts before the first character
 		// '0' is ASCII 48, which is a safe lower bound for printable chars
-		if (firstChar > 48) {
+		if (firstChar !== undefined && firstChar > 48) {
 			// There's room before the first character
 			const midChar = Math.floor((48 + firstChar) / 2);
 			if (midChar < firstChar && midChar >= 48) {
@@ -221,8 +222,8 @@ export function generateTreeOrder(before?: string, after?: string): string {
 
 		// First char is already at or near the minimum ('0')
 		// Prepend '0' and recurse on the rest
-		if (after!.length > 1) {
-			return "0" + generateTreeOrder(undefined, after!.slice(1));
+		if (after !== undefined && after.length > 1) {
+			return `0${generateTreeOrder(undefined, after.slice(1))}`;
 		}
 		// Single character at minimum - just prepend '0'
 		return "0";
@@ -231,7 +232,7 @@ export function generateTreeOrder(before?: string, after?: string): string {
 	if (!after) {
 		// Insert after `before` - we need something that sorts after it
 		// Append a character to make it larger
-		return before + "n";
+		return `${before}n`;
 	}
 
 	// Insert between two values
@@ -272,7 +273,7 @@ export function generateTreeOrder(before?: string, after?: string): string {
 
 	// Both have suffixes but they're adjacent
 	// Generate by extending before: "xa" -> "xan"
-	return before + "n";
+	return `${before}n`;
 }
 
 /**

@@ -17,7 +17,7 @@ import {
 // import { sortableKeyboardCoordinates } from "@dnd-kit/sortable";
 import { useDrizzleIndexedDB } from "@firtoz/drizzle-indexeddb";
 import { useLiveQuery } from "@tanstack/react-db";
-import { generateKeyBetween, generateNKeysBetween } from "fractional-indexing";
+import { generateNKeysBetween } from "fractional-indexing";
 import { RefreshCw, Settings } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type * as schema from "@/schema/src/schema";
@@ -660,7 +660,7 @@ export const TabManagerContent = () => {
 						ancestorChain.unshift(current);
 						if (current.parentTabId === null) break;
 						current = tabsForTreeCalc.find(
-							(t) => t.browserTabId === current!.parentTabId,
+							(t) => t.browserTabId === current?.parentTabId,
 						);
 					}
 

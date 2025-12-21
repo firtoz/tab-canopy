@@ -1,13 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import type { RecordingSession } from "./event-types";
 import {
-	applyEvent,
 	assertSelection,
 	assertTreeOrder,
 	assertTreeStructure,
 	getFinalState,
-	replaySession,
-	type SimulatedState,
 } from "./replay-engine";
 
 // ============================================================================
@@ -17,7 +14,7 @@ import {
 /**
  * Parse a recording session from JSON (as copied from DevTools panel)
  */
-function parseSession(json: string): RecordingSession {
+function _parseSession(json: string): RecordingSession {
 	return JSON.parse(json);
 }
 
