@@ -1,5 +1,6 @@
 import { DEFAULT_TREE_ORDER } from "@/entrypoints/sidepanel/lib/tree";
 import type { Tab } from "@/schema/src/schema";
+import { generateKeyBetween } from "fractional-indexing";
 import { log, makeTabId } from "./constants";
 import type { DbOperations } from "./db-operations";
 import { queuedHandler } from "./event-queue";
@@ -117,86 +118,6 @@ function consumeUiMoveIntent(tabId: number): UiMoveIntent | undefined {
 		log("[Background] UI move intent expired for tab:", tabId);
 	}
 	return undefined;
-}
-
-/**
- * Generate a treeOrder value between two existing values.
- * Handles mixed alphanumeric strings (digits sort before letters in ASCII).
- * ASCII order: '0'-'9' (48-57) < 'A'-'Z' (65-90) < 'a'-'z' (97-122)
- */
-function generateTreeOrder(before?: string, after?: string): string {
-	// Default midpoint - use fractional-indexing library
-	if (!before && !after) {
-		return DEFAULT_TREE_ORDER;
-	}
-
-	if (!before) {
-		// Insert before `after` - we need something that sorts before it
-		const firstChar = after?.charCodeAt(0);
-
-		// Try to find a character that sorts before the first character
-		// '0' is ASCII 48, which is a safe lower bound for printable chars
-		if (firstChar !== undefined && firstChar > 48) {
-			// There's room before the first character
-			const midChar = Math.floor((48 + firstChar) / 2);
-			if (midChar < firstChar && midChar >= 48) {
-				return String.fromCharCode(midChar);
-			}
-		}
-
-		// First char is already at or near the minimum ('0')
-		// Prepend '0' and recurse on the rest
-		if (after !== undefined && after.length > 1) {
-			return `0${generateTreeOrder(undefined, after.slice(1))}`;
-		}
-		// Single character at minimum - just prepend '0'
-		return "0";
-	}
-
-	if (!after) {
-		// Insert after `before` - we need something that sorts after it
-		// Append a character to make it larger
-		return `${before}n`;
-	}
-
-	// Insert between two values
-	// Find common prefix
-	let i = 0;
-	while (i < before.length && i < after.length && before[i] === after[i]) {
-		i++;
-	}
-	const commonPrefix = before.slice(0, i);
-
-	// Get the differing parts
-	const beforeSuffix = before.slice(i);
-	const afterSuffix = after.slice(i);
-
-	// Get first differing character (or use boundaries)
-	// Use ASCII 47 ('/') as lower bound and 127 (DEL) as upper bound
-	const beforeChar = beforeSuffix.length > 0 ? beforeSuffix.charCodeAt(0) : 47;
-	const afterChar = afterSuffix.length > 0 ? afterSuffix.charCodeAt(0) : 127;
-
-	if (afterChar - beforeChar > 1) {
-		// There's room for a character in between
-		const midChar = String.fromCharCode(
-			Math.floor((beforeChar + afterChar) / 2),
-		);
-		return commonPrefix + midChar;
-	}
-
-	// Characters are adjacent (e.g., '0' and '1', or 'a' and 'b')
-	// We need to extend the `before` value
-	if (beforeSuffix.length === 0) {
-		// before ended at common prefix, after has more
-		// Insert between common prefix and afterSuffix
-		const midChar = Math.floor((47 + afterChar) / 2);
-		if (midChar > 47 && midChar < afterChar) {
-			return commonPrefix + String.fromCharCode(midChar);
-		}
-	}
-
-	// Append to before to make it slightly larger but still less than after
-	return `${before}n`;
 }
 
 // Helper to update tab indices while preserving tree structure
@@ -392,10 +313,10 @@ export const setupTabListeners = (
 						}
 					}
 
-					treeOrder = generateTreeOrder(
-						insertAfter?.treeOrder,
-						insertBefore?.treeOrder,
-					);
+				treeOrder = generateKeyBetween(
+					insertAfter?.treeOrder || null,
+					insertBefore?.treeOrder || null,
+				);
 
 					log(
 						"[Background] Position allows child - setting as child with treeOrder:",
@@ -430,16 +351,16 @@ export const setupTabListeners = (
 									: 0,
 						);
 
-					const lastRoot = rootTabs[rootTabs.length - 1];
-					treeOrder = generateTreeOrder(lastRoot?.treeOrder, undefined);
+				const lastRoot = rootTabs[rootTabs.length - 1];
+				treeOrder = generateKeyBetween(lastRoot?.treeOrder || null, null);
 
-					trackTabCreatedEvent({
-						tabId: tab.id,
-						openerTabId,
-						tabIndex: tab.index,
-						decidedParentId: null,
-						reason: `Position prevents child: index ${tab.index} is not in valid range (opener ${openerIndex}, last descendant ${lastDescendantIndex})`,
-					});
+				trackTabCreatedEvent({
+					tabId: tab.id,
+					openerTabId,
+					tabIndex: tab.index,
+					decidedParentId: null,
+					reason: `Position prevents child: index ${tab.index} is not in valid range (opener ${openerIndex}, last descendant ${lastDescendantIndex})`,
+				});
 				}
 			}
 		}
@@ -455,7 +376,7 @@ export const setupTabListeners = (
 				);
 
 			const lastRoot = rootTabs[rootTabs.length - 1];
-			treeOrder = generateTreeOrder(lastRoot?.treeOrder, undefined);
+			treeOrder = generateKeyBetween(lastRoot?.treeOrder || null, null);
 
 			trackTabCreatedEvent({
 				tabId: tab.id,
@@ -841,10 +762,10 @@ export const setupTabListeners = (
 								i === 0
 									? siblingsAtNewLevel[siblingsAtNewLevel.length - 1]
 									: childRecords[childRecords.length - 1];
-							const childTreeOrder = generateTreeOrder(
-								beforeSibling?.treeOrder,
-								newTreeOrder,
-							);
+						const childTreeOrder = generateKeyBetween(
+							beforeSibling?.treeOrder || null,
+							newTreeOrder,
+						);
 
 							testLog(
 								`Flattening child ${childId} with treeOrder=${childTreeOrder} and newParentId=${newParentId}`,
@@ -940,8 +861,8 @@ export const setupTabListeners = (
 				bt.index > moveInfo.toIndex &&
 				treeOrderToUse <= lastTreeOrderAtSameLevel
 			) {
-				// Generate a new treeOrder after the last one
-				treeOrderToUse = generateTreeOrder(lastTreeOrderAtSameLevel, undefined);
+			// Generate a new treeOrder after the last one
+			treeOrderToUse = generateKeyBetween(lastTreeOrderAtSameLevel, null);
 				testLog(
 					`Tab ${bt.id} at index ${bt.index} needs new treeOrder ${treeOrderToUse} (was ${existing?.treeOrder}) because it comes after moved tab and had old treeOrder`,
 				);
@@ -1157,19 +1078,19 @@ export const setupTabListeners = (
 
 			// Find the appropriate position based on attachInfo.newPosition
 			if (attachInfo.newPosition === 0) {
-				// Inserted at the beginning
-				const firstRoot = rootTabs[0];
-				treeOrder = generateTreeOrder(undefined, firstRoot?.treeOrder);
-			} else if (attachInfo.newPosition >= rootTabs.length) {
-				// Inserted at the end
-				const lastRoot = rootTabs[rootTabs.length - 1];
-				treeOrder = generateTreeOrder(lastRoot?.treeOrder, undefined);
-			} else {
-				// Inserted in the middle - use the position
-				const prevRoot = rootTabs[attachInfo.newPosition - 1];
-				const nextRoot = rootTabs[attachInfo.newPosition];
-				treeOrder = generateTreeOrder(prevRoot?.treeOrder, nextRoot?.treeOrder);
-			}
+			// Inserted at the beginning
+			const firstRoot = rootTabs[0];
+			treeOrder = generateKeyBetween(null, firstRoot?.treeOrder || null);
+		} else if (attachInfo.newPosition >= rootTabs.length) {
+			// Inserted at the end
+			const lastRoot = rootTabs[rootTabs.length - 1];
+			treeOrder = generateKeyBetween(lastRoot?.treeOrder || null, null);
+		} else {
+			// Inserted in the middle - use the position
+			const prevRoot = rootTabs[attachInfo.newPosition - 1];
+			const nextRoot = rootTabs[attachInfo.newPosition];
+			treeOrder = generateKeyBetween(prevRoot?.treeOrder || null, nextRoot?.treeOrder || null);
+		}
 
 			// Create the tab record with reset tree structure (root level in new window)
 			const tabRecord = tabToRecord(browserTab, {

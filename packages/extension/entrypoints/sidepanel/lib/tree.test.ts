@@ -1,11 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import type { Tab } from "@/schema/src/schema";
+import { generateKeyBetween } from "fractional-indexing";
 import {
 	buildTabTree,
 	calculateTreeMove,
 	compareTreeOrder,
 	flattenTree,
-	generateTreeOrder,
 	getDescendantIds,
 	getSiblings,
 	isAncestor,
@@ -63,48 +63,40 @@ describe("compareTreeOrder", () => {
 	});
 });
 
-describe("generateTreeOrder", () => {
+describe("generateKeyBetween (fractional-indexing)", () => {
 	test("generates default when no bounds", () => {
-		const result = generateTreeOrder();
-		expect(result.length).toBeGreaterThan(0);
+		const result = generateKeyBetween(null, null);
+		expect(result).toBe("a0");
 	});
 
 	test("generates order before first", () => {
-		const first = "m";
-		const result = generateTreeOrder(undefined, first);
-		expect(result < first).toBe(true);
-	});
-
-	test("generates order before alphanumeric value like a0000", () => {
-		// This is the real-world format from performFullReset
-		const first = "a0000";
-		const result = generateTreeOrder(undefined, first);
-		// Must use ASCII comparison, not localeCompare
+		const first = "a1";
+		const result = generateKeyBetween(null, first);
 		expect(result < first).toBe(true);
 	});
 
 	test("generates order before a0001", () => {
 		const first = "a0001";
-		const result = generateTreeOrder(undefined, first);
+		const result = generateKeyBetween(null, first);
 		expect(result < first).toBe(true);
 	});
 
 	test("generates order after last", () => {
-		const last = "m";
-		const result = generateTreeOrder(last, undefined);
+		const last = "a0";
+		const result = generateKeyBetween(last, null);
 		expect(result > last).toBe(true);
 	});
 
 	test("generates order between two values", () => {
-		const result = generateTreeOrder("a", "z");
-		expect(result > "a").toBe(true);
-		expect(result < "z").toBe(true);
+		const result = generateKeyBetween("a0", "a2");
+		expect(result > "a0").toBe(true);
+		expect(result < "a2").toBe(true);
 	});
 
 	test("handles close values", () => {
-		const result = generateTreeOrder("a", "b");
-		expect(result > "a").toBe(true);
-		expect(result < "b").toBe(true);
+		const result = generateKeyBetween("a0", "a1");
+		expect(result > "a0").toBe(true);
+		expect(result < "a1").toBe(true);
 	});
 
 	test("can generate many values in order", () => {
@@ -112,7 +104,7 @@ describe("generateTreeOrder", () => {
 		let current = "a0";
 		const values = [current];
 		for (let i = 0; i < 10; i++) {
-			const next = generateTreeOrder(current, undefined);
+			const next = generateKeyBetween(current, null);
 			expect(next > current).toBe(true);
 			values.push(next);
 			current = next;
@@ -124,9 +116,9 @@ describe("generateTreeOrder", () => {
 	});
 
 	test("can insert between adjacent values", () => {
-		const before = "a";
-		const after = "b";
-		const middle = generateTreeOrder(before, after);
+		const before = "a0";
+		const after = "a1";
+		const middle = generateKeyBetween(before, after);
 		expect(middle > before).toBe(true);
 		expect(middle < after).toBe(true);
 	});
@@ -136,9 +128,9 @@ describe("buildTabTree", () => {
 	test("builds tree from flat list", () => {
 		const tabs = [
 			createMockTab(1, null, "a0"),
-			createMockTab(2, null, "b0"),
+			createMockTab(2, null, "a1"),
 			createMockTab(3, 1, "a0"), // child of 1
-			createMockTab(4, 1, "b0"), // child of 1
+			createMockTab(4, 1, "a1"), // child of 1
 		];
 
 		const tree = buildTabTree(tabs);
@@ -207,9 +199,9 @@ describe("buildTabTree", () => {
 	test("sorts children by treeOrder", () => {
 		const tabs = [
 			createMockTab(1, null, "a0"),
-			createMockTab(4, 1, "c0"),
+			createMockTab(4, 1, "a2"),
 			createMockTab(2, 1, "a0"),
-			createMockTab(3, 1, "b0"),
+			createMockTab(3, 1, "a1"),
 		];
 
 		const tree = buildTabTree(tabs);
@@ -241,7 +233,7 @@ describe("flattenTree", () => {
 		const tabs = [
 			createMockTab(1, null, "a0", true), // collapsed
 			createMockTab(2, 1, "a0"),
-			createMockTab(3, 1, "b0"),
+			createMockTab(3, 1, "a1"),
 		];
 
 		const tree = buildTabTree(tabs);
@@ -256,7 +248,7 @@ describe("flattenTree", () => {
 		const tabs = [
 			createMockTab(1, null, "a0"),
 			createMockTab(2, 1, "a0"),
-			createMockTab(3, null, "b0"),
+			createMockTab(3, null, "a1"),
 		];
 
 		const tree = buildTabTree(tabs);
@@ -289,8 +281,8 @@ describe("getDescendantIds", () => {
 			createMockTab(1, null, "a0"),
 			createMockTab(2, 1, "a0"),
 			createMockTab(3, 2, "a0"),
-			createMockTab(4, 1, "b0"),
-			createMockTab(5, null, "b0"),
+			createMockTab(4, 1, "a1"),
+			createMockTab(5, null, "a1"),
 		];
 
 		const descendants = getDescendantIds(tabs, 1);
@@ -328,7 +320,7 @@ describe("isAncestor", () => {
 	});
 
 	test("returns false for non-ancestor", () => {
-		const tabs = [createMockTab(1, null, "a0"), createMockTab(2, null, "b0")];
+		const tabs = [createMockTab(1, null, "a0"), createMockTab(2, null, "a1")];
 
 		expect(isAncestor(tabs, 1, 2)).toBe(false);
 	});
@@ -345,8 +337,8 @@ describe("getSiblings", () => {
 		const tabs = [
 			createMockTab(1, null, "a0"),
 			createMockTab(2, 1, "a0"),
-			createMockTab(3, 1, "b0"),
-			createMockTab(4, 1, "c0"),
+			createMockTab(3, 1, "a1"),
+			createMockTab(4, 1, "a2"),
 		];
 
 		const siblings = getSiblings(tabs, tabs[1]);
@@ -360,7 +352,7 @@ describe("getSiblings", () => {
 	test("gets root level siblings", () => {
 		const tabs = [
 			createMockTab(1, null, "a0"),
-			createMockTab(2, null, "b0"),
+			createMockTab(2, null, "a1"),
 			createMockTab(3, 1, "a0"),
 		];
 
@@ -375,7 +367,7 @@ describe("getSiblings", () => {
 describe("calculateTreeMove", () => {
 	describe("child drop", () => {
 		test("inserting as first child", () => {
-			const tabs = [createMockTab(1, null, "a0"), createMockTab(2, null, "b0")];
+			const tabs = [createMockTab(1, null, "a0"), createMockTab(2, null, "a1")];
 
 			const result = calculateTreeMove(tabs, 2, {
 				type: "child",
@@ -386,97 +378,97 @@ describe("calculateTreeMove", () => {
 			expect(result.treeOrder).toBeDefined();
 		});
 
-		test("inserting as child when parent has children", () => {
-			const tabs = [
-				createMockTab(1, null, "a0"),
-				createMockTab(2, 1, "m0"),
-				createMockTab(3, null, "b0"),
-			];
+	test("inserting as child when parent has children", () => {
+		const tabs = [
+			createMockTab(1, null, "a0"),
+			createMockTab(2, 1, "a1"),
+			createMockTab(3, null, "a2"),
+		];
 
-			const result = calculateTreeMove(tabs, 3, {
-				type: "child",
-				parentTabId: 1,
-			});
-
-			expect(result.parentTabId).toBe(1);
-			expect(result.treeOrder < "m0").toBe(true); // inserted before first child
+		const result = calculateTreeMove(tabs, 3, {
+			type: "child",
+			parentTabId: 1,
 		});
+
+		expect(result.parentTabId).toBe(1);
+		expect(result.treeOrder < "a1").toBe(true); // inserted before first child
+	});
 	});
 
 	describe("sibling drop - before", () => {
-		test("inserting before sibling", () => {
-			const tabs = [
-				createMockTab(1, null, "a0"),
-				createMockTab(2, null, "b0"),
-				createMockTab(3, null, "c0"),
-			];
+	test("inserting before sibling", () => {
+		const tabs = [
+			createMockTab(1, null, "a0"),
+			createMockTab(2, null, "a1"),
+			createMockTab(3, null, "a2"),
+		];
 
-			const result = calculateTreeMove(tabs, 3, {
-				type: "before",
-				targetTabId: 2,
-			});
-
-			expect(result.parentTabId).toBe(null);
-			expect(result.treeOrder > "a0").toBe(true);
-			expect(result.treeOrder < "b0").toBe(true);
+		const result = calculateTreeMove(tabs, 3, {
+			type: "before",
+			targetTabId: 2,
 		});
 
-		test("inserting before first sibling", () => {
-			const tabs = [createMockTab(1, null, "b0"), createMockTab(2, null, "c0")];
+		expect(result.parentTabId).toBe(null);
+		expect(result.treeOrder > "a0").toBe(true);
+		expect(result.treeOrder < "a1").toBe(true);
+	});
 
-			const result = calculateTreeMove(tabs, 2, {
-				type: "before",
-				targetTabId: 1,
-			});
+	test("inserting before first sibling", () => {
+		const tabs = [createMockTab(1, null, "a1"), createMockTab(2, null, "a2")];
 
-			expect(result.parentTabId).toBe(null);
-			expect(result.treeOrder < "b0").toBe(true);
+		const result = calculateTreeMove(tabs, 2, {
+			type: "before",
+			targetTabId: 1,
 		});
+
+		expect(result.parentTabId).toBe(null);
+		expect(result.treeOrder < "a1").toBe(true);
+	});
 	});
 
 	describe("sibling drop - after", () => {
-		test("inserting after sibling", () => {
-			const tabs = [
-				createMockTab(1, null, "a0"),
-				createMockTab(2, null, "c0"),
-				createMockTab(3, null, "e0"),
-			];
+	test("inserting after sibling", () => {
+		const tabs = [
+			createMockTab(1, null, "a0"),
+			createMockTab(2, null, "a1"),
+			createMockTab(3, null, "a2"),
+		];
 
-			const result = calculateTreeMove(tabs, 3, {
-				type: "after",
-				targetTabId: 1,
-			});
-
-			expect(result.parentTabId).toBe(null);
-			expect(result.treeOrder > "a0").toBe(true);
-			expect(result.treeOrder < "c0").toBe(true);
+		const result = calculateTreeMove(tabs, 3, {
+			type: "after",
+			targetTabId: 1,
 		});
 
-		test("inserting after last sibling", () => {
-			const tabs = [createMockTab(1, null, "a0"), createMockTab(2, null, "b0")];
+		expect(result.parentTabId).toBe(null);
+		expect(result.treeOrder > "a0").toBe(true);
+		expect(result.treeOrder < "a1").toBe(true);
+	});
 
-			const result = calculateTreeMove(tabs, 1, {
-				type: "after",
-				targetTabId: 2,
-			});
+	test("inserting after last sibling", () => {
+		const tabs = [createMockTab(1, null, "a0"), createMockTab(2, null, "a1")];
 
-			expect(result.parentTabId).toBe(null);
-			expect(result.treeOrder > "b0").toBe(true);
+		const result = calculateTreeMove(tabs, 1, {
+			type: "after",
+			targetTabId: 2,
 		});
+
+		expect(result.parentTabId).toBe(null);
+		expect(result.treeOrder > "a1").toBe(true);
+	});
 	});
 
 	describe("root drop", () => {
-		test("inserting at root start", () => {
-			const tabs = [createMockTab(1, null, "m0"), createMockTab(2, 1, "a0")];
+	test("inserting at root start", () => {
+		const tabs = [createMockTab(1, null, "a1"), createMockTab(2, 1, "a0")];
 
-			const result = calculateTreeMove(tabs, 2, {
-				type: "root",
-				index: 0,
-			});
-
-			expect(result.parentTabId).toBe(null);
-			expect(result.treeOrder < "m0").toBe(true);
+		const result = calculateTreeMove(tabs, 2, {
+			type: "root",
+			index: 0,
 		});
+
+		expect(result.parentTabId).toBe(null);
+		expect(result.treeOrder < "a1").toBe(true);
+	});
 
 		test("inserting at root end", () => {
 			const tabs = [createMockTab(1, null, "a0"), createMockTab(2, 1, "a0")];

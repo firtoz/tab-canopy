@@ -374,23 +374,23 @@ export const TabManagerContent = () => {
 							? siblings[currentIndex + 1]
 							: null;
 
-					// Sort children by their current tree order to maintain relative positions
-					const sortedChildren = [...children].sort((a, b) =>
-						a.treeOrder.localeCompare(b.treeOrder),
-					);
+				// Sort children by their current tree order to maintain relative positions
+				const sortedChildren = [...children].sort((a, b) =>
+					a.treeOrder.localeCompare(b.treeOrder),
+				);
 
-					// Generate new tree orders for all children at once
-					const newTreeOrders = generateNKeysBetween(
-						prevSibling?.treeOrder || null,
-						nextSibling?.treeOrder || null,
-						sortedChildren.length,
-					);
+				// Generate new tree orders for all children at once using fractional-indexing
+				const newTreeOrders = generateNKeysBetween(
+					prevSibling?.treeOrder || null,
+					nextSibling?.treeOrder || null,
+					sortedChildren.length,
+				);
 
-					const childUpdates = sortedChildren.map((child, index) => ({
-						childId: child.id,
-						parentTabId: newParentId,
-						treeOrder: newTreeOrders[index],
-					}));
+				const childUpdates = sortedChildren.map((child, index) => ({
+					childId: child.id,
+					parentTabId: newParentId,
+					treeOrder: newTreeOrders[index],
+				}));
 
 					// Apply all updates to database
 					for (const update of childUpdates) {
@@ -711,49 +711,64 @@ export const TabManagerContent = () => {
 				return;
 			}
 
-			// Calculate the new parent and treeOrder
-			const { parentTabId: newParentId, treeOrder: newTreeOrder } =
-				calculateTreeMove(
-					tabsForTreeCalc,
-					validDraggedTabIds[0],
-					treeDropPosition,
-				);
+		// Calculate the new parent and treeOrder for the first tab
+		const { parentTabId: newParentId, treeOrder: firstTreeOrder } =
+			calculateTreeMove(
+				tabsForTreeCalc,
+				validDraggedTabIds[0],
+				treeDropPosition,
+			);
 
-			// Update tree structure in the database for each dragged tab
-			// First, create the updated tabs with new tree positions
-			const updatedTabs: Array<{
-				tab: (typeof tabs)[0];
-				newParentId: number | null;
-				newTreeOrder: string;
-				newWindowId: number;
-			}> = [];
+		// Update tree structure in the database for each dragged tab
+		// First, create the updated tabs with new tree positions
+		const updatedTabs: Array<{
+			tab: (typeof tabs)[0];
+			newParentId: number | null;
+			newTreeOrder: string;
+			newWindowId: number;
+		}> = [];
 
-			for (let i = 0; i < validDraggedTabIds.length; i++) {
-				const browserTabId = validDraggedTabIds[i];
-				const tab = tabs.find((t) => t.browserTabId === browserTabId);
-				if (!tab) continue;
+		// For multiple tabs, generate proper order keys using fractional-indexing
+		// Find the next sibling to determine the upper bound
+		const siblings = tabsForTreeCalc
+			.filter((t) => t.parentTabId === newParentId)
+			.sort((a, b) => a.treeOrder.localeCompare(b.treeOrder));
+		const firstTabIndex = siblings.findIndex((s) => s.treeOrder >= firstTreeOrder);
+		const nextSibling = firstTabIndex >= 0 && firstTabIndex < siblings.length - 1
+			? siblings[firstTabIndex + 1]
+			: undefined;
 
-				// For multiple selections, keep their relative order
-				const orderSuffix = i > 0 ? String.fromCharCode(97 + i) : ""; // a, b, c...
-				const tabNewTreeOrder = newTreeOrder + orderSuffix;
+		// Generate N keys between the first position and the next sibling
+		const newTreeOrders = generateNKeysBetween(
+			firstTreeOrder,
+			nextSibling?.treeOrder || null,
+			validDraggedTabIds.length,
+		);
 
-				// The collection key is the tab's id field, not browserTabId
-				tabCollection.update(tab.id, (draft) => {
-					draft.parentTabId = newParentId;
-					draft.treeOrder = tabNewTreeOrder;
-					// For cross-window moves, also update the window ID
-					if (isCrossWindowMove) {
-						draft.browserWindowId = targetWindowId;
-					}
-				});
+		for (let i = 0; i < validDraggedTabIds.length; i++) {
+			const browserTabId = validDraggedTabIds[i];
+			const tab = tabs.find((t) => t.browserTabId === browserTabId);
+			if (!tab) continue;
 
-				updatedTabs.push({
-					tab,
-					newParentId,
-					newTreeOrder: tabNewTreeOrder,
-					newWindowId: targetWindowId,
-				});
-			}
+			const tabNewTreeOrder = newTreeOrders[i];
+
+			// The collection key is the tab's id field, not browserTabId
+			tabCollection.update(tab.id, (draft) => {
+				draft.parentTabId = newParentId;
+				draft.treeOrder = tabNewTreeOrder;
+				// For cross-window moves, also update the window ID
+				if (isCrossWindowMove) {
+					draft.browserWindowId = targetWindowId;
+				}
+			});
+
+			updatedTabs.push({
+				tab,
+				newParentId,
+				newTreeOrder: tabNewTreeOrder,
+				newWindowId: targetWindowId,
+			});
+		}
 
 			// Now sync browser tab positions to match the new tree structure
 			// Build the new tree with updated positions (including cross-window moved tabs)

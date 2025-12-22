@@ -83,16 +83,6 @@ export function getExpectedBrowserOrder(tabs: Tab[]): Map<number, number> {
 }
 
 /**
- * Generate a treeOrder value between two existing values.
- * Uses the fractional-indexing library (battle-tested by Figma).
- */
-function generateTreeOrder(before?: string, after?: string): string {
-	// The library uses null/undefined for boundaries
-	const result = generateKeyBetween(before ?? null, after ?? null);
-	return result;
-}
-
-/**
  * Get all descendants of a tab (recursive)
  */
 function getAllDescendants(allTabs: Tab[], parentId: number): Set<number> {
@@ -275,9 +265,9 @@ export function calculateTreePositionFromBrowserMove(
 	const prevSibling = insertIndex > 0 ? siblings[insertIndex - 1] : null;
 	const nextSibling =
 		insertIndex < siblings.length ? siblings[insertIndex] : null;
-	const treeOrder = generateTreeOrder(
-		prevSibling?.treeOrder,
-		nextSibling?.treeOrder,
+	const treeOrder = generateKeyBetween(
+		prevSibling?.treeOrder ?? null,
+		nextSibling?.treeOrder ?? null,
 	);
 
 	return {

@@ -4,6 +4,7 @@
  */
 
 import type { Tab, Window } from "@/schema/src/schema";
+import { generateNKeysBetween } from "fractional-indexing";
 import {
 	buildTabTree,
 	calculateTreeMove,
@@ -257,9 +258,24 @@ function applyDragEnd(state: SimulatedState, event: UserDragEndEvent): void {
 		return;
 	}
 
-	// Calculate new tree position
-	const { parentTabId: newParentId, treeOrder: newTreeOrder } =
+	// Calculate new tree position for the first tab
+	const { parentTabId: newParentId, treeOrder: firstTreeOrder } =
 		calculateTreeMove(windowTabs, draggedTabIds[0], treeDropPosition);
+
+	// Generate proper order keys for multiple tabs using fractional-indexing
+	const siblings = windowTabs
+		.filter((t) => t.parentTabId === newParentId)
+		.sort((a, b) => a.treeOrder.localeCompare(b.treeOrder));
+	const firstTabIndex = siblings.findIndex((s) => s.treeOrder >= firstTreeOrder);
+	const nextSibling = firstTabIndex >= 0 && firstTabIndex < siblings.length - 1
+		? siblings[firstTabIndex + 1]
+		: undefined;
+
+	const newTreeOrders = generateNKeysBetween(
+		firstTreeOrder,
+		nextSibling?.treeOrder || null,
+		draggedTabIds.length,
+	);
 
 	// Update dragged tabs
 	for (let i = 0; i < draggedTabIds.length; i++) {
@@ -267,9 +283,8 @@ function applyDragEnd(state: SimulatedState, event: UserDragEndEvent): void {
 		const tab = state.tabs.find((t) => t.browserTabId === tabId);
 		if (!tab) continue;
 
-		const orderSuffix = i > 0 ? String.fromCharCode(97 + i) : "";
 		tab.parentTabId = newParentId;
-		tab.treeOrder = newTreeOrder + orderSuffix;
+		tab.treeOrder = newTreeOrders[i];
 		tab.browserWindowId = targetWindowId;
 	}
 
