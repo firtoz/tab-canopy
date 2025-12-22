@@ -20,52 +20,55 @@ import { DevToolsProvider } from "./lib/devtools";
 const DB_NAME = "tabcanopy.db";
 
 // ============================================================================
-// Reset Database Context
-// ============================================================================
-
-const ResetDatabaseContext = createContext<(() => Promise<void>) | null>(null);
-
-export const useResetDatabase = () => {
-	const resetDatabase = useContext(ResetDatabaseContext);
-	if (!resetDatabase) {
-		throw new Error("useResetDatabase must be used within App");
-	}
-	return resetDatabase;
-};
-
-// ============================================================================
-// Send Move Intent Context (for UI to tell background about pending moves)
+// Background API Context - consolidated context for background communication
 // ============================================================================
 
 import type { UiMoveIntentData } from "@/src/idb-transport";
 
-const SendMoveIntentContext = createContext<
-	((moves: UiMoveIntentData[]) => void) | null
->(null);
+type StateGetter = () => { windows: schema.Window[]; tabs: schema.Tab[] };
 
-export const useSendMoveIntent = () => {
-	const sendMoveIntent = useContext(SendMoveIntentContext);
-	if (!sendMoveIntent) {
-		throw new Error("useSendMoveIntent must be used within App");
+interface BackgroundApi {
+	resetDatabase: () => Promise<void>;
+	sendMoveIntent: (moves: UiMoveIntentData[]) => void;
+	managedWindowMove: {
+		start: (tabIds: number[]) => void;
+		end: () => void;
+	};
+	registerStateGetter: (fn: StateGetter) => void;
+}
+
+const BackgroundApiContext = createContext<BackgroundApi | null>(null);
+
+export const useResetDatabase = () => {
+	const ctx = useContext(BackgroundApiContext);
+	if (!ctx) {
+		throw new Error("useResetDatabase must be used within App");
 	}
-	return sendMoveIntent;
+	return ctx.resetDatabase;
 };
 
-// ============================================================================
-// State Getter Context (for DevTools to get current state)
-// ============================================================================
+export const useSendMoveIntent = () => {
+	const ctx = useContext(BackgroundApiContext);
+	if (!ctx) {
+		throw new Error("useSendMoveIntent must be used within App");
+	}
+	return ctx.sendMoveIntent;
+};
 
-type StateGetter = () => { windows: schema.Window[]; tabs: schema.Tab[] };
-const StateGetterContext = createContext<{
-	setGetter: (fn: StateGetter) => void;
-} | null>(null);
+export const useManagedWindowMove = () => {
+	const ctx = useContext(BackgroundApiContext);
+	if (!ctx) {
+		throw new Error("useManagedWindowMove must be used within App");
+	}
+	return ctx.managedWindowMove;
+};
 
 export const useRegisterStateGetter = () => {
-	const ctx = useContext(StateGetterContext);
+	const ctx = useContext(BackgroundApiContext);
 	if (!ctx) {
 		throw new Error("useRegisterStateGetter must be used within App");
 	}
-	return ctx.setGetter;
+	return ctx.registerStateGetter;
 };
 
 // ============================================================================
@@ -112,6 +115,8 @@ function App() {
 		handleSyncReady,
 		resetDatabase,
 		sendMoveIntent,
+		startManagedWindowMove,
+		endManagedWindowMove,
 		enableTestMode,
 		injectBrowserEvent,
 		getTabCreatedEvents,
@@ -160,6 +165,8 @@ function App() {
 			},
 			resetDatabase: adapter.resetDatabase,
 			sendMoveIntent: adapter.sendMoveIntent,
+			startManagedWindowMove: adapter.startManagedWindowMove,
+			endManagedWindowMove: adapter.endManagedWindowMove,
 			enableTestMode: adapter.enableTestMode,
 			injectBrowserEvent: adapter.injectBrowserEvent,
 			getTabCreatedEvents: adapter.getTabCreatedEvents,
@@ -167,13 +174,24 @@ function App() {
 		};
 	}, [connectionKey]);
 
-	const stateGetterContextValue = useMemo(
+	const backgroundApiValue = useMemo<BackgroundApi>(
 		() => ({
-			setGetter: (fn: StateGetter) => {
+			resetDatabase,
+			sendMoveIntent,
+			managedWindowMove: {
+				start: startManagedWindowMove,
+				end: endManagedWindowMove,
+			},
+			registerStateGetter: (fn: StateGetter) => {
 				stateGetterRef.current = fn;
 			},
 		}),
-		[],
+		[
+			resetDatabase,
+			sendMoveIntent,
+			startManagedWindowMove,
+			endManagedWindowMove,
+		],
 	);
 
 	const testActionsValue = useMemo<TestActions>(
@@ -216,27 +234,23 @@ function App() {
 	}
 
 	return (
-		<ResetDatabaseContext.Provider value={resetDatabase}>
-			<SendMoveIntentContext.Provider value={sendMoveIntent}>
-				<TestActionsContext.Provider value={testActionsValue}>
-					<StateGetterContext.Provider value={stateGetterContextValue}>
-						<DevToolsProvider getCurrentState={getCurrentState}>
-							<DrizzleIndexedDBProvider
-								key={connectionKey}
-								dbName={DB_NAME}
-								schema={schema}
-								dbCreator={dbCreator}
-								onSyncReady={handleSyncReady}
-							>
-								<TabManagerContent />
-								<DevToolsPanel />
-								<DevToolsToggle />
-							</DrizzleIndexedDBProvider>
-						</DevToolsProvider>
-					</StateGetterContext.Provider>
-				</TestActionsContext.Provider>
-			</SendMoveIntentContext.Provider>
-		</ResetDatabaseContext.Provider>
+		<BackgroundApiContext.Provider value={backgroundApiValue}>
+			<TestActionsContext.Provider value={testActionsValue}>
+				<DevToolsProvider getCurrentState={getCurrentState}>
+					<DrizzleIndexedDBProvider
+						key={connectionKey}
+						dbName={DB_NAME}
+						schema={schema}
+						dbCreator={dbCreator}
+						onSyncReady={handleSyncReady}
+					>
+						<TabManagerContent />
+						<DevToolsPanel />
+						<DevToolsToggle />
+					</DrizzleIndexedDBProvider>
+				</DevToolsProvider>
+			</TestActionsContext.Provider>
+		</BackgroundApiContext.Provider>
 	);
 }
 

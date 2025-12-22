@@ -4,10 +4,26 @@
 	"tasks": {
 		"build": {
 			"dependsOn": ["db:generate"],
+			"inputs": [
+				".env",
+				"src/**/*.ts",
+				"assets/**/*",
+				"public/**/*",
+				"schema/**/*",
+				"entrypoints/**/*"
+			],
 			"outputs": [".output/**"]
 		},
 		"build:firefox": {
 			"dependsOn": ["db:generate"],
+			"inputs": [
+				".env",
+				"src/**/*.ts",
+				"assets/**/*",
+				"public/**/*",
+				"schema/**/*",
+				"entrypoints/**/*"
+			],
 			"outputs": [".output/**"]
 		}
 	}

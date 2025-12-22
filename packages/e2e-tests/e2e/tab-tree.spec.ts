@@ -36,12 +36,12 @@ test.describe("Tab Tree Management", () => {
 		treeHelpers,
 	}) => {
 		// Create a new tab
-		const newPage = await createTab(context, "https://example.com", sidepanel);
+		const newPage = await createTab(context, "about:blank", sidepanel);
 
 		// Wait for the new tab to appear
-		const newTabInfo = await treeHelpers.waitForTab("example.com");
+		const newTabInfo = await treeHelpers.waitForTab("about:blank");
 		expect(newTabInfo).toBeDefined();
-		expect(newTabInfo?.url).toContain("example.com");
+		expect(newTabInfo?.url).toContain("about:blank");
 
 		// Verify it appears in the DOM
 		const tabElement = treeHelpers.getTabElement(newTabInfo?.id);
@@ -58,12 +58,12 @@ test.describe("Tab Tree Management", () => {
 		treeHelpers,
 	}) => {
 		// Create some tabs to work with
-		const tab1 = await createTab(context, "https://example.com/1", sidepanel);
-		const tab2 = await createTab(context, "https://example.com/2", sidepanel);
+		const tab1 = await createTab(context, "about:blank?1", sidepanel);
+		const tab2 = await createTab(context, "about:blank?2", sidepanel);
 
 		// Wait for tabs to appear in the tree
-		const tab1Info = await treeHelpers.waitForTab("example.com/1");
-		const tab2Info = await treeHelpers.waitForTab("example.com/2");
+		const tab1Info = await treeHelpers.waitForTab("about:blank?1");
+		const tab2Info = await treeHelpers.waitForTab("about:blank?2");
 
 		console.log("Tab 1 info:", tab1Info);
 		console.log("Tab 2 info:", tab2Info);
@@ -198,24 +198,24 @@ test.describe("Tab Movement with Children", () => {
 		// Create tabs
 		const parentTab = await createTab(
 			context,
-			"https://example.com/parent",
+			"about:blank?parent",
 			sidepanel,
 		);
 		const childTab = await createTab(
 			context,
-			"https://example.com/child",
+			"about:blank?child",
 			sidepanel,
 		);
 		const targetTab = await createTab(
 			context,
-			"https://example.com/target",
+			"about:blank?target",
 			sidepanel,
 		);
 
 		// Wait for tabs to appear
-		const parentInfo = await treeHelpers.waitForTab("example.com/parent");
-		const childInfo = await treeHelpers.waitForTab("example.com/child");
-		const _targetInfo = await treeHelpers.waitForTab("example.com/target");
+		const parentInfo = await treeHelpers.waitForTab("about:blank?parent");
+		const childInfo = await treeHelpers.waitForTab("about:blank?child");
+		const _targetInfo = await treeHelpers.waitForTab("about:blank?target");
 
 		// First, make childTab a child of parentTab
 		const parentElement = treeHelpers.getTabElement(parentInfo.id);
@@ -538,18 +538,18 @@ test.describe("Tab Movement with Children", () => {
 		// Clear any previous events
 		await treeHelpers.clearTabCreatedEvents();
 
-		// Create 3 tabs in order: about:blank/?1, about:blank/?2, about:blank/?3
-		const tab1 = await createTab(context, "about:blank/?1", sidepanel);
-		await treeHelpers.waitForTab("about:blank/?1");
+		// Create 3 tabs in order: about:blank?1, about:blank?2, about:blank?3
+		const tab1 = await createTab(context, "about:blank?1", sidepanel);
+		await treeHelpers.waitForTab("about:blank?1");
 
-		const tab2 = await createTab(context, "about:blank/?2", sidepanel);
-		await treeHelpers.waitForTab("about:blank/?2");
+		const tab2 = await createTab(context, "about:blank?2", sidepanel);
+		await treeHelpers.waitForTab("about:blank?2");
 
-		const tab3 = await createTab(context, "about:blank/?3", sidepanel);
-		await treeHelpers.waitForTab("about:blank/?3");
+		const tab3 = await createTab(context, "about:blank?3", sidepanel);
+		await treeHelpers.waitForTab("about:blank?3");
 
 		// Get tab1's browser ID for verification
-		const tab1Info = await treeHelpers.getTabByUrl("about:blank/?1");
+		const tab1Info = await treeHelpers.getTabByUrl("about:blank?1");
 		expect(tab1Info).toBeDefined();
 		console.log("Tab1 browser ID:", tab1Info?.id);
 
@@ -621,10 +621,10 @@ test.describe("Tab Movement with Children", () => {
 		await treeHelpers.clearTabCreatedEvents();
 
 		// Create a tab
-		const tab1 = await createTab(context, "about:blank/?1", sidepanel);
-		await treeHelpers.waitForTab("about:blank/?1");
+		const tab1 = await createTab(context, "about:blank?1", sidepanel);
+		await treeHelpers.waitForTab("about:blank?1");
 
-		const tab1Info = await treeHelpers.getTabByUrl("about:blank/?1");
+		const tab1Info = await treeHelpers.getTabByUrl("about:blank?1");
 		expect(tab1Info).toBeDefined();
 
 		// Get initial tab count
@@ -669,17 +669,17 @@ test.describe("Tab Movement with Children", () => {
 		await treeHelpers.clearTabCreatedEvents();
 
 		// Create 3 tabs in order
-		const tab1 = await createTab(context, "about:blank/?1", sidepanel);
-		await treeHelpers.waitForTab("about:blank/?1");
+		const tab1 = await createTab(context, "about:blank?1", sidepanel);
+		await treeHelpers.waitForTab("about:blank?1");
 
-		const tab2 = await createTab(context, "about:blank/?2", sidepanel);
-		await treeHelpers.waitForTab("about:blank/?2");
+		const tab2 = await createTab(context, "about:blank?2", sidepanel);
+		await treeHelpers.waitForTab("about:blank?2");
 
-		const tab3 = await createTab(context, "about:blank/?3", sidepanel);
-		await treeHelpers.waitForTab("about:blank/?3");
+		const tab3 = await createTab(context, "about:blank?3", sidepanel);
+		await treeHelpers.waitForTab("about:blank?3");
 
 		// Get tab1's info and current state
-		const tab1Info = await treeHelpers.getTabByUrl("about:blank/?1");
+		const tab1Info = await treeHelpers.getTabByUrl("about:blank?1");
 		expect(tab1Info).toBeDefined();
 
 		const helpers = await treeHelpers.getHelpers();
@@ -752,24 +752,24 @@ test.describe("Tab Movement with Children", () => {
 		// Create parent and children tabs
 		const _parentTab = await createTab(
 			context,
-			"https://example.com/parent",
+			"about:blank?parent",
 			sidepanel,
 		);
 		const child1Tab = await createTab(
 			context,
-			"https://example.com/child1",
+			"about:blank?child1",
 			sidepanel,
 		);
 		const child2Tab = await createTab(
 			context,
-			"https://example.com/child2",
+			"about:blank?child2",
 			sidepanel,
 		);
 
 		// Wait for tabs to appear
-		const parentInfo = await treeHelpers.waitForTab("example.com/parent");
-		const child1Info = await treeHelpers.waitForTab("example.com/child1");
-		const child2Info = await treeHelpers.waitForTab("example.com/child2");
+		const parentInfo = await treeHelpers.waitForTab("about:blank?parent");
+		const child1Info = await treeHelpers.waitForTab("about:blank?child1");
+		const child2Info = await treeHelpers.waitForTab("about:blank?child2");
 
 		console.log("Parent info:", parentInfo);
 		console.log("Child1 info:", child1Info);
@@ -782,8 +782,8 @@ test.describe("Tab Movement with Children", () => {
 		await treeHelpers.dragTabToTab(child2Info.id, parentInfo.id);
 
 		// Verify parent-child relationships
-		const updatedChild1 = await treeHelpers.getTabByUrl("example.com/child1");
-		const updatedChild2 = await treeHelpers.getTabByUrl("example.com/child2");
+		const updatedChild1 = await treeHelpers.getTabByUrl("about:blank?child1");
+		const updatedChild2 = await treeHelpers.getTabByUrl("about:blank?child2");
 		expect(updatedChild1?.parentId).toBe(parentInfo.id);
 		expect(updatedChild2?.parentId).toBe(parentInfo.id);
 		expect(updatedChild1?.depth).toBe(1);
@@ -801,14 +801,14 @@ test.describe("Tab Movement with Children", () => {
 
 		// Verify parent tab is closed (should throw or return null)
 		const parentAfterClose =
-			await treeHelpers.getTabByUrl("example.com/parent");
+			await treeHelpers.getTabByUrl("about:blank?parent");
 		expect(parentAfterClose).toBeUndefined();
 
 		// Verify children moved up to root level
 		const child1AfterClose =
-			await treeHelpers.getTabByUrl("example.com/child1");
+			await treeHelpers.getTabByUrl("about:blank?child1");
 		const child2AfterClose =
-			await treeHelpers.getTabByUrl("example.com/child2");
+			await treeHelpers.getTabByUrl("about:blank?child2");
 
 		console.log("After closing parent - child1:", child1AfterClose);
 		console.log("After closing parent - child2:", child2AfterClose);
@@ -833,24 +833,24 @@ test.describe("Tab Movement with Children", () => {
 		// Create parent and children tabs
 		const _parentTab = await createTab(
 			context,
-			"https://example.com/parent2",
+			"about:blank?parent2",
 			sidepanel,
 		);
 		const _child1Tab = await createTab(
 			context,
-			"https://example.com/child3",
+			"about:blank?child3",
 			sidepanel,
 		);
 		const _child2Tab = await createTab(
 			context,
-			"https://example.com/child4",
+			"about:blank?child4",
 			sidepanel,
 		);
 
 		// Wait for tabs to appear
-		const parentInfo = await treeHelpers.waitForTab("example.com/parent2");
-		const child1Info = await treeHelpers.waitForTab("example.com/child3");
-		const child2Info = await treeHelpers.waitForTab("example.com/child4");
+		const parentInfo = await treeHelpers.waitForTab("about:blank?parent2");
+		const child1Info = await treeHelpers.waitForTab("about:blank?child3");
+		const child2Info = await treeHelpers.waitForTab("about:blank?child4");
 
 		console.log("Parent2 info:", parentInfo);
 		console.log("Child3 info:", child1Info);
@@ -863,8 +863,8 @@ test.describe("Tab Movement with Children", () => {
 		await treeHelpers.dragTabToTab(child2Info.id, parentInfo.id);
 
 		// Verify parent-child relationships
-		const updatedChild1 = await treeHelpers.getTabByUrl("example.com/child3");
-		const updatedChild2 = await treeHelpers.getTabByUrl("example.com/child4");
+		const updatedChild1 = await treeHelpers.getTabByUrl("about:blank?child3");
+		const updatedChild2 = await treeHelpers.getTabByUrl("about:blank?child4");
 		expect(updatedChild1?.parentId).toBe(parentInfo.id);
 		expect(updatedChild2?.parentId).toBe(parentInfo.id);
 		expect(updatedChild1?.depth).toBe(1);
@@ -892,15 +892,15 @@ test.describe("Tab Movement with Children", () => {
 
 		// Verify parent tab is closed
 		const parentAfterClose = await treeHelpers.getTabByUrl(
-			"example.com/parent2",
+			"about:blank?parent2",
 		);
 		expect(parentAfterClose).toBeUndefined();
 
 		// Verify all children are also closed
 		const child1AfterClose =
-			await treeHelpers.getTabByUrl("example.com/child3");
+			await treeHelpers.getTabByUrl("about:blank?child3");
 		const child2AfterClose =
-			await treeHelpers.getTabByUrl("example.com/child4");
+			await treeHelpers.getTabByUrl("about:blank?child4");
 
 		console.log("After closing parent - child1:", child1AfterClose);
 		console.log("After closing parent - child2:", child2AfterClose);
@@ -909,5 +909,420 @@ test.describe("Tab Movement with Children", () => {
 		expect(child2AfterClose).toBeUndefined();
 
 		// Note: No cleanup needed as all tabs should be closed
+	});
+});
+
+test.describe("Tree Structure Preservation Tests", () => {
+	test("Level 0: Single tab with no children - move within same window", async ({
+		context,
+		sidepanel,
+		treeHelpers,
+	}) => {
+		// Create tab a
+		const aPage = await context.newPage();
+		await aPage.goto("about:blank?a");
+		const aInfo = await treeHelpers.waitForTab("about:blank?a");
+
+		// Create target tab b
+		const bPage = await context.newPage();
+		await bPage.goto("about:blank?b");
+		const bInfo = await treeHelpers.waitForTab("about:blank?b");
+
+		// Move a after b
+		await treeHelpers.dragTabAfterTab(aInfo.id, bInfo.id);
+		await sidepanel.waitForTimeout(500);
+
+		// Verify a moved and has no children
+		const helpers = await treeHelpers.getHelpers();
+		const aAfter = helpers
+			.getAllTabs()
+			.find((t) => t.url.includes("about:blank?a"));
+		expect(aAfter?.parentId).toBeNull();
+		expect(helpers.getChildren(aInfo.id).length).toBe(0);
+
+		await aPage.close();
+		await bPage.close();
+	});
+
+	test("Level 0: Single tab with no children - move to new window", async ({
+		context,
+		sidepanel,
+		treeHelpers,
+	}) => {
+		// Create tab a
+		const aPage = await context.newPage();
+		await aPage.goto("about:blank?a");
+		const aInfo = await treeHelpers.waitForTab("about:blank?a");
+		const originalWindowId = aInfo.windowId;
+
+		// Drag to new window drop zone
+		await treeHelpers.dragTabToNewWindow(aInfo.id);
+		await sidepanel.waitForTimeout(1000);
+
+		// Verify a moved to new window and has no children
+		const helpers = await treeHelpers.getHelpers();
+		const aAfter = helpers
+			.getAllTabs()
+			.find((t) => t.url.includes("about:blank?a"));
+		expect(aAfter?.windowId).not.toBe(originalWindowId);
+		expect(helpers.getChildren(aInfo.id).length).toBe(0);
+
+		await aPage.close();
+	});
+
+	test("Level 1: Parent with children (a, a.1, a.2, a.3) - move within same window", async ({
+		context,
+		sidepanel,
+		treeHelpers,
+	}) => {
+		// Create parent a and children
+		const aPage = await context.newPage();
+		await aPage.goto("about:blank?a");
+		const aInfo = await treeHelpers.waitForTab("about:blank?a");
+
+		const a1Page = await context.newPage();
+		await a1Page.goto("about:blank?a1");
+		const a1Info = await treeHelpers.waitForTab("about:blank?a1");
+
+		const a2Page = await context.newPage();
+		await a2Page.goto("about:blank?a2");
+		const a2Info = await treeHelpers.waitForTab("about:blank?a2");
+
+		const a3Page = await context.newPage();
+		await a3Page.goto("about:blank?a3");
+		const a3Info = await treeHelpers.waitForTab("about:blank?a3");
+
+		// Build tree: a.1, a.2, a.3 as children of a
+		await treeHelpers.dragTabToTab(a1Info.id, aInfo.id);
+		await treeHelpers.dragTabToTab(a2Info.id, aInfo.id);
+		await treeHelpers.dragTabToTab(a3Info.id, aInfo.id);
+		await sidepanel.waitForTimeout(500);
+
+		// Create target tab b
+		const bPage = await context.newPage();
+		await bPage.goto("about:blank?b");
+		const bInfo = await treeHelpers.waitForTab("about:blank?b");
+
+		// Move a after b
+		await treeHelpers.dragTabAfterTab(aInfo.id, bInfo.id);
+		await sidepanel.waitForTimeout(1000);
+
+		// Verify tree structure preserved
+		const helpers = await treeHelpers.getHelpers();
+		const allTabs = helpers.getAllTabs();
+
+		const aAfter = allTabs.find((t) => t.url.includes("about:blank?a"));
+		const a1After = allTabs.find((t) => t.url.includes("about:blank?a1"));
+		const a2After = allTabs.find((t) => t.url.includes("about:blank?a2"));
+		const a3After = allTabs.find((t) => t.url.includes("about:blank?a3"));
+
+		expect(aAfter?.parentId).toBeNull();
+		expect(a1After?.parentId).toBe(aAfter?.id);
+		expect(a2After?.parentId).toBe(aAfter?.id);
+		expect(a3After?.parentId).toBe(aAfter?.id);
+		expect(helpers.getChildren(aInfo.id).length).toBe(3);
+
+		await aPage.close();
+		await a1Page.close();
+		await a2Page.close();
+		await a3Page.close();
+		await bPage.close();
+	});
+
+	test("Level 1: Parent with children - move to new window", async ({
+		context,
+		sidepanel,
+		treeHelpers,
+	}) => {
+		// Create parent a and children
+		const aPage = await context.newPage();
+		await aPage.goto("about:blank?a");
+		const aInfo = await treeHelpers.waitForTab("about:blank?a");
+		const originalWindowId = aInfo.windowId;
+
+		const a1Page = await context.newPage();
+		await a1Page.goto("about:blank?a1");
+		const a1Info = await treeHelpers.waitForTab("about:blank?a1");
+
+		const a2Page = await context.newPage();
+		await a2Page.goto("about:blank?a2");
+		const a2Info = await treeHelpers.waitForTab("about:blank?a2");
+
+		const a3Page = await context.newPage();
+		await a3Page.goto("about:blank?a3");
+		const a3Info = await treeHelpers.waitForTab("about:blank?a3");
+
+		// Build tree
+		await treeHelpers.dragTabToTab(a1Info.id, aInfo.id);
+		await treeHelpers.dragTabToTab(a2Info.id, aInfo.id);
+		await treeHelpers.dragTabToTab(a3Info.id, aInfo.id);
+		await sidepanel.waitForTimeout(500);
+
+		// Drag to new window
+		await treeHelpers.dragTabToNewWindow(aInfo.id);
+		await sidepanel.waitForTimeout(2000);
+
+		// Verify all tabs moved and tree structure preserved
+		const helpers = await treeHelpers.getHelpers();
+		const allTabs = helpers.getAllTabs();
+
+		const aAfter = allTabs.find((t) => t.url.includes("about:blank?a"));
+		const a1After = allTabs.find((t) => t.url.includes("about:blank?a1"));
+		const a2After = allTabs.find((t) => t.url.includes("about:blank?a2"));
+		const a3After = allTabs.find((t) => t.url.includes("about:blank?a3"));
+
+		expect(aAfter?.windowId).not.toBe(originalWindowId);
+		expect(a1After?.windowId).toBe(aAfter?.windowId);
+		expect(a2After?.windowId).toBe(aAfter?.windowId);
+		expect(a3After?.windowId).toBe(aAfter?.windowId);
+
+		expect(a1After?.parentId).toBe(aAfter?.id);
+		expect(a2After?.parentId).toBe(aAfter?.id);
+		expect(a3After?.parentId).toBe(aAfter?.id);
+		expect(helpers.getChildren(aInfo.id).length).toBe(3);
+
+		await aPage.close();
+		await a1Page.close();
+		await a2Page.close();
+		await a3Page.close();
+	});
+
+	test("Level 2: Parent with grandchildren - move to new window", async ({
+		context,
+		sidepanel,
+		treeHelpers,
+	}) => {
+		// Create tree: a -> a.1 (with a.1.1, a.1.2, a.1.3), a.2 (with a.2.1, a.2.2, a.2.3), a.3 (no children)
+		const pages: Record<
+			string,
+			Awaited<ReturnType<typeof context.newPage>>
+		> = {};
+		const infos: Record<
+			string,
+			Awaited<ReturnType<typeof treeHelpers.waitForTab>>
+		> = {};
+
+		// Create all tabs
+		const urls = [
+			"a",
+			"a1",
+			"a11",
+			"a12",
+			"a13",
+			"a2",
+			"a21",
+			"a22",
+			"a23",
+			"a3",
+		];
+		for (const url of urls) {
+			pages[url] = await context.newPage();
+			await pages[url].goto(`about:blank?${url}`);
+			infos[url] = await treeHelpers.waitForTab(`about:blank?${url}`);
+		}
+
+		const originalWindowId = infos.a.windowId;
+
+		// Build tree structure
+		// a.1, a.2, a.3 as children of a
+		await treeHelpers.dragTabToTab(infos.a1.id, infos.a.id);
+		await treeHelpers.dragTabToTab(infos.a2.id, infos.a.id);
+		await treeHelpers.dragTabToTab(infos.a3.id, infos.a.id);
+
+		// a.1.1, a.1.2, a.1.3 as children of a.1
+		await treeHelpers.dragTabToTab(infos.a11.id, infos.a1.id);
+		await treeHelpers.dragTabToTab(infos.a12.id, infos.a1.id);
+		await treeHelpers.dragTabToTab(infos.a13.id, infos.a1.id);
+
+		// a.2.1, a.2.2, a.2.3 as children of a.2
+		await treeHelpers.dragTabToTab(infos.a21.id, infos.a2.id);
+		await treeHelpers.dragTabToTab(infos.a22.id, infos.a2.id);
+		await treeHelpers.dragTabToTab(infos.a23.id, infos.a2.id);
+
+		await sidepanel.waitForTimeout(500);
+
+		// Drag a to new window
+		await treeHelpers.dragTabToNewWindow(infos.a.id);
+		await sidepanel.waitForTimeout(2000);
+
+		// Verify all tabs moved and tree structure preserved
+		const helpers = await treeHelpers.getHelpers();
+		const allTabs = helpers.getAllTabs();
+
+		const tabsAfter: Record<
+			string,
+			ReturnType<typeof helpers.getAllTabs>[number] | undefined
+		> = {};
+		for (const url of urls) {
+			tabsAfter[url] = allTabs.find((t) =>
+				t.url.includes(`about:blank?${url}`),
+			);
+			expect(tabsAfter[url]).toBeDefined();
+		}
+
+		// Verify all in new window
+		for (const url of urls) {
+			expect(tabsAfter[url]?.windowId).toBe(tabsAfter.a?.windowId);
+			expect(tabsAfter[url]?.windowId).not.toBe(originalWindowId);
+		}
+
+		// Verify tree structure
+		expect(tabsAfter.a1?.parentId).toBe(tabsAfter.a?.id);
+		expect(tabsAfter.a2?.parentId).toBe(tabsAfter.a?.id);
+		expect(tabsAfter.a3?.parentId).toBe(tabsAfter.a?.id);
+
+		expect(tabsAfter.a11?.parentId).toBe(tabsAfter.a1?.id);
+		expect(tabsAfter.a12?.parentId).toBe(tabsAfter.a1?.id);
+		expect(tabsAfter.a13?.parentId).toBe(tabsAfter.a1?.id);
+
+		expect(tabsAfter.a21?.parentId).toBe(tabsAfter.a2?.id);
+		expect(tabsAfter.a22?.parentId).toBe(tabsAfter.a2?.id);
+		expect(tabsAfter.a23?.parentId).toBe(tabsAfter.a2?.id);
+
+		// Verify depths
+		expect(tabsAfter.a?.depth).toBe(0);
+		expect(tabsAfter.a1?.depth).toBe(1);
+		expect(tabsAfter.a2?.depth).toBe(1);
+		expect(tabsAfter.a3?.depth).toBe(1);
+		expect(tabsAfter.a11?.depth).toBe(2);
+		expect(tabsAfter.a21?.depth).toBe(2);
+
+		// Cleanup
+		for (const url of urls) {
+			await pages[url].close();
+		}
+	});
+
+	test("Level 3: Imbalanced tree with great-grandchildren - move to new window", async ({
+		context,
+		sidepanel,
+		treeHelpers,
+	}) => {
+		// Create imbalanced tree:
+		// a -> a.1 (with a.1.1 (with a.1.1.1, a.1.1.2), a.1.2, a.1.3),
+		//      a.2 (with a.2.1 (with a.2.1.1, a.2.1.2), a.2.2, a.2.3),
+		//      a.3 (no children - imbalanced)
+		const pages: Record<
+			string,
+			Awaited<ReturnType<typeof context.newPage>>
+		> = {};
+		const infos: Record<
+			string,
+			Awaited<ReturnType<typeof treeHelpers.waitForTab>>
+		> = {};
+
+		const urls = [
+			"a",
+			"a1",
+			"a11",
+			"a111",
+			"a112",
+			"a12",
+			"a13",
+			"a2",
+			"a21",
+			"a211",
+			"a212",
+			"a22",
+			"a23",
+			"a3",
+		];
+
+		for (const url of urls) {
+			pages[url] = await context.newPage();
+			await pages[url].goto(`about:blank?${url}`);
+			infos[url] = await treeHelpers.waitForTab(`about:blank?${url}`);
+		}
+
+		const originalWindowId = infos.a.windowId;
+
+		// Build tree structure (level by level)
+		// Level 1: a.1, a.2, a.3 under a
+		await treeHelpers.dragTabToTab(infos.a1.id, infos.a.id);
+		await treeHelpers.dragTabToTab(infos.a2.id, infos.a.id);
+		await treeHelpers.dragTabToTab(infos.a3.id, infos.a.id);
+
+		// Level 2: children of a.1
+		await treeHelpers.dragTabToTab(infos.a11.id, infos.a1.id);
+		await treeHelpers.dragTabToTab(infos.a12.id, infos.a1.id);
+		await treeHelpers.dragTabToTab(infos.a13.id, infos.a1.id);
+
+		// Level 2: children of a.2
+		await treeHelpers.dragTabToTab(infos.a21.id, infos.a2.id);
+		await treeHelpers.dragTabToTab(infos.a22.id, infos.a2.id);
+		await treeHelpers.dragTabToTab(infos.a23.id, infos.a2.id);
+
+		// Level 3: children of a.1.1
+		await treeHelpers.dragTabToTab(infos.a111.id, infos.a11.id);
+		await treeHelpers.dragTabToTab(infos.a112.id, infos.a11.id);
+
+		// Level 3: children of a.2.1
+		await treeHelpers.dragTabToTab(infos.a211.id, infos.a21.id);
+		await treeHelpers.dragTabToTab(infos.a212.id, infos.a21.id);
+
+		await sidepanel.waitForTimeout(1000);
+
+		// Drag a to new window
+		await treeHelpers.dragTabToNewWindow(infos.a.id);
+		await sidepanel.waitForTimeout(2000);
+
+		// Verify all tabs moved and tree structure preserved
+		const helpers = await treeHelpers.getHelpers();
+		const allTabs = helpers.getAllTabs();
+
+		const tabsAfter: Record<
+			string,
+			ReturnType<typeof helpers.getAllTabs>[number] | undefined
+		> = {};
+		for (const url of urls) {
+			tabsAfter[url] = allTabs.find((t) =>
+				t.url.includes(`about:blank?${url}`),
+			);
+			expect(tabsAfter[url]).toBeDefined();
+		}
+
+		// Verify all in new window
+		for (const url of urls) {
+			expect(tabsAfter[url]?.windowId).toBe(tabsAfter.a?.windowId);
+			expect(tabsAfter[url]?.windowId).not.toBe(originalWindowId);
+		}
+
+		// Verify tree structure at each level
+		// Level 1
+		expect(tabsAfter.a1?.parentId).toBe(tabsAfter.a?.id);
+		expect(tabsAfter.a2?.parentId).toBe(tabsAfter.a?.id);
+		expect(tabsAfter.a3?.parentId).toBe(tabsAfter.a?.id);
+
+		// Level 2
+		expect(tabsAfter.a11?.parentId).toBe(tabsAfter.a1?.id);
+		expect(tabsAfter.a12?.parentId).toBe(tabsAfter.a1?.id);
+		expect(tabsAfter.a13?.parentId).toBe(tabsAfter.a1?.id);
+
+		expect(tabsAfter.a21?.parentId).toBe(tabsAfter.a2?.id);
+		expect(tabsAfter.a22?.parentId).toBe(tabsAfter.a2?.id);
+		expect(tabsAfter.a23?.parentId).toBe(tabsAfter.a2?.id);
+
+		// Level 3
+		expect(tabsAfter.a111?.parentId).toBe(tabsAfter.a11?.id);
+		expect(tabsAfter.a112?.parentId).toBe(tabsAfter.a11?.id);
+
+		expect(tabsAfter.a211?.parentId).toBe(tabsAfter.a21?.id);
+		expect(tabsAfter.a212?.parentId).toBe(tabsAfter.a21?.id);
+
+		// Verify depths
+		expect(tabsAfter.a?.depth).toBe(0);
+		expect(tabsAfter.a1?.depth).toBe(1);
+		expect(tabsAfter.a11?.depth).toBe(2);
+		expect(tabsAfter.a111?.depth).toBe(3);
+
+		// Verify imbalanced parts (a.3, a.1.3, a.2.3 have no children)
+		expect(helpers.getChildren(infos.a3.id).length).toBe(0);
+		expect(helpers.getChildren(infos.a13.id).length).toBe(0);
+		expect(helpers.getChildren(infos.a23.id).length).toBe(0);
+
+		// Cleanup
+		for (const url of urls) {
+			await pages[url].close();
+		}
 	});
 });

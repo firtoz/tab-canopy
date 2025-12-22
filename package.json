@@ -21,7 +21,9 @@
 		"lint:ci": "turbo run lint:ci",
 		"format": "turbo run format",
 		"test": "turbo run test",
-		"test:unit": "turbo run test:unit"
+		"test:unit": "turbo run test:unit",
+		"test:e2e": "turbo run test:e2e",
+		"test:e2e:ui": "turbo run test:e2e:ui"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "^2.3.10",

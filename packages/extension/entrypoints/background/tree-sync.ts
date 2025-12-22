@@ -1,4 +1,5 @@
 import { generateKeyBetween } from "fractional-indexing";
+import { DEFAULT_TREE_ORDER } from "@/entrypoints/sidepanel/lib/tree";
 import type { Tab } from "@/schema/src/schema";
 
 /**
@@ -137,7 +138,7 @@ export function calculateTreePositionFromBrowserMove(
 	// Find the moved tab
 	const movedTab = allTabs.find((t) => t.browserTabId === movedTabId);
 	if (!movedTab) {
-		return { parentTabId: null, treeOrder: generateKeyBetween(null, null) };
+		return { parentTabId: null, treeOrder: DEFAULT_TREE_ORDER };
 	}
 
 	// Check if the moved tab has any descendants

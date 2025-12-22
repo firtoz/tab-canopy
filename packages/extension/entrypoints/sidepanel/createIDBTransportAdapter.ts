@@ -136,6 +136,8 @@ export function createIDBTransportAdapter(options?: {
 	transport: IDBProxyClientTransport;
 	resetDatabase: () => Promise<void>;
 	sendMoveIntent: (moves: UiMoveIntentData[]) => void;
+	startManagedWindowMove: (tabIds: number[]) => void;
+	endManagedWindowMove: () => void;
 	enableTestMode: () => void;
 	injectBrowserEvent: (event: InjectBrowserEvent) => void;
 	getTabCreatedEvents: () => Promise<TabCreatedEvent[]>;
@@ -250,10 +252,22 @@ export function createIDBTransportAdapter(options?: {
 		extensionTransport.send({ type: "injectBrowserEvent", event });
 	};
 
+	const startManagedWindowMove = (tabIds: number[]): void => {
+		log("[Sidepanel] Starting managed window move for", tabIds.length, "tabs");
+		extensionTransport.send({ type: "startManagedWindowMove", tabIds });
+	};
+
+	const endManagedWindowMove = (): void => {
+		log("[Sidepanel] Ending managed window move");
+		extensionTransport.send({ type: "endManagedWindowMove" });
+	};
+
 	return {
 		transport,
 		resetDatabase,
 		sendMoveIntent,
+		startManagedWindowMove,
+		endManagedWindowMove,
 		enableTestMode,
 		injectBrowserEvent,
 		getTabCreatedEvents,

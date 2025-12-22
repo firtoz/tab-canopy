@@ -27,7 +27,7 @@ function createMockTab(
 		treeOrder,
 		isCollapsed,
 		title: `Tab ${browserTabId}`,
-		url: `https://example.com/${browserTabId}`,
+		url: `about:blank?${browserTabId}`,
 		favIconUrl: null,
 		active: false,
 		pinned: false,

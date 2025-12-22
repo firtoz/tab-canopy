@@ -2,6 +2,12 @@ import { generateKeyBetween } from "fractional-indexing";
 import type { Tab } from "@/schema/src/schema";
 
 /**
+ * Default tree order value for new root-level tabs
+ * Using fractional indexing default midpoint ("a0")
+ */
+export const DEFAULT_TREE_ORDER = generateKeyBetween(null, null);
+
+/**
  * Represents a tab node in the tree structure
  */
 export interface TabTreeNode {
@@ -204,7 +210,7 @@ export function getTabDepth(tabs: Tab[], tabId: number): number {
 export function generateTreeOrder(before?: string, after?: string): string {
 	// Default midpoint - use fractional-indexing library
 	if (!before && !after) {
-		return generateKeyBetween(null, null);
+		return DEFAULT_TREE_ORDER;
 	}
 
 	if (!before) {
@@ -309,7 +315,7 @@ export function calculateTreeMove(
 			// Becoming a child of the target
 			const parent = tabMap.get(dropPosition.parentTabId);
 			if (!parent) {
-				return { parentTabId: null, treeOrder: generateKeyBetween(null, null) };
+				return { parentTabId: null, treeOrder: DEFAULT_TREE_ORDER };
 			}
 
 			// Get existing children
@@ -327,7 +333,7 @@ export function calculateTreeMove(
 		case "before": {
 			const target = tabMap.get(dropPosition.targetTabId);
 			if (!target) {
-				return { parentTabId: null, treeOrder: generateKeyBetween(null, null) };
+				return { parentTabId: null, treeOrder: DEFAULT_TREE_ORDER };
 			}
 
 			// Same parent as target
@@ -349,7 +355,7 @@ export function calculateTreeMove(
 		case "after": {
 			const target = tabMap.get(dropPosition.targetTabId);
 			if (!target) {
-				return { parentTabId: null, treeOrder: generateKeyBetween(null, null) };
+				return { parentTabId: null, treeOrder: DEFAULT_TREE_ORDER };
 			}
 
 			// Same parent as target

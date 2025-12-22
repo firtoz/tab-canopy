@@ -104,14 +104,36 @@ export interface TestTreeHelpers {
 	injectBrowserEvent: (event: InjectBrowserEvent) => Promise<void>;
 
 	/**
-	 * Drag a tab element onto another tab element to make it a child or sibling
+	 * Drag a tab element onto another tab element to make it a child
 	 * @param sourceTabId The tab to drag
-	 * @param targetTabId The tab to drop onto
+	 * @param targetTabId The tab to drop onto (drops on center of target)
 	 * @param waitAfter Wait time in ms after the drag completes (default: 500)
 	 */
 	dragTabToTab: (
 		sourceTabId: number,
 		targetTabId: number,
+		waitAfter?: number,
+	) => Promise<void>;
+
+	/**
+	 * Drag a tab element to position after another tab as a sibling
+	 * @param sourceTabId The tab to drag
+	 * @param targetTabId The tab to drop after (drops to left of target)
+	 * @param waitAfter Wait time in ms after the drag completes (default: 500)
+	 */
+	dragTabAfterTab: (
+		sourceTabId: number,
+		targetTabId: number,
+		waitAfter?: number,
+	) => Promise<void>;
+
+	/**
+	 * Drag a tab to the "new window" drop zone to create a new window
+	 * @param sourceTabId The tab to drag
+	 * @param waitAfter Wait time in ms after the drag completes (default: 500)
+	 */
+	dragTabToNewWindow: (
+		sourceTabId: number,
 		waitAfter?: number,
 	) => Promise<void>;
 }
@@ -541,7 +563,7 @@ export const test = base.extend<ExtensionFixtures>({
 					);
 				}
 
-				// Perform drag and drop
+				// Perform drag and drop (drop on target to make it a child)
 				await sidepanel.mouse.move(
 					sourceBox.x + 200,
 					sourceBox.y + sourceBox.height / 2,
@@ -550,6 +572,97 @@ export const test = base.extend<ExtensionFixtures>({
 				await sidepanel.mouse.move(
 					targetBox.x + 200,
 					targetBox.y + targetBox.height / 2,
+					{ steps: 10 },
+				);
+				await sidepanel.waitForTimeout(100);
+				await sidepanel.mouse.up();
+				await sidepanel.waitForTimeout(waitAfter);
+			},
+
+			dragTabAfterTab: async (
+				sourceTabId: number,
+				targetTabId: number,
+				waitAfter = 500,
+			) => {
+				const sourceElement = sidepanel.locator(
+					`[data-tab-id="${sourceTabId}"]`,
+				);
+				const targetElement = sidepanel.locator(
+					`[data-tab-id="${targetTabId}"]`,
+				);
+
+				const sourceBox = await sourceElement.boundingBox();
+				const targetBox = await targetElement.boundingBox();
+
+				if (!sourceBox || !targetBox) {
+					throw new Error(
+						`Could not get bounding boxes for drag operation. Source: ${sourceBox}, Target: ${targetBox}`,
+					);
+				}
+
+				// Perform drag and drop (drop to the left of target to make it a sibling)
+				await sidepanel.mouse.move(
+					sourceBox.x + 200,
+					sourceBox.y + sourceBox.height / 2,
+				);
+				await sidepanel.mouse.down();
+				await sidepanel.mouse.move(
+					targetBox.x + 25, // Slightly to the left of the box
+					targetBox.y + targetBox.height / 4, // Vertically centered
+					{ steps: 20 },
+				);
+				await sidepanel.waitForTimeout(100);
+				await sidepanel.mouse.up();
+				await sidepanel.waitForTimeout(waitAfter);
+			},
+
+			dragTabToNewWindow: async (sourceTabId: number, waitAfter = 500) => {
+				const sourceElement = sidepanel.locator(
+					`[data-tab-id="${sourceTabId}"]`,
+				);
+
+				const sourceBox = await sourceElement.boundingBox();
+
+				if (!sourceBox) {
+					throw new Error(
+						`Could not get bounding box for source tab ${sourceTabId}`,
+					);
+				}
+
+				// Perform drag - start at the source
+				await sidepanel.mouse.move(
+					sourceBox.x + 200,
+					sourceBox.y + sourceBox.height / 2,
+				);
+				await sidepanel.mouse.down();
+
+				// Move down to trigger drag and reveal the drop zone (with steps for dnd-kit)
+				await sidepanel.mouse.move(
+					sourceBox.x + 200,
+					sourceBox.y + sourceBox.height / 2 + 200,
+					{ steps: 10 },
+				);
+
+				await sidepanel.waitForTimeout(300);
+
+				// Find the new window drop zone
+				const dropZone = sidepanel.locator(
+					'[data-testid="new-window-drop-zone"]',
+				);
+				await dropZone.waitFor({ state: "visible", timeout: 3000 });
+
+				const dropBox = await dropZone.boundingBox();
+
+				if (!dropBox) {
+					throw new Error(
+						"Could not get bounding box for new window drop zone",
+					);
+				}
+
+				// Move to the center of the drop zone (with steps)
+				await sidepanel.mouse.move(
+					dropBox.x + dropBox.width / 2,
+					dropBox.y + dropBox.height / 2,
 					{ steps: 10 },
 				);
 				await sidepanel.waitForTimeout(100);

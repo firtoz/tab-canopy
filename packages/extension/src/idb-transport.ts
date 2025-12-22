@@ -300,6 +300,8 @@ export type ClientMessage =
 	| { type: "broadcast"; channel: string; data: unknown }
 	| { type: "resetDatabase" }
 	| { type: "uiMoveIntent"; moves: UiMoveIntentData[] }
+	| { type: "startManagedWindowMove"; tabIds: number[] }
+	| { type: "endManagedWindowMove" }
 	| { type: "getTabCreatedEvents" }
 	| { type: "clearTabCreatedEvents" }
 	| { type: "enableTestMode" }

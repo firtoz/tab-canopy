@@ -17,12 +17,13 @@ import {
 // import { sortableKeyboardCoordinates } from "@dnd-kit/sortable";
 import { useDrizzleIndexedDB } from "@firtoz/drizzle-indexeddb";
 import { useLiveQuery } from "@tanstack/react-db";
-import { generateKeyBetween, generateNKeysBetween } from "fractional-indexing";
+import { generateNKeysBetween } from "fractional-indexing";
 import { RefreshCw, Settings } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { browser } from "wxt/browser";
 import type * as schema from "@/schema/src/schema";
 import {
+	useManagedWindowMove,
 	useRegisterStateGetter,
 	useResetDatabase,
 	useSendMoveIntent,
@@ -38,6 +39,7 @@ import {
 import {
 	buildTabTree,
 	calculateTreeMove,
+	DEFAULT_TREE_ORDER,
 	flattenTree,
 	getDescendantIds,
 	isAncestor,
@@ -122,6 +124,7 @@ function NewWindowDropZone() {
 	return (
 		<div
 			ref={setNodeRef}
+			data-testid="new-window-drop-zone"
 			className={cn(
 				"flex-1 min-h-24 flex items-center justify-center border-2 border-dashed rounded-lg transition-colors",
 				isOver
@@ -145,6 +148,7 @@ export const TabManagerContent = () => {
 	const tabCollection = useCollection("tabTable");
 	const resetDatabase = useResetDatabase();
 	const sendMoveIntent = useSendMoveIntent();
+	const managedWindowMove = useManagedWindowMove();
 	const registerStateGetter = useRegisterStateGetter();
 	const testActions = useTestActions();
 	const { recordUserEvent } = useDevTools();
@@ -433,7 +437,7 @@ export const TabManagerContent = () => {
 		async (event: DragEndEvent) => {
 			console.log("handleDragEnd", event);
 			console.log("event.over", event.over);
-			const dropData = event.over?.data?.current;
+			let dropData = event.over?.data?.current;
 
 			// Get info for recording before any early returns
 			const allItemsForRecord = getAllItems();
@@ -535,42 +539,64 @@ export const TabManagerContent = () => {
 				return;
 			}
 
-			// Handle "new-window" drop type - create a new window with dragged tabs
+			// Handle "new-window" drop type - create a new window, then use standard cross-window move
+			let blankTabIdToClose: number | undefined;
 			if (dropData.type === "new-window") {
 				try {
-					const newWindow = await browser.windows.create({
-						tabId: draggedTabIds[0],
-					});
-					// Move remaining tabs to the new window if multiple selected
-					if (draggedTabIds.length > 1 && newWindow?.id !== undefined) {
-						for (let i = 1; i < draggedTabIds.length; i++) {
-							await browser.tabs.move(draggedTabIds[i], {
-								windowId: newWindow.id,
-								index: i,
-							});
-						}
+					// Create new window with a blank tab (we'll move our tabs after and close it)
+					const newWindow = await browser.windows.create({});
+
+					if (!newWindow?.id) {
+						throw new Error("Failed to create new window");
 					}
+
+					// Save the blank tab ID so we can close it after moving our tabs
+					if (newWindow.tabs?.[0]?.id) {
+						blankTabIdToClose = newWindow.tabs[0].id;
+					}
+
+					// Now treat this as a "drop at root level in new window"
+					// This will use the standard cross-window move logic below which handles descendants
+					dropData = {
+						type: "gap",
+						windowId: newWindow.id,
+						slot: 0, // Drop at the beginning
+					} as const;
+					// Continue to standard drop handling below
 				} catch (e) {
 					console.error("Failed to create new window:", e);
+					return;
 				}
-				return;
 			}
 
-			const targetWindowId = dropData.windowId;
+			// After handling new-window, dropData is one of: Gap, Child, or Sibling
+			// TypeScript needs explicit narrowing here
+			const finalDropData: Extract<
+				typeof dropData,
+				{ type: "gap" | "child" | "sibling" }
+			> = dropData as Extract<
+				typeof dropData,
+				{ type: "gap" | "child" | "sibling" }
+			>;
+
+			const targetWindowId = finalDropData.windowId;
 
 			// Filter out invalid drops based on circular reference checks
 			let validDraggedTabIds = draggedTabIds;
 
-			if (dropData.type === "child") {
+			if (finalDropData.type === "child") {
 				// For child drops: can't drop a tab on itself or make it a child of its descendant
-				const targetTabId = dropData.tabId;
+				const targetTabId = finalDropData.tabId;
 				validDraggedTabIds = validDraggedTabIds.filter(
 					(id) => id !== targetTabId && !isAncestor(tabs, id, targetTabId),
 				);
-			} else if (dropData.type === "sibling" && dropData.ancestorId !== null) {
+			} else if (
+				finalDropData.type === "sibling" &&
+				finalDropData.ancestorId !== null
+			) {
 				// For sibling drops with an ancestor: can't make a tab a child of its descendant
 				// (ancestorId is the new parent, so check for circular reference)
-				const newParentId = dropData.ancestorId;
+				const newParentId = finalDropData.ancestorId;
 				validDraggedTabIds = validDraggedTabIds.filter(
 					(id) => !isAncestor(tabs, id, newParentId),
 				);
@@ -617,21 +643,21 @@ export const TabManagerContent = () => {
 			// Determine the tree drop position
 			let treeDropPosition: TreeDropPosition;
 
-			if (dropData.type === "gap") {
-				treeDropPosition = { type: "root", index: dropData.slot };
-			} else if (dropData.type === "child") {
+			if (finalDropData.type === "gap") {
+				treeDropPosition = { type: "root", index: finalDropData.slot };
+			} else if (finalDropData.type === "child") {
 				// Drop as child of target
-				treeDropPosition = { type: "child", parentTabId: dropData.tabId };
-			} else if (dropData.type === "sibling") {
-				console.log("dropData", dropData);
-				const ancestorId = dropData.ancestorId;
+				treeDropPosition = { type: "child", parentTabId: finalDropData.tabId };
+			} else if (finalDropData.type === "sibling") {
+				console.log("finalDropData", finalDropData);
+				const ancestorId = finalDropData.ancestorId;
 
 				// ancestorId is the new parent for the dragged tab
 				// null = root level (parentId becomes null)
 				// number = become child of that ancestor
 
 				const targetTab = tabsForTreeCalc.find(
-					(t) => t.browserTabId === dropData.tabId,
+					(t) => t.browserTabId === finalDropData.tabId,
 				);
 				if (!targetTab) return;
 
@@ -674,10 +700,14 @@ export const TabManagerContent = () => {
 						};
 					} else {
 						// targetTab is ancestorId itself, drop after it
-						treeDropPosition = { type: "after", targetTabId: dropData.tabId };
+						treeDropPosition = {
+							type: "after",
+							targetTabId: finalDropData.tabId,
+						};
 					}
 				}
 			} else {
+				// This should never happen as we've checked isDropData earlier
 				return;
 			}
 
@@ -752,24 +782,58 @@ export const TabManagerContent = () => {
 				updatedWindowTabs = [...updatedWindowTabs, ...movedTabs];
 			}
 
-			// Flatten to get expected browser order
-			const newTree = buildTabTree(updatedWindowTabs);
-			const flatOrder = flattenTree(newTree);
-
 			// Collect all tabs that need to move: dragged tabs + their descendants
 			// This ensures when we move a parent, its children move with it in Chrome
 			const tabsToMove = new Set<number>();
 			for (const { tab } of updatedTabs) {
 				tabsToMove.add(tab.browserTabId);
-				// Add all descendants of this tab
-				const descendants = getDescendantIds(
-					updatedWindowTabs,
-					tab.browserTabId,
-				);
+				// Add all descendants of this tab (from original tabs list before DB update)
+				const descendants = getDescendantIds(tabs, tab.browserTabId);
 				for (const descendantId of descendants) {
 					tabsToMove.add(descendantId);
 				}
 			}
+
+			// For cross-window moves, update all descendants' windowId in DB
+			if (isCrossWindowMove) {
+				for (const browserTabId of tabsToMove) {
+					// Skip tabs we already updated
+					if (validDraggedTabIds.includes(browserTabId)) continue;
+
+					const descendantTab = tabs.find(
+						(t) => t.browserTabId === browserTabId,
+					);
+					if (descendantTab) {
+						tabCollection.update(descendantTab.id, (draft) => {
+							draft.browserWindowId = targetWindowId;
+							// Keep parentTabId and treeOrder - they're relative to the moved subtree
+						});
+					}
+				}
+
+				// Add all moved tabs to the target window's tab list for tree calculation
+				const allMovedTabs = tabs
+					.filter((t) => tabsToMove.has(t.browserTabId))
+					.map((t) => {
+						const updated = updatedTabs.find(
+							(u) => u.tab.browserTabId === t.browserTabId,
+						);
+						return {
+							...t,
+							browserWindowId: targetWindowId,
+							parentTabId: updated?.newParentId ?? t.parentTabId,
+							treeOrder: updated?.newTreeOrder ?? t.treeOrder,
+						};
+					});
+				updatedWindowTabs = [...windowTabs, ...allMovedTabs];
+
+				// Tell background script to ignore these tab detach/attach events
+				managedWindowMove.start(Array.from(tabsToMove));
+			}
+
+			// Flatten to get expected browser order
+			const newTree = buildTabTree(updatedWindowTabs);
+			const flatOrder = flattenTree(newTree);
 
 			// Move tabs in the order they appear in the flattened tree
 			// This ensures correct positioning (parent first, then children)
@@ -786,7 +850,7 @@ export const TabManagerContent = () => {
 				return {
 					tabId: browserTabId,
 					parentTabId: tabData?.parentTabId ?? null,
-					treeOrder: tabData?.treeOrder ?? generateKeyBetween(null, null),
+					treeOrder: tabData?.treeOrder ?? DEFAULT_TREE_ORDER,
 				};
 			});
 			sendMoveIntent(moveIntents);
@@ -806,6 +870,20 @@ export const TabManagerContent = () => {
 					});
 				}
 			}
+
+			// Clear managed window move after all tabs are moved
+			if (isCrossWindowMove) {
+				managedWindowMove.end();
+			}
+
+			// Close the blank tab if we created a new window
+			if (blankTabIdToClose !== undefined) {
+				try {
+					await browser.tabs.remove(blankTabIdToClose);
+				} catch (e) {
+					console.error("Failed to close blank tab:", e);
+				}
+			}
 		},
 		[
 			getAllItems,
@@ -814,6 +892,8 @@ export const TabManagerContent = () => {
 			tabCollection,
 			recordUserEvent,
 			sendMoveIntent,
+			managedWindowMove.end, // Tell background script to ignore these tab detach/attach events
+			managedWindowMove.start,
 		],
 	);
 

@@ -37,14 +37,17 @@ export default defineBackground(() => {
 	let db: IDBDatabaseLike | null = null;
 	let broadcastSync: BroadcastSyncFn = () => {};
 
+	// Track tabs that are part of a UI-managed window move (with children)
+	const managedWindowMoveTabIds = new Set<number>();
+
 	// Create DB operations with getters for the mutable state
 	const dbOps = createDbOperations(
 		() => db,
 		() => broadcastSync,
 	);
 
-	// Setup browser event listeners
-	const tabHandlers = setupTabListeners(dbOps);
+	// Setup browser event listeners - pass getter for managed move tab IDs
+	const tabHandlers = setupTabListeners(dbOps, () => managedWindowMoveTabIds);
 	const windowHandlers = setupWindowListeners(dbOps);
 
 	// IDB Proxy Server Setup
@@ -121,6 +124,24 @@ export default defineBackground(() => {
 					for (const move of moves) {
 						registerUiMoveIntent(move.tabId, move.parentTabId, move.treeOrder);
 					}
+					break;
+				}
+				case "startManagedWindowMove": {
+					// Mark these tabs as part of a managed move to prevent child promotion
+					log(
+						"[Background] Starting managed window move for",
+						message.tabIds.length,
+						"tabs",
+					);
+					for (const tabId of message.tabIds) {
+						managedWindowMoveTabIds.add(tabId);
+					}
+					break;
+				}
+				case "endManagedWindowMove": {
+					// Clear the managed move set
+					log("[Background] Ending managed window move");
+					managedWindowMoveTabIds.clear();
 					break;
 				}
 				case "getTabCreatedEvents":

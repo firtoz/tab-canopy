@@ -57,6 +57,19 @@
 				"packages/extension/entrypoints/**/*.test.tsx"
 			]
 		},
+		"test:e2e": {
+			"dependsOn": ["^build"],
+			"inputs": [
+				"packages/e2e-tests/e2e/**",
+				"packages/e2e-tests/playwright.config.ts",
+				"packages/extension/.output/**"
+			]
+		},
+		"test:e2e:ui": {
+			"dependsOn": ["^build"],
+			"cache": false,
+			"persistent": true
+		},
 		"lint": {
 			"outputs": [],
 			"inputs": [
@@ -84,15 +97,15 @@
 				"biome.json"
 			]
 		},
-	"typecheck": {
-		"outputs": [],
-		"inputs": [
-			"packages/extension/entrypoints/**",
-			"packages/extension/src/**",
-			"packages/extension/schema/**",
-			"packages/extension/tsconfig.json"
-		]
-	},
+		"typecheck": {
+			"outputs": [],
+			"inputs": [
+				"packages/extension/entrypoints/**",
+				"packages/extension/src/**",
+				"packages/extension/schema/**",
+				"packages/extension/tsconfig.json"
+			]
+		},
 		"zip": {
 			"dependsOn": ["build"],
 			"outputs": ["*.zip"]

@@ -1,4 +1,4 @@
-import { generateKeyBetween } from "fractional-indexing";
+import { DEFAULT_TREE_ORDER } from "@/entrypoints/sidepanel/lib/tree";
 import type { Tab } from "@/schema/src/schema";
 import { log, makeTabId } from "./constants";
 import type { DbOperations } from "./db-operations";
@@ -127,7 +127,7 @@ function consumeUiMoveIntent(tabId: number): UiMoveIntent | undefined {
 function generateTreeOrder(before?: string, after?: string): string {
 	// Default midpoint - use fractional-indexing library
 	if (!before && !after) {
-		return generateKeyBetween(null, null);
+		return DEFAULT_TREE_ORDER;
 	}
 
 	if (!before) {
@@ -218,7 +218,7 @@ const updateTabIndicesInWindow = async (
 		const existing = existingMap.get(tab.id);
 		return tabToRecord(tab, {
 			parentTabId: existing?.parentTabId ?? null,
-			treeOrder: existing?.treeOrder ?? generateKeyBetween(null, null),
+			treeOrder: existing?.treeOrder ?? DEFAULT_TREE_ORDER,
 		});
 	});
 
@@ -254,7 +254,7 @@ const _updateTabIndicesInRange = async (
 		const existing = existingMap.get(tab.id);
 		return tabToRecord(tab, {
 			parentTabId: existing?.parentTabId ?? null,
-			treeOrder: existing?.treeOrder ?? generateKeyBetween(null, null),
+			treeOrder: existing?.treeOrder ?? DEFAULT_TREE_ORDER,
 		});
 	});
 
@@ -263,7 +263,10 @@ const _updateTabIndicesInRange = async (
 	}
 };
 
-export const setupTabListeners = (dbOps: DbOperations) => {
+export const setupTabListeners = (
+	dbOps: DbOperations,
+	getManagedMoveTabIds?: () => Set<number>,
+) => {
 	const { putItems, deleteItems, getAll } = dbOps;
 
 	// Handler for tab creation
@@ -286,7 +289,7 @@ export const setupTabListeners = (dbOps: DbOperations) => {
 		// Check for openerTabId - if present, this tab was opened from another tab
 		const openerTabId = (tab as { openerTabId?: number }).openerTabId;
 		let parentTabId: number | null = null;
-		let treeOrder = generateKeyBetween(null, null);
+		let treeOrder = DEFAULT_TREE_ORDER;
 
 		if (openerTabId && existingMap.has(openerTabId)) {
 			// This tab was opened from another tab (e.g., middle click, Ctrl+T)
@@ -476,7 +479,7 @@ export const setupTabListeners = (dbOps: DbOperations) => {
 			otherRecords.push(
 				tabToRecord(t, {
 					parentTabId: existing?.parentTabId ?? null,
-					treeOrder: existing?.treeOrder ?? generateKeyBetween(null, null),
+					treeOrder: existing?.treeOrder ?? DEFAULT_TREE_ORDER,
 				}),
 			);
 		}
@@ -505,7 +508,7 @@ export const setupTabListeners = (dbOps: DbOperations) => {
 		await putItems("tab", [
 			tabToRecord(tab, {
 				parentTabId: existing?.parentTabId ?? null,
-				treeOrder: existing?.treeOrder ?? generateKeyBetween(null, null),
+				treeOrder: existing?.treeOrder ?? DEFAULT_TREE_ORDER,
 			}),
 		]);
 	};
@@ -627,7 +630,7 @@ export const setupTabListeners = (dbOps: DbOperations) => {
 						treeOrder:
 							otherIntent?.treeOrder ??
 							existing?.treeOrder ??
-							generateKeyBetween(null, null),
+							DEFAULT_TREE_ORDER,
 					}),
 				);
 			}
@@ -733,7 +736,7 @@ export const setupTabListeners = (dbOps: DbOperations) => {
 		} else {
 			// Preserve the existing tree position (set by extension UI)
 			newParentId = existingTab?.parentTabId ?? null;
-			newTreeOrder = existingTab?.treeOrder ?? generateKeyBetween(null, null);
+			newTreeOrder = existingTab?.treeOrder ?? DEFAULT_TREE_ORDER;
 			log("[Background] Preserving existing tree position:", {
 				newParentId,
 				newTreeOrder,
@@ -926,8 +929,7 @@ export const setupTabListeners = (dbOps: DbOperations) => {
 			}
 
 			const existing = existingMap.get(bt.id);
-			let treeOrderToUse =
-				existing?.treeOrder ?? generateKeyBetween(null, null);
+			let treeOrderToUse = existing?.treeOrder ?? DEFAULT_TREE_ORDER;
 			const parentIdToUse = existing?.parentTabId ?? null;
 
 			// If this tab is at root level AND comes after the moved tab in browser order,
@@ -1004,7 +1006,7 @@ export const setupTabListeners = (dbOps: DbOperations) => {
 			const existing = existingMap.get(tab.id);
 			return tabToRecord(tab, {
 				parentTabId: existing?.parentTabId ?? null,
-				treeOrder: existing?.treeOrder ?? generateKeyBetween(null, null),
+				treeOrder: existing?.treeOrder ?? DEFAULT_TREE_ORDER,
 			});
 		});
 
@@ -1024,12 +1026,26 @@ export const setupTabListeners = (dbOps: DbOperations) => {
 	) => {
 		log("[Background] Tab detached:", tabId, detachInfo);
 
+		// Check if this tab is part of a UI-managed move (e.g., drag to new window with children)
+		const managedMoveTabIds = getManagedMoveTabIds?.() || new Set<number>();
+
+		if (managedMoveTabIds.has(tabId)) {
+			log(
+				"[Background] Tab is part of UI-managed move, skipping child promotion",
+			);
+			// Don't promote children - the UI is handling the entire move
+			await updateTabIndicesInWindow(detachInfo.oldWindowId, dbOps);
+			return;
+		}
+
 		// Get the detached tab's record to handle its children
 		const existingTabs = await getAll<Tab>("tab");
 		const detachedTab = existingTabs.find((t) => t.browserTabId === tabId);
 
 		if (detachedTab) {
 			// Promote children of the detached tab to its parent (within the old window)
+			// This handles the case where a parent is moved to another window via
+			// external means (browser tab bar drag, etc.)
 			const children = existingTabs.filter((t) => t.parentTabId === tabId);
 			if (children.length > 0) {
 				const promotedRecords: TabRecord[] = [];
@@ -1071,32 +1087,68 @@ export const setupTabListeners = (dbOps: DbOperations) => {
 		const browserTab = await browser.tabs.get(tabId).catch(() => null);
 		if (!browserTab || !hasTabIds(browserTab)) return;
 
+		// Check if this tab is part of a UI-managed move (e.g., drag to new window with children)
+		const managedMoveTabIds = getManagedMoveTabIds?.() || new Set<number>();
+		const isUiManagedMove = managedMoveTabIds.has(tabId);
+		log(
+			`[Background] Tab ${tabId} isUiManagedMove: ${isUiManagedMove}, managedSet size: ${managedMoveTabIds.size}`,
+		);
+
 		// Get existing tabs
 		const existingTabs = await getAll<Tab>("tab");
 		const existingTab = existingTabs.find((t) => t.browserTabId === tabId);
+		log(
+			`[Background] Tab ${tabId} existingTab:`,
+			existingTab
+				? `windowId=${existingTab.browserWindowId}, parentId=${existingTab.parentTabId}`
+				: "NOT FOUND",
+		);
 
 		// Check if the tab was already moved by our extension UI
-		// (the UI updates the DB first, then calls browser.tabs.move)
-		// If the tab's windowId in the DB already matches the new window,
-		// it means our UI already set up the tree structure correctly
-		if (existingTab && existingTab.browserWindowId === attachInfo.newWindowId) {
+		// Either:
+		// 1. It's in the managed move set (definitive - the UI is coordinating this move)
+		// 2. The DB windowId already matches (fallback for race conditions)
+		const isExtensionMove =
+			isUiManagedMove ||
+			(existingTab && existingTab.browserWindowId === attachInfo.newWindowId);
+
+		log(`[Background] Tab ${tabId} isExtensionMove: ${isExtensionMove}`);
+
+		if (isExtensionMove && existingTab) {
 			log(
-				"[Background] Tab already updated by extension UI, preserving tree structure",
+				`[Background] Tab ${tabId} is part of extension UI move, preserving tree structure: parentId=${existingTab.parentTabId}, treeOrder=${existingTab.treeOrder}`,
 			);
-			// Just update the tabIndex, preserve tree structure
+			// Preserve the tree structure from DB
+			// For UI-managed moves, the UI has already updated parentTabId, treeOrder, and browserWindowId
 			const tabRecord = tabToRecord(browserTab, {
 				parentTabId: existingTab.parentTabId,
 				treeOrder: existingTab.treeOrder,
 			});
 			await putItems("tab", [tabRecord]);
-		} else {
+		} else if (isUiManagedMove && !existingTab) {
+			// This tab is part of a UI-managed move but we don't have the DB record yet
+			// This is an error condition - log it but don't crash
+			log(
+				`[Background] ERROR: Tab ${tabId} is part of UI-managed move but DB record not found!`,
+			);
+			// Create as root tab with default tree order as fallback
+			const tabRecord = tabToRecord(browserTab, {
+				parentTabId: null,
+				treeOrder: DEFAULT_TREE_ORDER,
+			});
+			await putItems("tab", [tabRecord]);
+		} else if (!isExtensionMove) {
+			log(
+				`[Background] Tab ${tabId} is browser-native move, creating as root`,
+			);
 			// This is a browser-native cross-window move (drag from tab bar)
-			// Calculate tree position based on where the tab was attached
+			// The tab becomes a root in the new window, and its children were already
+			// promoted by handleTabDetached
 			const newWindowTabs = existingTabs.filter(
 				(t) => t.browserWindowId === attachInfo.newWindowId,
 			);
 
-			let treeOrder = "a0";
+			let treeOrder = DEFAULT_TREE_ORDER;
 			const rootTabs = newWindowTabs
 				.filter((t) => t.parentTabId === null)
 				.sort((a, b) =>
@@ -1143,7 +1195,7 @@ export const setupTabListeners = (dbOps: DbOperations) => {
 			otherTabRecords.push(
 				tabToRecord(bt, {
 					parentTabId: existing?.parentTabId ?? null,
-					treeOrder: existing?.treeOrder ?? generateKeyBetween(null, null),
+					treeOrder: existing?.treeOrder ?? DEFAULT_TREE_ORDER,
 				}),
 			);
 		}

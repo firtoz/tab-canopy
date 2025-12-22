@@ -2,7 +2,6 @@
  * DevTools Panel - UI for recording, replaying, and testing events
  */
 
-import { generateKeyBetween } from "fractional-indexing";
 import {
 	ChevronDown,
 	ChevronRight,
@@ -23,6 +22,7 @@ import {
 	type RecordedEvent,
 	type RecordingSession,
 } from "../lib/devtools/event-types";
+import { DEFAULT_TREE_ORDER } from "../lib/tree";
 import { type PreviewTab, TabTreePreview } from "./TabTreePreview";
 
 // ============================================================================
@@ -346,7 +346,7 @@ function applyEventToState(
 				browserWindowId: newTab.windowId,
 				tabIndex: newTab.index ?? 0,
 				parentTabId: null,
-				treeOrder: generateKeyBetween(null, null),
+				treeOrder: DEFAULT_TREE_ORDER,
 				title: newTab.title,
 			});
 			break;
