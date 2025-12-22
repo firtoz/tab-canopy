@@ -1,6 +1,6 @@
+import { generateKeyBetween } from "fractional-indexing";
 import { DEFAULT_TREE_ORDER } from "@/entrypoints/sidepanel/lib/tree";
 import type { Tab } from "@/schema/src/schema";
-import { generateKeyBetween } from "fractional-indexing";
 import { log, makeTabId } from "./constants";
 import type { DbOperations } from "./db-operations";
 import { queuedHandler } from "./event-queue";
@@ -313,10 +313,10 @@ export const setupTabListeners = (
 						}
 					}
 
-				treeOrder = generateKeyBetween(
-					insertAfter?.treeOrder || null,
-					insertBefore?.treeOrder || null,
-				);
+					treeOrder = generateKeyBetween(
+						insertAfter?.treeOrder || null,
+						insertBefore?.treeOrder || null,
+					);
 
 					log(
 						"[Background] Position allows child - setting as child with treeOrder:",
@@ -351,16 +351,16 @@ export const setupTabListeners = (
 									: 0,
 						);
 
-				const lastRoot = rootTabs[rootTabs.length - 1];
-				treeOrder = generateKeyBetween(lastRoot?.treeOrder || null, null);
+					const lastRoot = rootTabs[rootTabs.length - 1];
+					treeOrder = generateKeyBetween(lastRoot?.treeOrder || null, null);
 
-				trackTabCreatedEvent({
-					tabId: tab.id,
-					openerTabId,
-					tabIndex: tab.index,
-					decidedParentId: null,
-					reason: `Position prevents child: index ${tab.index} is not in valid range (opener ${openerIndex}, last descendant ${lastDescendantIndex})`,
-				});
+					trackTabCreatedEvent({
+						tabId: tab.id,
+						openerTabId,
+						tabIndex: tab.index,
+						decidedParentId: null,
+						reason: `Position prevents child: index ${tab.index} is not in valid range (opener ${openerIndex}, last descendant ${lastDescendantIndex})`,
+					});
 				}
 			}
 		}
@@ -762,10 +762,10 @@ export const setupTabListeners = (
 								i === 0
 									? siblingsAtNewLevel[siblingsAtNewLevel.length - 1]
 									: childRecords[childRecords.length - 1];
-						const childTreeOrder = generateKeyBetween(
-							beforeSibling?.treeOrder || null,
-							newTreeOrder,
-						);
+							const childTreeOrder = generateKeyBetween(
+								beforeSibling?.treeOrder || null,
+								newTreeOrder,
+							);
 
 							testLog(
 								`Flattening child ${childId} with treeOrder=${childTreeOrder} and newParentId=${newParentId}`,
@@ -861,8 +861,8 @@ export const setupTabListeners = (
 				bt.index > moveInfo.toIndex &&
 				treeOrderToUse <= lastTreeOrderAtSameLevel
 			) {
-			// Generate a new treeOrder after the last one
-			treeOrderToUse = generateKeyBetween(lastTreeOrderAtSameLevel, null);
+				// Generate a new treeOrder after the last one
+				treeOrderToUse = generateKeyBetween(lastTreeOrderAtSameLevel, null);
 				testLog(
 					`Tab ${bt.id} at index ${bt.index} needs new treeOrder ${treeOrderToUse} (was ${existing?.treeOrder}) because it comes after moved tab and had old treeOrder`,
 				);
@@ -1059,9 +1059,7 @@ export const setupTabListeners = (
 			});
 			await putItems("tab", [tabRecord]);
 		} else if (!isExtensionMove) {
-			log(
-				`[Background] Tab ${tabId} is browser-native move, creating as root`,
-			);
+			log(`[Background] Tab ${tabId} is browser-native move, creating as root`);
 			// This is a browser-native cross-window move (drag from tab bar)
 			// The tab becomes a root in the new window, and its children were already
 			// promoted by handleTabDetached
@@ -1078,19 +1076,22 @@ export const setupTabListeners = (
 
 			// Find the appropriate position based on attachInfo.newPosition
 			if (attachInfo.newPosition === 0) {
-			// Inserted at the beginning
-			const firstRoot = rootTabs[0];
-			treeOrder = generateKeyBetween(null, firstRoot?.treeOrder || null);
-		} else if (attachInfo.newPosition >= rootTabs.length) {
-			// Inserted at the end
-			const lastRoot = rootTabs[rootTabs.length - 1];
-			treeOrder = generateKeyBetween(lastRoot?.treeOrder || null, null);
-		} else {
-			// Inserted in the middle - use the position
-			const prevRoot = rootTabs[attachInfo.newPosition - 1];
-			const nextRoot = rootTabs[attachInfo.newPosition];
-			treeOrder = generateKeyBetween(prevRoot?.treeOrder || null, nextRoot?.treeOrder || null);
-		}
+				// Inserted at the beginning
+				const firstRoot = rootTabs[0];
+				treeOrder = generateKeyBetween(null, firstRoot?.treeOrder || null);
+			} else if (attachInfo.newPosition >= rootTabs.length) {
+				// Inserted at the end
+				const lastRoot = rootTabs[rootTabs.length - 1];
+				treeOrder = generateKeyBetween(lastRoot?.treeOrder || null, null);
+			} else {
+				// Inserted in the middle - use the position
+				const prevRoot = rootTabs[attachInfo.newPosition - 1];
+				const nextRoot = rootTabs[attachInfo.newPosition];
+				treeOrder = generateKeyBetween(
+					prevRoot?.treeOrder || null,
+					nextRoot?.treeOrder || null,
+				);
+			}
 
 			// Create the tab record with reset tree structure (root level in new window)
 			const tabRecord = tabToRecord(browserTab, {

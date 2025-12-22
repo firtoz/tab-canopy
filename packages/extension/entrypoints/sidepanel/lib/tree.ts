@@ -235,16 +235,19 @@ export function calculateTreeMove(
 				return { parentTabId: null, treeOrder: DEFAULT_TREE_ORDER };
 			}
 
-		// Get existing children
-		const siblings = tabs
-			.filter((t) => t.parentTabId === dropPosition.parentTabId)
-			.sort((a, b) => compareTreeOrder(a.treeOrder, b.treeOrder));
+			// Get existing children
+			const siblings = tabs
+				.filter((t) => t.parentTabId === dropPosition.parentTabId)
+				.sort((a, b) => compareTreeOrder(a.treeOrder, b.treeOrder));
 
-		// Insert at the beginning of children
-		const firstSibling = siblings[0];
-		const treeOrder = generateKeyBetween(null, firstSibling?.treeOrder || null);
+			// Insert at the beginning of children
+			const firstSibling = siblings[0];
+			const treeOrder = generateKeyBetween(
+				null,
+				firstSibling?.treeOrder || null,
+			);
 
-		return { parentTabId: dropPosition.parentTabId, treeOrder };
+			return { parentTabId: dropPosition.parentTabId, treeOrder };
 		}
 
 		case "before": {
@@ -253,20 +256,20 @@ export function calculateTreeMove(
 				return { parentTabId: null, treeOrder: DEFAULT_TREE_ORDER };
 			}
 
-		// Same parent as target
-		const siblings = getSiblings(tabs, target);
-		const targetIndex = siblings.findIndex(
-			(s) => s.browserTabId === target.browserTabId,
-		);
-		const prevSibling =
-			targetIndex > 0 ? siblings[targetIndex - 1] : undefined;
+			// Same parent as target
+			const siblings = getSiblings(tabs, target);
+			const targetIndex = siblings.findIndex(
+				(s) => s.browserTabId === target.browserTabId,
+			);
+			const prevSibling =
+				targetIndex > 0 ? siblings[targetIndex - 1] : undefined;
 
-		const treeOrder = generateKeyBetween(
-			prevSibling?.treeOrder || null,
-			target.treeOrder,
-		);
+			const treeOrder = generateKeyBetween(
+				prevSibling?.treeOrder || null,
+				target.treeOrder,
+			);
 
-		return { parentTabId: target.parentTabId, treeOrder };
+			return { parentTabId: target.parentTabId, treeOrder };
 		}
 
 		case "after": {
@@ -275,53 +278,56 @@ export function calculateTreeMove(
 				return { parentTabId: null, treeOrder: DEFAULT_TREE_ORDER };
 			}
 
-		// Same parent as target
-		const siblings = getSiblings(tabs, target);
-		const targetIndex = siblings.findIndex(
-			(s) => s.browserTabId === target.browserTabId,
-		);
-		const nextSibling =
-			targetIndex < siblings.length - 1
-				? siblings[targetIndex + 1]
-				: undefined;
+			// Same parent as target
+			const siblings = getSiblings(tabs, target);
+			const targetIndex = siblings.findIndex(
+				(s) => s.browserTabId === target.browserTabId,
+			);
+			const nextSibling =
+				targetIndex < siblings.length - 1
+					? siblings[targetIndex + 1]
+					: undefined;
 
-		const treeOrder = generateKeyBetween(
-			target.treeOrder,
-			nextSibling?.treeOrder || null,
-		);
+			const treeOrder = generateKeyBetween(
+				target.treeOrder,
+				nextSibling?.treeOrder || null,
+			);
 
-		return { parentTabId: target.parentTabId, treeOrder };
+			return { parentTabId: target.parentTabId, treeOrder };
 		}
 
-	case "root": {
-		// Moving to root level
-		const rootTabs = tabs
-			.filter((t) => t.parentTabId === null)
-			.sort((a, b) => compareTreeOrder(a.treeOrder, b.treeOrder));
+		case "root": {
+			// Moving to root level
+			const rootTabs = tabs
+				.filter((t) => t.parentTabId === null)
+				.sort((a, b) => compareTreeOrder(a.treeOrder, b.treeOrder));
 
-		if (dropPosition.index <= 0) {
-			const first = rootTabs[0];
+			if (dropPosition.index <= 0) {
+				const first = rootTabs[0];
+				return {
+					parentTabId: null,
+					treeOrder: generateKeyBetween(null, first?.treeOrder || null),
+				};
+			}
+
+			if (dropPosition.index >= rootTabs.length) {
+				const last = rootTabs[rootTabs.length - 1];
+				return {
+					parentTabId: null,
+					treeOrder: generateKeyBetween(last?.treeOrder || null, null),
+				};
+			}
+
+			const before = rootTabs[dropPosition.index - 1];
+			const after = rootTabs[dropPosition.index];
 			return {
 				parentTabId: null,
-				treeOrder: generateKeyBetween(null, first?.treeOrder || null),
+				treeOrder: generateKeyBetween(
+					before?.treeOrder || null,
+					after?.treeOrder || null,
+				),
 			};
 		}
-
-		if (dropPosition.index >= rootTabs.length) {
-			const last = rootTabs[rootTabs.length - 1];
-			return {
-				parentTabId: null,
-				treeOrder: generateKeyBetween(last?.treeOrder || null, null),
-			};
-		}
-
-		const before = rootTabs[dropPosition.index - 1];
-		const after = rootTabs[dropPosition.index];
-		return {
-			parentTabId: null,
-			treeOrder: generateKeyBetween(before?.treeOrder || null, after?.treeOrder || null),
-		};
-	}
 	}
 }
 

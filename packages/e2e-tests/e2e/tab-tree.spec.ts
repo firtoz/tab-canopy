@@ -196,21 +196,9 @@ test.describe("Tab Movement with Children", () => {
 		// its children should also move to stay adjacent in Chrome's tab bar
 
 		// Create tabs
-		const parentTab = await createTab(
-			context,
-			"about:blank?parent",
-			sidepanel,
-		);
-		const childTab = await createTab(
-			context,
-			"about:blank?child",
-			sidepanel,
-		);
-		const targetTab = await createTab(
-			context,
-			"about:blank?target",
-			sidepanel,
-		);
+		const parentTab = await createTab(context, "about:blank?parent", sidepanel);
+		const childTab = await createTab(context, "about:blank?child", sidepanel);
+		const targetTab = await createTab(context, "about:blank?target", sidepanel);
 
 		// Wait for tabs to appear
 		const parentInfo = await treeHelpers.waitForTab("about:blank?parent");
@@ -755,16 +743,8 @@ test.describe("Tab Movement with Children", () => {
 			"about:blank?parent",
 			sidepanel,
 		);
-		const child1Tab = await createTab(
-			context,
-			"about:blank?child1",
-			sidepanel,
-		);
-		const child2Tab = await createTab(
-			context,
-			"about:blank?child2",
-			sidepanel,
-		);
+		const child1Tab = await createTab(context, "about:blank?child1", sidepanel);
+		const child2Tab = await createTab(context, "about:blank?child2", sidepanel);
 
 		// Wait for tabs to appear
 		const parentInfo = await treeHelpers.waitForTab("about:blank?parent");

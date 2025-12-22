@@ -3,8 +3,8 @@
  * Used for testing tab tree behavior without a browser
  */
 
-import type { Tab, Window } from "@/schema/src/schema";
 import { generateNKeysBetween } from "fractional-indexing";
+import type { Tab, Window } from "@/schema/src/schema";
 import {
 	buildTabTree,
 	calculateTreeMove,
@@ -266,10 +266,13 @@ function applyDragEnd(state: SimulatedState, event: UserDragEndEvent): void {
 	const siblings = windowTabs
 		.filter((t) => t.parentTabId === newParentId)
 		.sort((a, b) => a.treeOrder.localeCompare(b.treeOrder));
-	const firstTabIndex = siblings.findIndex((s) => s.treeOrder >= firstTreeOrder);
-	const nextSibling = firstTabIndex >= 0 && firstTabIndex < siblings.length - 1
-		? siblings[firstTabIndex + 1]
-		: undefined;
+	const firstTabIndex = siblings.findIndex(
+		(s) => s.treeOrder >= firstTreeOrder,
+	);
+	const nextSibling =
+		firstTabIndex >= 0 && firstTabIndex < siblings.length - 1
+			? siblings[firstTabIndex + 1]
+			: undefined;
 
 	const newTreeOrders = generateNKeysBetween(
 		firstTreeOrder,
