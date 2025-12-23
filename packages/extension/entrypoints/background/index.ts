@@ -243,6 +243,10 @@ export default defineBackground(() => {
 						log("[Background] Error injecting event:", error);
 					}
 					break;
+				case "ping":
+					// Respond to ping to keep connection alive
+					serverTransport.send(client.clientId, { type: "pong" });
+					break;
 				default:
 					exhaustiveGuard(message);
 					break;

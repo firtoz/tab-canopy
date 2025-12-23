@@ -306,7 +306,8 @@ export type ClientMessage =
 	| { type: "clearTabCreatedEvents" }
 	| { type: "enableTestMode" }
 	| { type: "disableTestMode" }
-	| { type: "injectBrowserEvent"; event: InjectBrowserEvent };
+	| { type: "injectBrowserEvent"; event: InjectBrowserEvent }
+	| { type: "ping" };
 
 /**
  * Messages sent from server to client
@@ -321,7 +322,8 @@ export type ServerMessage =
 			fromClientId?: string;
 	  }
 	| { type: "resetDatabaseComplete" }
-	| { type: "tabCreatedEvents"; events: TabCreatedEvent[] };
+	| { type: "tabCreatedEvents"; events: TabCreatedEvent[] }
+	| { type: "pong" };
 
 /** Port name for the transport */
 export const IDB_PORT_NAME = "tabcanopy";

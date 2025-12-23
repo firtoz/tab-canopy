@@ -189,6 +189,8 @@ export function createIDBTransportAdapter(options?: {
 					tabCreatedEventsResolve(message.events);
 					tabCreatedEventsResolve = null;
 				}
+			} else if (message.type === "pong") {
+				// Pong received, connection is alive
 			}
 		},
 		onDisconnect: () => {
@@ -201,6 +203,12 @@ export function createIDBTransportAdapter(options?: {
 			options?.onDisconnect?.();
 		},
 	});
+
+	// Setup keepalive heartbeat to prevent service worker from going idle
+	// Send ping every 20 seconds (service worker timeout is ~30s)
+	const keepaliveInterval = setInterval(() => {
+		extensionTransport.send({ type: "ping" });
+	}, 20000);
 
 	const transport: IDBProxyClientTransport = {
 		sendRequest: async (
@@ -215,6 +223,7 @@ export function createIDBTransportAdapter(options?: {
 			syncHandler = handler;
 		},
 		dispose: () => {
+			clearInterval(keepaliveInterval);
 			extensionTransport.dispose();
 			pendingRequests.clear();
 		},
