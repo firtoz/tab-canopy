@@ -1,16 +1,10 @@
 import {
-	type CollisionDetection,
 	DndContext,
 	type DragEndEvent,
 	type DragOverEvent,
 	DragOverlay,
 	type DragStartEvent,
-	type Modifier,
 	PointerSensor,
-	pointerWithin,
-	rectIntersection,
-	useDndContext,
-	useDroppable,
 	useSensor,
 	useSensors,
 } from "@dnd-kit/core";
@@ -31,11 +25,11 @@ import {
 } from "../App";
 import { cn } from "../lib/cn";
 import { useDevTools } from "../lib/devtools";
-import { type DropDataNewWindow, isDropData } from "../lib/dnd-types";
+import { isDropData } from "../lib/dnd/dnd-types";
 import {
 	exposeBrowserTestActions,
 	exposeCurrentTreeStateForTests,
-} from "../lib/test-helpers";
+} from "../lib/tests/test-helpers";
 import {
 	buildTabTree,
 	calculateTreeMove,
@@ -45,99 +39,11 @@ import {
 	isAncestor,
 	type TreeDropPosition,
 } from "../lib/tree";
+import { cursorOffsetModifier } from "./dnd/cursorOffsetModifier";
+import { dropZoneCollision } from "./dnd/dropZoneCollision";
+import { NewWindowDropZone } from "./dnd/NewWindowDropZone";
 import { TabItemOverlay } from "./TabItemOverlay";
-import { WindowGroup } from "./WindowGroupNew";
-
-// Modifier to position drag overlay to the right of the cursor
-// Uses the initial pointer offset within the dragged element to calculate proper positioning
-const cursorOffsetModifier: Modifier = ({
-	transform,
-	activatorEvent,
-	draggingNodeRect,
-}) => {
-	if (!activatorEvent || !draggingNodeRect) {
-		return transform;
-	}
-
-	// Get the pointer position within the dragged element
-	const pointerEvent = activatorEvent as PointerEvent;
-	const elementRect = draggingNodeRect;
-
-	// Calculate how far into the element the cursor was when drag started
-	const cursorOffsetInElement = pointerEvent.clientX - elementRect.left;
-
-	// Offset so the overlay starts to the right of cursor
-	// Add cursorOffsetInElement to move the left edge of overlay to cursor position
-	// Then add a small gap (16px) so it's clearly to the right
-	return {
-		...transform,
-		x: transform.x + cursorOffsetInElement + 16,
-		y: transform.y,
-	};
-};
-
-// Custom collision detection that prioritizes drop zones and uses pointer position
-const dropZoneCollision: CollisionDetection = (args) => {
-	// First, try pointerWithin to find droppables containing the pointer
-	const pointerCollisions = pointerWithin(args);
-
-	// Filter to only drop zones (those with DropData)
-	const dropZoneCollisions = pointerCollisions.filter((collision) => {
-		const container = args.droppableContainers.find(
-			(c) => c.id === collision.id,
-		);
-		return container && isDropData(container.data?.current);
-	});
-
-	if (dropZoneCollisions.length > 0) {
-		return dropZoneCollisions;
-	}
-
-	// Fallback to rectIntersection if pointer isn't within any drop zone
-	const rectCollisions = rectIntersection(args);
-	return rectCollisions.filter((collision) => {
-		const container = args.droppableContainers.find(
-			(c) => c.id === collision.id,
-		);
-		return container && isDropData(container.data?.current);
-	});
-};
-
-// ============================================================================
-// New Window Drop Zone (at bottom of main container)
-// ============================================================================
-
-function NewWindowDropZone() {
-	const { active } = useDndContext();
-	const isDragging = active !== null;
-
-	const dropData: DropDataNewWindow = { type: "new-window" };
-	const { setNodeRef, isOver } = useDroppable({
-		id: "new-window-drop",
-		data: dropData,
-	});
-
-	if (!isDragging) {
-		return null;
-	}
-
-	return (
-		<div
-			ref={setNodeRef}
-			data-testid="new-window-drop-zone"
-			className={cn(
-				"flex-1 min-h-24 flex items-center justify-center border-2 border-dashed rounded-lg transition-colors",
-				isOver
-					? "border-emerald-500 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
-					: "border-slate-300 dark:border-slate-600 text-slate-400 dark:text-slate-500",
-			)}
-		>
-			<span className="text-sm font-medium">
-				Drop here to create new window
-			</span>
-		</div>
-	);
-}
+import { WindowGroup } from "./WindowGroup";
 
 // ============================================================================
 // Inner App Component (uses collections)

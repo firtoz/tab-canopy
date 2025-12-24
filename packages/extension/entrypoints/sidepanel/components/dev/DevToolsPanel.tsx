@@ -15,15 +15,15 @@ import {
 	X,
 } from "lucide-react";
 import { useCallback, useState } from "react";
-import { cn } from "../lib/cn";
-import { useDevTools } from "../lib/devtools/DevToolsContext";
+import { cn } from "../../lib/cn";
+import { useDevTools } from "../../lib/devtools/DevToolsContext";
 import {
 	isChromeEvent,
 	type RecordedEvent,
 	type RecordingSession,
-} from "../lib/devtools/event-types";
-import { DEFAULT_TREE_ORDER } from "../lib/tree";
-import { type PreviewTab, TabTreePreview } from "./TabTreePreview";
+} from "../../lib/devtools/event-types";
+import { DEFAULT_TREE_ORDER } from "../../lib/tree";
+import { type PreviewTab, TabTreePreview } from "../TabTreePreview";
 
 // ============================================================================
 // Event Display Component

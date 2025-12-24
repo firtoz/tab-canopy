@@ -12,7 +12,7 @@ import {
 	type ServerMessage,
 	type UiMoveIntentData,
 } from "@/src/idb-transport";
-import { log } from "../background/constants";
+import { log } from "../../../background/constants";
 
 // ============================================================================
 // Date Serialization Helpers

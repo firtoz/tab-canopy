@@ -1,4 +1,4 @@
-import { useDndContext, useDraggable, useDroppable } from "@dnd-kit/core";
+import { useDndContext } from "@dnd-kit/core";
 // import {
 // 	SortableContext,
 // 	useSortable,
@@ -9,272 +9,20 @@ import { useCallback, useMemo, useState } from "react";
 import type * as schema from "@/schema/src/schema";
 import { cn } from "../lib/cn";
 import { useDevTools } from "../lib/devtools";
-import {
-	type DragDataTab,
-	type DropDataChild,
-	type DropDataGap,
-	type DropDataSibling,
-	isDropData,
-} from "../lib/dnd-types";
+import { isDropData } from "../lib/dnd/dnd-types";
 import { buildTabTree, flattenTree } from "../lib/tree";
-import {
-	IconCollapsed,
-	IconExpanded,
-	TabCard,
-	TreeBranch,
-	TreeEnd,
-} from "./TabCard";
+import { DraggableTab } from "./dnd/DraggableTab";
+import { GapDropZone } from "./dnd/GapDropZone";
+import { IconCollapsed } from "./icons/IconCollapsed";
+import { IconExpanded } from "./icons/IconExpanded";
+import { TreeBranch } from "./icons/TreeBranch";
+import { TreeEnd } from "./icons/TreeEnd";
 
 // ============================================================================
 // Drop Zone Components - Tabs Outliner Style
 // ============================================================================
 
-const TREE_W = 24; // Width of each tree segment (must match TabCard)
-
-// Individual ancestor-level drop zone (vertical strip at specific indent level)
-function AncestorDropZone({
-	windowId,
-	tabId,
-	ancestorId,
-	zoneIndex,
-	isDragging,
-}: {
-	windowId: number;
-	tabId: number;
-	/** The ancestor ID to become a sibling of, or null for root sibling */
-	ancestorId: number | null;
-	/** Visual index for positioning (0 = window level, 1 = root, etc.) */
-	zoneIndex: number;
-	isDragging: boolean;
-}) {
-	const dropData: DropDataSibling = {
-		type: "sibling",
-		windowId,
-		tabId,
-		ancestorId,
-	};
-
-	const { setNodeRef, isOver } = useDroppable({
-		id: `sibling-${windowId}-${tabId}-${zoneIndex}`,
-		data: dropData,
-	});
-
-	if (!isDragging) return null;
-
-	const left = zoneIndex * TREE_W;
-
-	return (
-		<div
-			ref={setNodeRef}
-			style={{
-				left: `${left}px`,
-				width: `${TREE_W}px`,
-			}}
-			className={`absolute top-0 bottom-0 z-20 ${
-				isOver ? "bg-emerald-500/30" : "bg-transparent"
-			}`}
-		/>
-	);
-}
-
-// Tabs Outliner style drop zones: multiple vertical strips on left + child zone on right
-function TabDropZones({
-	windowId,
-	tabId,
-	isDragging,
-	depth,
-	ancestorIds,
-}: {
-	windowId: number;
-	tabId: number;
-	isDragging: boolean;
-	depth: number;
-	/** Ancestor IDs from root to parent, e.g. [grandparentId, parentId] */
-	ancestorIds: number[];
-}) {
-	const childDropData: DropDataChild = { type: "child", windowId, tabId };
-	const { setNodeRef: setChildRef, isOver: isOverChild } = useDroppable({
-		id: `child-${windowId}-${tabId}`,
-		data: childDropData,
-	});
-
-	// Content area starts after all tree guides + branch + expand icon
-	const contentLeft = (depth + 1) * TREE_W;
-
-	// Build the list of drop zones with their ancestor IDs
-	// Zone 0 = window level (new window) - special, we skip it as we have NewWindowDropZone
-	// Zone 1 = root level → ancestorId: null
-	// Zone 2+ = ancestorIds[zoneIndex - 2]
-	const dropZones = useMemo(() => {
-		const zones: Array<{ zoneIndex: number; ancestorId: number | null }> = [];
-		// Zone 0 is window level - skip it, handled by NewWindowDropZone at bottom
-		// Zone 1 onwards: root and ancestors
-		for (let i = 1; i <= depth; i++) {
-			// Zone 1 → null (root), Zone 2 → ancestorIds[0], Zone 3 → ancestorIds[1], etc.
-			const ancestorId = i === 1 ? null : ancestorIds[i - 2];
-			zones.push({ zoneIndex: i, ancestorId });
-		}
-		return zones;
-	}, [depth, ancestorIds]);
-
-	if (!isDragging) return null;
-
-	return (
-		<>
-			{/* Sibling drop zones for each ancestor level */}
-			{dropZones.map(({ zoneIndex, ancestorId }) => (
-				<AncestorDropZone
-					key={`sibling-${windowId}-${tabId}-${zoneIndex}`}
-					windowId={windowId}
-					tabId={tabId}
-					ancestorId={ancestorId}
-					zoneIndex={zoneIndex}
-					isDragging={isDragging}
-				/>
-			))}
-			{/* Child drop zone - content area to the right */}
-			<div
-				ref={setChildRef}
-				style={{ left: `${contentLeft}px` }}
-				className={`absolute top-0 bottom-0 right-0 z-20 ${
-					isOverChild ? "bg-blue-500/30" : "bg-transparent"
-				}`}
-			/>
-		</>
-	);
-}
-
-function GapDropZone({
-	windowId,
-	slot,
-	isDragging,
-}: {
-	windowId: number;
-	slot: number;
-	isDragging: boolean;
-}) {
-	const dropData: DropDataGap = { type: "gap", windowId, slot };
-	const { setNodeRef, isOver } = useDroppable({
-		id: `gap-${windowId}-${slot}`,
-		data: dropData,
-	});
-
-	if (!isDragging) {
-		return null;
-	}
-
-	return (
-		<div
-			ref={setNodeRef}
-			className={`h-2 -my-1 relative z-20 ${
-				isOver ? "bg-yellow-500/50" : "bg-transparent"
-			}`}
-		/>
-	);
-}
-
-// ============================================================================
-// Sortable Tab Component
-// ============================================================================
-
-interface SortableTabProps {
-	tab: schema.Tab;
-	id: string;
-	windowId: number;
-	isSelected: boolean;
-	isPartOfDrag?: boolean;
-	isDragging: boolean;
-	onSelect: (
-		tabId: number,
-		options: { ctrlKey: boolean; shiftKey: boolean },
-	) => void;
-	onToggleCollapse: (tabId: number) => void;
-	onClose: (tabId: number) => void;
-	// activeDropData: DropData | null;
-	depth: number;
-	hasChildren: boolean;
-	isLastChild: boolean;
-	indentGuides: boolean[];
-	highlightedDepth: number | null;
-	/** Ancestor IDs from root to parent */
-	ancestorIds: number[];
-}
-
-function SortableTab({
-	tab,
-	id,
-	windowId,
-	isSelected,
-	isPartOfDrag,
-	isDragging,
-	onSelect,
-	onToggleCollapse,
-	onClose,
-	depth,
-	hasChildren,
-	isLastChild,
-	indentGuides,
-	highlightedDepth,
-	ancestorIds,
-}: SortableTabProps) {
-	const dragData: DragDataTab = useMemo(
-		() => ({
-			type: "tab",
-			tabId: tab.browserTabId,
-			windowId: windowId,
-		}),
-		[tab.browserTabId, windowId],
-	);
-
-	const {
-		attributes,
-		listeners,
-		setNodeRef,
-		isDragging: isThisDragging,
-	} = useDraggable({
-		id,
-		data: dragData,
-	});
-
-	const style: React.CSSProperties = {
-		opacity: isThisDragging || isPartOfDrag ? 0.3 : 1,
-		transition: "none",
-	};
-
-	return (
-		<div
-			ref={setNodeRef}
-			style={style}
-			{...attributes}
-			{...listeners}
-			className="relative"
-			data-tab-id={tab.browserTabId}
-			data-selected={isSelected}
-		>
-			<TabCard
-				tab={tab}
-				isSelected={isSelected}
-				onSelect={onSelect}
-				onToggleCollapse={onToggleCollapse}
-				onClose={onClose}
-				// activeDropData={activeDropData}
-				isDragging={isDragging}
-				depth={depth}
-				hasChildren={hasChildren}
-				isLastChild={isLastChild}
-				indentGuides={indentGuides}
-				highlightedDepth={highlightedDepth}
-			/>
-			<TabDropZones
-				windowId={windowId}
-				tabId={tab.browserTabId}
-				isDragging={isDragging}
-				depth={depth}
-				ancestorIds={ancestorIds}
-			/>
-		</div>
-	);
-}
+export const TREE_W = 24; // Width of each tree segment (must match TabCard)
 
 // ============================================================================
 // Window Group Component - now a tree node itself
@@ -635,7 +383,7 @@ export const WindowGroup = ({
 										}}
 									/>
 								)}
-								<SortableTab
+								<DraggableTab
 									id={item.id}
 									windowId={win.browserWindowId}
 									tab={item.tab}

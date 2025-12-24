@@ -6,7 +6,7 @@
 
 import { browser } from "wxt/browser";
 import type * as schema from "@/schema/src/schema";
-import type { TabCreatedEvent } from "../createIDBTransportAdapter";
+import type { TabCreatedEvent } from "../db/createIDBTransportAdapter";
 
 // Types for test helpers
 export interface TabTreeNode {

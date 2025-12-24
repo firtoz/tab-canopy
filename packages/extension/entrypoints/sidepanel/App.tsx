@@ -12,9 +12,9 @@ import {
 	useState,
 } from "react";
 import * as schema from "@/schema/src/schema";
-import { DevToolsPanel, DevToolsToggle } from "./components/DevToolsPanel";
+import { DevToolsPanel, DevToolsToggle } from "./components/dev/DevToolsPanel";
 import { TabManagerContent } from "./components/TabManagerContent";
-import { createIDBTransportAdapter } from "./createIDBTransportAdapter";
+import { createIDBTransportAdapter } from "./lib/db/createIDBTransportAdapter";
 import { DevToolsProvider } from "./lib/devtools";
 
 const DB_NAME = "tabcanopy.db";
@@ -75,12 +75,12 @@ export const useRegisterStateGetter = () => {
 // Test Actions Context (for test helpers)
 // ============================================================================
 
-import type { TabCreatedEvent } from "./createIDBTransportAdapter";
+import type { TabCreatedEvent } from "./lib/db/createIDBTransportAdapter";
 
 export interface TestActions {
 	enableTestMode: () => void;
 	injectBrowserEvent: (
-		event: import("./createIDBTransportAdapter").InjectBrowserEvent,
+		event: import("./lib/db/createIDBTransportAdapter").InjectBrowserEvent,
 	) => void;
 	getTabCreatedEvents: () => Promise<TabCreatedEvent[]>;
 	clearTabCreatedEvents: () => void;
