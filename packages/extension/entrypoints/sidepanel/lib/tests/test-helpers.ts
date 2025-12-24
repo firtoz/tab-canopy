@@ -221,6 +221,30 @@ export type InjectBrowserEvent =
 	| { eventType: "windows.onFocusChanged"; eventData: number };
 
 /**
+ * User action types that can be programmatically triggered in tests
+ */
+export type UserAction =
+	| {
+			type: "dragTabToTab";
+			sourceTabId: number;
+			targetTabId: number;
+	  }
+	| {
+			type: "dragTabToNewWindow";
+			sourceTabId: number;
+	  }
+	| {
+			type: "dragTabAfterTab";
+			sourceTabId: number;
+			targetTabId: number;
+	  }
+	| {
+			type: "makeTabChildren";
+			parentTabId: number;
+			childTabIds: number[];
+	  };
+
+/**
  * Browser API test actions interface
  */
 export interface BrowserTestActions {
@@ -255,6 +279,12 @@ export interface BrowserTestActions {
 	 * Clear tab created events from background script (for testing)
 	 */
 	clearTabCreatedEvents: () => Promise<void>;
+
+	/**
+	 * Programmatically trigger a user action (for testing without UI interaction)
+	 * This directly calls the underlying logic, bypassing mouse movements
+	 */
+	sendUserAction: (action: UserAction) => Promise<void>;
 }
 
 /**
@@ -282,12 +312,15 @@ export function exposeCurrentTreeStateForTests(
  * Expose browser API test actions to Playwright tests
  * This allows tests to trigger actual browser API calls
  */
-export function exposeBrowserTestActions(testActions?: {
-	enableTestMode: () => void;
-	injectBrowserEvent: (event: InjectBrowserEvent) => void;
-	getTabCreatedEvents: () => Promise<TabCreatedEvent[]>;
-	clearTabCreatedEvents: () => void;
-}): void {
+export function exposeBrowserTestActions(
+	testActions?: {
+		enableTestMode: () => void;
+		injectBrowserEvent: (event: InjectBrowserEvent) => void;
+		getTabCreatedEvents: () => Promise<TabCreatedEvent[]>;
+		clearTabCreatedEvents: () => void;
+	},
+	userActionHandler?: (action: UserAction) => Promise<void>,
+): void {
 	if (typeof window === "undefined") return;
 
 	// Check if we're in test mode
@@ -329,6 +362,15 @@ export function exposeBrowserTestActions(testActions?: {
 					testActions.clearTabCreatedEvents();
 				}
 			: async () => {},
+
+		sendUserAction: userActionHandler
+			? async (action) => {
+					await userActionHandler(action);
+				}
+			: async () => {
+					console.error("[test-helpers] User action handler not registered!");
+					throw new Error("User action handler not registered");
+				},
 	};
 
 	(

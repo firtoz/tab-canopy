@@ -10,10 +10,11 @@ import {
 } from "@dnd-kit/core";
 // import { sortableKeyboardCoordinates } from "@dnd-kit/sortable";
 import { useDrizzleIndexedDB } from "@firtoz/drizzle-indexeddb";
+import { exhaustiveGuard } from "@firtoz/maybe-error";
 import { useLiveQuery } from "@tanstack/react-db";
 import { generateNKeysBetween } from "fractional-indexing";
 import { RefreshCw, Settings } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { browser } from "wxt/browser";
 import type * as schema from "@/schema/src/schema";
 import {
@@ -29,6 +30,7 @@ import { isDropData } from "../lib/dnd/dnd-types";
 import {
 	exposeBrowserTestActions,
 	exposeCurrentTreeStateForTests,
+	type UserAction,
 } from "../lib/tests/test-helpers";
 import {
 	buildTabTree,
@@ -83,11 +85,6 @@ export const TabManagerContent = () => {
 			exposeCurrentTreeStateForTests(windows, tabs);
 		}
 	}, [windows, tabs]);
-
-	// Expose browser test actions once on mount
-	useEffect(() => {
-		exposeBrowserTestActions(testActions);
-	}, [testActions]);
 
 	const [currentWindowId, setCurrentWindowId] = useState<number | undefined>();
 	const [selectedTabIds, setSelectedTabIds] = useState<Set<number>>(new Set());
@@ -820,6 +817,218 @@ export const TabManagerContent = () => {
 			managedWindowMove.start,
 		],
 	);
+
+	// Store latest tabs in a ref to avoid stale closures
+	const tabsRef = useRef(tabs);
+	useEffect(() => {
+		tabsRef.current = tabs;
+	}, [tabs]);
+
+	// Create user action handler for programmatic testing (after handleDragEnd is defined)
+	const handleUserAction = useCallback(
+		async (action: UserAction) => {
+			// Use ref to get latest tabs, preventing stale closures
+			const currentTabs = tabsRef.current;
+
+			if (!currentTabs) {
+				throw new Error("Tabs not loaded");
+			}
+
+			// Handle batch operation for making multiple tabs children of the same parent
+			if (action.type === "makeTabChildren") {
+				// Process all children sequentially
+				for (const childTabId of action.childTabIds) {
+					const childAction: UserAction = {
+						type: "dragTabToTab",
+						sourceTabId: childTabId,
+						targetTabId: action.parentTabId,
+					};
+					await handleUserAction(childAction);
+				}
+				return;
+			}
+
+			// Simulate the drop data based on the action type
+			let dropData:
+				| { type: "child"; tabId: number; windowId: number }
+				| {
+						type: "sibling";
+						tabId: number;
+						windowId: number;
+						ancestorId: number | null;
+				  }
+				| { type: "new-window" };
+
+			switch (action.type) {
+				case "dragTabToTab": {
+					// Drop on target to make it a child
+					dropData = {
+						type: "child" as const,
+						tabId: action.targetTabId,
+						windowId:
+							currentTabs.find((t) => t.browserTabId === action.targetTabId)
+								?.browserWindowId ?? 0,
+					};
+					break;
+				}
+				case "dragTabAfterTab": {
+					// Drop after target as a sibling
+					const targetTab = currentTabs.find(
+						(t) => t.browserTabId === action.targetTabId,
+					);
+					dropData = {
+						type: "sibling" as const,
+						tabId: action.targetTabId,
+						windowId: targetTab?.browserWindowId ?? 0,
+						ancestorId: targetTab?.parentTabId ?? null,
+					};
+					break;
+				}
+				case "dragTabToNewWindow":
+					dropData = {
+						type: "new-window" as const,
+					};
+					break;
+				default:
+					exhaustiveGuard(action);
+					break;
+			}
+
+			// Get the source tab to build the correct ID format
+			const sourceTab = currentTabs.find(
+				(t) => t.browserTabId === action.sourceTabId,
+			);
+			if (!sourceTab) {
+				throw new Error(`Source tab ${action.sourceTabId} not found`);
+			}
+
+			// Create a synthetic drag event with correct ID format: tab-${windowId}-${tabId}
+			const syntheticEvent = {
+				active: {
+					id: `tab-${sourceTab.browserWindowId}-${action.sourceTabId}`,
+					data: {},
+					rect: { current: null, initial: null },
+				},
+				over: {
+					data: { current: dropData },
+					id: "",
+					rect: null,
+					disabled: false,
+				},
+				activatorEvent: {} as Event,
+				collisions: [],
+				delta: { x: 0, y: 0 },
+			} as unknown as DragEndEvent;
+
+			await handleDragEnd(syntheticEvent);
+
+			// Wait for the state to actually be persisted to DB before returning
+			// This prevents race conditions when multiple operations happen in sequence
+			switch (action.type) {
+				case "dragTabToTab": {
+					// Wait for parent-child relationship to be established
+					const expectedParentId = action.targetTabId;
+					const maxWait = 5000;
+					const startTime = Date.now();
+					await new Promise<void>((resolve, reject) => {
+						const checkState = () => {
+							const latestTabs = tabsRef.current;
+							const tab = latestTabs?.find(
+								(t) => t.browserTabId === action.sourceTabId,
+							);
+							if (tab && tab.parentTabId === expectedParentId) {
+								resolve();
+							} else if (Date.now() - startTime > maxWait) {
+								reject(
+									new Error(
+										`Timeout waiting for parent relationship: tab ${action.sourceTabId} -> parent ${expectedParentId}, current parent: ${tab?.parentTabId}`,
+									),
+								);
+							} else {
+								setTimeout(checkState, 50);
+							}
+						};
+						checkState();
+					});
+					break;
+				}
+				case "dragTabAfterTab": {
+					// Wait for sibling relationship to be established
+					const targetTab = currentTabs.find(
+						(t) => t.browserTabId === action.targetTabId,
+					);
+					const expectedParentId = targetTab?.parentTabId ?? null;
+					const maxWait = 5000;
+					const startTime = Date.now();
+					await new Promise<void>((resolve, reject) => {
+						const checkState = () => {
+							const latestTabs = tabsRef.current;
+							const tab = latestTabs?.find(
+								(t) => t.browserTabId === action.sourceTabId,
+							);
+							if (tab && tab.parentTabId === expectedParentId) {
+								resolve();
+							} else if (Date.now() - startTime > maxWait) {
+								reject(
+									new Error(
+										`Timeout waiting for sibling relationship: tab ${action.sourceTabId}, expected parent: ${expectedParentId}, current parent: ${tab?.parentTabId}`,
+									),
+								);
+							} else {
+								setTimeout(checkState, 50);
+							}
+						};
+						checkState();
+					});
+					break;
+				}
+				case "dragTabToNewWindow": {
+					// Wait for window change
+					const originalWindowId = sourceTab.browserWindowId;
+					const maxWait = 5000;
+					const startTime = Date.now();
+					await new Promise<void>((resolve, reject) => {
+						const checkState = () => {
+							const latestTabs = tabsRef.current;
+							const tab = latestTabs?.find(
+								(t) => t.browserTabId === action.sourceTabId,
+							);
+							if (tab && tab.browserWindowId !== originalWindowId) {
+								resolve();
+							} else if (Date.now() - startTime > maxWait) {
+								reject(
+									new Error(
+										`Timeout waiting for window change: tab ${action.sourceTabId}, original window: ${originalWindowId}, current window: ${tab?.browserWindowId}`,
+									),
+								);
+							} else {
+								setTimeout(checkState, 50);
+							}
+						};
+						checkState();
+					});
+					break;
+				}
+				default:
+					exhaustiveGuard(action);
+					break;
+			}
+		},
+		[handleDragEnd],
+	);
+
+	// Store the latest handleUserAction in a ref so the exposed function always uses the current version
+	const handleUserActionRef = useRef(handleUserAction);
+	useEffect(() => {
+		handleUserActionRef.current = handleUserAction;
+	}, [handleUserAction]);
+
+	// Expose browser test actions once on mount with a stable wrapper
+	useEffect(() => {
+		exposeBrowserTestActions(testActions, (action) =>
+			handleUserActionRef.current(action),
+		);
+	}, [testActions]);
 
 	// Find active item for drag overlay
 	const allItems = getAllItems();

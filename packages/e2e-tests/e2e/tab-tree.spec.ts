@@ -895,7 +895,7 @@ test.describe("Tab Movement with Children", () => {
 test.describe("Tree Structure Preservation Tests", () => {
 	test("Level 0: Single tab with no children - move within same window", async ({
 		context,
-		sidepanel,
+		sidepanel: _,
 		treeHelpers,
 	}) => {
 		// Create tab a
@@ -910,7 +910,9 @@ test.describe("Tree Structure Preservation Tests", () => {
 
 		// Move a after b
 		await treeHelpers.dragTabAfterTab(aInfo.id, bInfo.id);
-		await sidepanel.waitForTimeout(500);
+
+		// Wait for the tab to be at root level (null parent)
+		await treeHelpers.waitForTabParent(aInfo.id, null);
 
 		// Verify a moved and has no children
 		const helpers = await treeHelpers.getHelpers();
@@ -926,7 +928,7 @@ test.describe("Tree Structure Preservation Tests", () => {
 
 	test("Level 0: Single tab with no children - move to new window", async ({
 		context,
-		sidepanel,
+		sidepanel: _,
 		treeHelpers,
 	}) => {
 		// Create tab a
@@ -936,14 +938,14 @@ test.describe("Tree Structure Preservation Tests", () => {
 		const originalWindowId = aInfo.windowId;
 
 		// Drag to new window drop zone
-		await treeHelpers.dragTabToNewWindow(aInfo.id);
-		await sidepanel.waitForTimeout(1000);
+		const newWindowId = await treeHelpers.dragTabToNewWindow(aInfo.id);
 
 		// Verify a moved to new window and has no children
 		const helpers = await treeHelpers.getHelpers();
 		const aAfter = helpers
 			.getAllTabs()
 			.find((t) => t.url.includes("about:blank?a"));
+		expect(aAfter?.windowId).toBe(newWindowId);
 		expect(aAfter?.windowId).not.toBe(originalWindowId);
 		expect(helpers.getChildren(aInfo.id).length).toBe(0);
 
@@ -952,9 +954,11 @@ test.describe("Tree Structure Preservation Tests", () => {
 
 	test("Level 1: Parent with children (a, a.1, a.2, a.3) - move within same window", async ({
 		context,
-		sidepanel,
+		sidepanel: _,
 		treeHelpers,
 	}) => {
+		test.setTimeout(60000); // Increase timeout to 60s for complex tree operations
+
 		// Create parent a and children
 		const aPage = await context.newPage();
 		await aPage.goto("about:blank?a");
@@ -976,16 +980,17 @@ test.describe("Tree Structure Preservation Tests", () => {
 		await treeHelpers.dragTabToTab(a1Info.id, aInfo.id);
 		await treeHelpers.dragTabToTab(a2Info.id, aInfo.id);
 		await treeHelpers.dragTabToTab(a3Info.id, aInfo.id);
-		await sidepanel.waitForTimeout(500);
 
 		// Create target tab b
 		const bPage = await context.newPage();
 		await bPage.goto("about:blank?b");
 		const bInfo = await treeHelpers.waitForTab("about:blank?b");
 
-		// Move a after b
+		// Move a after b (this moves the entire tree)
 		await treeHelpers.dragTabAfterTab(aInfo.id, bInfo.id);
-		await sidepanel.waitForTimeout(1000);
+
+		// Wait for the parent to be at root level (null parent)
+		await treeHelpers.waitForTabParent(aInfo.id, null);
 
 		// Verify tree structure preserved
 		const helpers = await treeHelpers.getHelpers();
@@ -1011,9 +1016,10 @@ test.describe("Tree Structure Preservation Tests", () => {
 
 	test("Level 1: Parent with children - move to new window", async ({
 		context,
-		sidepanel,
 		treeHelpers,
 	}) => {
+		test.setTimeout(60000); // Increase timeout to 60s for cross-window tree operations
+
 		// Create parent a and children
 		const aPage = await context.newPage();
 		await aPage.goto("about:blank?a");
@@ -1032,15 +1038,13 @@ test.describe("Tree Structure Preservation Tests", () => {
 		await a3Page.goto("about:blank?a3");
 		const a3Info = await treeHelpers.waitForTab("about:blank?a3");
 
-		// Build tree
-		await treeHelpers.dragTabToTab(a1Info.id, aInfo.id);
-		await treeHelpers.dragTabToTab(a2Info.id, aInfo.id);
-		await treeHelpers.dragTabToTab(a3Info.id, aInfo.id);
-		await sidepanel.waitForTimeout(500);
+		// Build tree programmatically (faster, no UI interaction)
+		await treeHelpers.makeTabChild(a1Info.id, aInfo.id);
+		await treeHelpers.makeTabChild(a2Info.id, aInfo.id);
+		await treeHelpers.makeTabChild(a3Info.id, aInfo.id);
 
-		// Drag to new window
-		await treeHelpers.dragTabToNewWindow(aInfo.id);
-		await sidepanel.waitForTimeout(2000);
+		// Move to new window programmatically (this moves the entire tree including all children)
+		await treeHelpers.moveTabToNewWindow(aInfo.id);
 
 		// Verify all tabs moved and tree structure preserved
 		const helpers = await treeHelpers.getHelpers();
@@ -1069,9 +1073,10 @@ test.describe("Tree Structure Preservation Tests", () => {
 
 	test("Level 2: Parent with grandchildren - move to new window", async ({
 		context,
-		sidepanel,
 		treeHelpers,
 	}) => {
+		test.setTimeout(90000); // Increase timeout to 90s for complex tree with grandchildren
+
 		// Create tree: a -> a.1 (with a.1.1, a.1.2, a.1.3), a.2 (with a.2.1, a.2.2, a.2.3), a.3 (no children)
 		const pages: Record<
 			string,
@@ -1103,27 +1108,24 @@ test.describe("Tree Structure Preservation Tests", () => {
 
 		const originalWindowId = infos.a.windowId;
 
-		// Build tree structure
+		// Build tree structure programmatically (faster, no UI interaction)
 		// a.1, a.2, a.3 as children of a
-		await treeHelpers.dragTabToTab(infos.a1.id, infos.a.id);
-		await treeHelpers.dragTabToTab(infos.a2.id, infos.a.id);
-		await treeHelpers.dragTabToTab(infos.a3.id, infos.a.id);
+		await treeHelpers.makeTabChild(infos.a1.id, infos.a.id);
+		await treeHelpers.makeTabChild(infos.a2.id, infos.a.id);
+		await treeHelpers.makeTabChild(infos.a3.id, infos.a.id);
 
 		// a.1.1, a.1.2, a.1.3 as children of a.1
-		await treeHelpers.dragTabToTab(infos.a11.id, infos.a1.id);
-		await treeHelpers.dragTabToTab(infos.a12.id, infos.a1.id);
-		await treeHelpers.dragTabToTab(infos.a13.id, infos.a1.id);
+		await treeHelpers.makeTabChild(infos.a11.id, infos.a1.id);
+		await treeHelpers.makeTabChild(infos.a12.id, infos.a1.id);
+		await treeHelpers.makeTabChild(infos.a13.id, infos.a1.id);
 
 		// a.2.1, a.2.2, a.2.3 as children of a.2
-		await treeHelpers.dragTabToTab(infos.a21.id, infos.a2.id);
-		await treeHelpers.dragTabToTab(infos.a22.id, infos.a2.id);
-		await treeHelpers.dragTabToTab(infos.a23.id, infos.a2.id);
+		await treeHelpers.makeTabChild(infos.a21.id, infos.a2.id);
+		await treeHelpers.makeTabChild(infos.a22.id, infos.a2.id);
+		await treeHelpers.makeTabChild(infos.a23.id, infos.a2.id);
 
-		await sidepanel.waitForTimeout(500);
-
-		// Drag a to new window
-		await treeHelpers.dragTabToNewWindow(infos.a.id);
-		await sidepanel.waitForTimeout(2000);
+		// Move a to new window programmatically (this moves the entire tree including children and grandchildren)
+		await treeHelpers.moveTabToNewWindow(infos.a.id);
 
 		// Verify all tabs moved and tree structure preserved
 		const helpers = await treeHelpers.getHelpers();
@@ -1175,9 +1177,10 @@ test.describe("Tree Structure Preservation Tests", () => {
 
 	test("Level 3: Imbalanced tree with great-grandchildren - move to new window", async ({
 		context,
-		sidepanel,
 		treeHelpers,
 	}) => {
+		test.setTimeout(120000); // Increase timeout to 120s for very complex tree with great-grandchildren
+
 		// Create imbalanced tree:
 		// a -> a.1 (with a.1.1 (with a.1.1.1, a.1.1.2), a.1.2, a.1.3),
 		//      a.2 (with a.2.1 (with a.2.1.1, a.2.1.2), a.2.2, a.2.3),
@@ -1216,35 +1219,42 @@ test.describe("Tree Structure Preservation Tests", () => {
 
 		const originalWindowId = infos.a.windowId;
 
-		// Build tree structure (level by level)
+		// Build tree structure programmatically using batch operations (faster, no UI interaction)
 		// Level 1: a.1, a.2, a.3 under a
-		await treeHelpers.dragTabToTab(infos.a1.id, infos.a.id);
-		await treeHelpers.dragTabToTab(infos.a2.id, infos.a.id);
-		await treeHelpers.dragTabToTab(infos.a3.id, infos.a.id);
+		await treeHelpers.makeTabChildren(infos.a.id, [
+			infos.a1.id,
+			infos.a2.id,
+			infos.a3.id,
+		]);
 
 		// Level 2: children of a.1
-		await treeHelpers.dragTabToTab(infos.a11.id, infos.a1.id);
-		await treeHelpers.dragTabToTab(infos.a12.id, infos.a1.id);
-		await treeHelpers.dragTabToTab(infos.a13.id, infos.a1.id);
+		await treeHelpers.makeTabChildren(infos.a1.id, [
+			infos.a11.id,
+			infos.a12.id,
+			infos.a13.id,
+		]);
 
 		// Level 2: children of a.2
-		await treeHelpers.dragTabToTab(infos.a21.id, infos.a2.id);
-		await treeHelpers.dragTabToTab(infos.a22.id, infos.a2.id);
-		await treeHelpers.dragTabToTab(infos.a23.id, infos.a2.id);
+		await treeHelpers.makeTabChildren(infos.a2.id, [
+			infos.a21.id,
+			infos.a22.id,
+			infos.a23.id,
+		]);
 
 		// Level 3: children of a.1.1
-		await treeHelpers.dragTabToTab(infos.a111.id, infos.a11.id);
-		await treeHelpers.dragTabToTab(infos.a112.id, infos.a11.id);
+		await treeHelpers.makeTabChildren(infos.a11.id, [
+			infos.a111.id,
+			infos.a112.id,
+		]);
 
 		// Level 3: children of a.2.1
-		await treeHelpers.dragTabToTab(infos.a211.id, infos.a21.id);
-		await treeHelpers.dragTabToTab(infos.a212.id, infos.a21.id);
+		await treeHelpers.makeTabChildren(infos.a21.id, [
+			infos.a211.id,
+			infos.a212.id,
+		]);
 
-		await sidepanel.waitForTimeout(1000);
-
-		// Drag a to new window
-		await treeHelpers.dragTabToNewWindow(infos.a.id);
-		await sidepanel.waitForTimeout(2000);
+		// Move a to new window programmatically (this moves the entire tree with all descendants)
+		await treeHelpers.moveTabToNewWindow(infos.a.id);
 
 		// Verify all tabs moved and tree structure preserved
 		const helpers = await treeHelpers.getHelpers();

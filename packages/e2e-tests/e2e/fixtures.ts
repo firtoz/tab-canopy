@@ -11,7 +11,7 @@ import type {
 	TabTreeNode,
 	TreeTestHelpers,
 	WindowInfo,
-} from "../../extension/entrypoints/sidepanel/lib/test-helpers";
+} from "../../extension/entrypoints/sidepanel/lib/tests/test-helpers";
 import type * as schema from "../../extension/schema/src/schema";
 import type { InjectBrowserEvent } from "../../extension/src/idb-transport";
 
@@ -28,6 +28,24 @@ export interface TestTreeHelpers {
 	 * Wait for a tab with specific URL to appear
 	 */
 	waitForTab: (url: string, timeout?: number) => Promise<TabTreeNode>;
+
+	/**
+	 * Wait for a tab to have a specific parent
+	 */
+	waitForTabParent: (
+		tabId: number,
+		expectedParentId: number | null,
+		timeout?: number,
+	) => Promise<void>;
+
+	/**
+	 * Wait for a tab to be in a specific window
+	 */
+	waitForTabInWindow: (
+		tabId: number,
+		windowId: number,
+		timeout?: number,
+	) => Promise<void>;
 
 	/**
 	 * Get tab by URL
@@ -104,15 +122,21 @@ export interface TestTreeHelpers {
 	injectBrowserEvent: (event: InjectBrowserEvent) => Promise<void>;
 
 	/**
-	 * Drag a tab element onto another tab element to make it a child
+	 * Drag a tab element onto another tab element to make it a child (UI interaction)
 	 * @param sourceTabId The tab to drag
 	 * @param targetTabId The tab to drop onto (drops on center of target)
-	 * @param waitAfter Wait time in ms after the drag completes (default: 500)
 	 */
-	dragTabToTab: (
-		sourceTabId: number,
-		targetTabId: number,
-		waitAfter?: number,
+	dragTabToTab: (sourceTabId: number, targetTabId: number) => Promise<void>;
+
+	/**
+	 * Programmatically make a tab a child of another (bypasses UI)
+	 * @param sourceTabId The tab to make a child
+	 * @param targetTabId The parent tab
+	 */
+	makeTabChild: (sourceTabId: number, targetTabId: number) => Promise<void>;
+	makeTabChildren: (
+		parentTabId: number,
+		childTabIds: number[],
 	) => Promise<void>;
 
 	/**
@@ -128,14 +152,16 @@ export interface TestTreeHelpers {
 	) => Promise<void>;
 
 	/**
-	 * Drag a tab to the "new window" drop zone to create a new window
+	 * Drag a tab to the "new window" drop zone to create a new window (UI interaction)
 	 * @param sourceTabId The tab to drag
-	 * @param waitAfter Wait time in ms after the drag completes (default: 500)
 	 */
-	dragTabToNewWindow: (
-		sourceTabId: number,
-		waitAfter?: number,
-	) => Promise<void>;
+	dragTabToNewWindow: (sourceTabId: number) => Promise<void>;
+
+	/**
+	 * Programmatically move a tab to a new window (bypasses UI)
+	 * @param sourceTabId The tab to move
+	 */
+	moveTabToNewWindow: (sourceTabId: number) => Promise<void>;
 }
 
 // ES module equivalent of __dirname (Playwright runs in Node.js, not Bun)
@@ -284,6 +310,28 @@ export const test = base.extend<ExtensionFixtures>({
 		// Open the sidepanel by navigating to its URL
 		// In Chrome, sidepanel can be accessed via chrome-extension://[id]/sidepanel.html
 		const sidepanelPage = await context.newPage();
+
+		// Listen to console messages from the page
+		sidepanelPage.on("console", (msg) => {
+			const type = msg.type();
+			const text = msg.text();
+			// Only show test-related and error messages to avoid noise
+			if (
+				text.includes("[Test]") ||
+				text.includes("[test-helpers]") ||
+				text.includes("[TabManagerContent]") ||
+				type === "error" ||
+				type === "warning"
+			) {
+				console.log(`[Browser ${type}]`, text);
+			}
+		});
+
+		// Listen to page errors
+		sidepanelPage.on("pageerror", (err) => {
+			console.error("[Browser Error]", err.message);
+		});
+
 		await sidepanelPage.goto(
 			`chrome-extension://${extensionId}/sidepanel.html`,
 		);
@@ -428,6 +476,48 @@ export const test = base.extend<ExtensionFixtures>({
 				throw new Error(`Tab with URL ${url} not found within ${timeout}ms`);
 			},
 
+			waitForTabParent: async (
+				tabId: number,
+				expectedParentId: number | null,
+				timeout = 10000,
+			) => {
+				const start = Date.now();
+				while (Date.now() - start < timeout) {
+					const helpers = await getTestHelpers();
+					const tab = helpers.getTabById(tabId);
+					if (tab && tab.parentId === expectedParentId) {
+						return;
+					}
+					await sidepanel.waitForTimeout(100);
+				}
+				const helpers = await getTestHelpers();
+				const tab = helpers.getTabById(tabId);
+				throw new Error(
+					`Tab ${tabId} did not reach expected parent state within ${timeout}ms. Current parentId: ${tab?.parentId}, expected: ${expectedParentId}`,
+				);
+			},
+
+			waitForTabInWindow: async (
+				tabId: number,
+				windowId: number,
+				timeout = 10000,
+			) => {
+				const start = Date.now();
+				while (Date.now() - start < timeout) {
+					const helpers = await getTestHelpers();
+					const tab = helpers.getTabById(tabId);
+					if (tab && tab.windowId === windowId) {
+						return;
+					}
+					await sidepanel.waitForTimeout(100);
+				}
+				const helpers = await getTestHelpers();
+				const tab = helpers.getTabById(tabId);
+				throw new Error(
+					`Tab ${tabId} did not reach expected window within ${timeout}ms. Current windowId: ${tab?.windowId}, expected: ${windowId}`,
+				);
+			},
+
 			getTabByUrl: async (url: string) => {
 				const helpers = await getTestHelpers();
 				return helpers.getAllTabs().find((t) => t.url.includes(url));
@@ -542,11 +632,51 @@ export const test = base.extend<ExtensionFixtures>({
 				}, event);
 			},
 
-			dragTabToTab: async (
-				sourceTabId: number,
-				targetTabId: number,
-				waitAfter = 500,
-			) => {
+			makeTabChild: async (sourceTabId: number, targetTabId: number) => {
+				// Use programmatic action instead of UI interaction
+				await sidepanel.evaluate(
+					({ sourceTabId, targetTabId }) => {
+						// @ts-expect-error - window is available in browser context
+						return window.__tabCanopyBrowserActions.sendUserAction({
+							type: "dragTabToTab",
+							sourceTabId,
+							targetTabId,
+						});
+					},
+					{ sourceTabId, targetTabId },
+				);
+
+				// Wait for the operation to complete by checking the state
+				// The sendUserAction already waits internally, but we double-check here
+				await helpers.waitForTabParent(sourceTabId, targetTabId);
+			},
+
+			makeTabChildren: async (parentTabId: number, childTabIds: number[]) => {
+				// Batch operation - make multiple tabs children of the same parent
+				await sidepanel.evaluate(
+					({ parentTabId, childTabIds }) => {
+						// @ts-expect-error - window is available in browser context
+						return window.__tabCanopyBrowserActions.sendUserAction({
+							type: "makeTabChildren",
+							parentTabId,
+							childTabIds,
+						});
+					},
+					{ parentTabId, childTabIds },
+				);
+
+				// Wait for all children to be parented
+				for (const childTabId of childTabIds) {
+					await helpers.waitForTabParent(childTabId, parentTabId);
+				}
+			},
+
+			dragTabToTab: async (sourceTabId: number, targetTabId: number) => {
+				// Check if sidepanel is still valid
+				if (sidepanel.isClosed()) {
+					throw new Error("Sidepanel was closed before drag operation");
+				}
+
 				const sourceElement = sidepanel.locator(
 					`[data-tab-id="${sourceTabId}"]`,
 				);
@@ -563,20 +693,41 @@ export const test = base.extend<ExtensionFixtures>({
 					);
 				}
 
-				// Perform drag and drop (drop on target to make it a child)
-				await sidepanel.mouse.move(
-					sourceBox.x + 200,
-					sourceBox.y + sourceBox.height / 2,
-				);
-				await sidepanel.mouse.down();
-				await sidepanel.mouse.move(
-					targetBox.x + 200,
-					targetBox.y + targetBox.height / 2,
-					{ steps: 10 },
-				);
-				await sidepanel.waitForTimeout(100);
-				await sidepanel.mouse.up();
-				await sidepanel.waitForTimeout(waitAfter);
+				try {
+					// Perform drag and drop (drop on target to make it a child)
+					await sidepanel.mouse.move(
+						sourceBox.x + 200,
+						sourceBox.y + sourceBox.height / 2,
+					);
+					await sidepanel.mouse.down();
+					await sidepanel.mouse.move(
+						targetBox.x + 200,
+						targetBox.y + targetBox.height / 2,
+						{ steps: 10 },
+					);
+					await sidepanel.waitForTimeout(200); // Pause before mouse up for dnd-kit
+					await sidepanel.mouse.up();
+
+					// Wait for the operation to complete by checking the state
+					await helpers.waitForTabParent(sourceTabId, targetTabId);
+
+					// Small delay to prevent overwhelming Chrome with rapid operations
+					// (Chrome may close sidepanel if too many operations happen too quickly)
+					await sidepanel.waitForTimeout(50);
+				} catch (error) {
+					// If sidepanel was closed during operation, provide better error message
+					if (
+						error instanceof Error &&
+						error.message.includes(
+							"Target page, context or browser has been closed",
+						)
+					) {
+						throw new Error(
+							`Sidepanel was closed during drag operation from ${sourceTabId} to ${targetTabId}. This might indicate an issue with tab move handling.`,
+						);
+					}
+					throw error;
+				}
 			},
 
 			dragTabAfterTab: async (
@@ -584,6 +735,11 @@ export const test = base.extend<ExtensionFixtures>({
 				targetTabId: number,
 				waitAfter = 500,
 			) => {
+				// Check if sidepanel is still valid
+				if (sidepanel.isClosed()) {
+					throw new Error("Sidepanel was closed before drag operation");
+				}
+
 				const sourceElement = sidepanel.locator(
 					`[data-tab-id="${sourceTabId}"]`,
 				);
@@ -600,23 +756,120 @@ export const test = base.extend<ExtensionFixtures>({
 					);
 				}
 
-				// Perform drag and drop (drop to the left of target to make it a sibling)
-				await sidepanel.mouse.move(
-					sourceBox.x + 200,
-					sourceBox.y + sourceBox.height / 2,
-				);
-				await sidepanel.mouse.down();
-				await sidepanel.mouse.move(
-					targetBox.x + 25, // Slightly to the left of the box
-					targetBox.y + targetBox.height / 4, // Vertically centered
-					{ steps: 20 },
-				);
-				await sidepanel.waitForTimeout(100);
-				await sidepanel.mouse.up();
-				await sidepanel.waitForTimeout(waitAfter);
+				try {
+					// Perform drag and drop (drop to the left of target to make it a sibling)
+					await sidepanel.mouse.move(
+						sourceBox.x + 200,
+						sourceBox.y + sourceBox.height / 2,
+					);
+					await sidepanel.mouse.down();
+					await sidepanel.mouse.move(
+						targetBox.x + 25, // Slightly to the left of the box
+						targetBox.y + targetBox.height / 4, // Vertically centered
+						{ steps: 20 },
+					);
+					await sidepanel.waitForTimeout(100);
+					await sidepanel.mouse.up();
+					await sidepanel.waitForTimeout(waitAfter);
+				} catch (error) {
+					// If sidepanel was closed during operation, provide better error message
+					if (
+						error instanceof Error &&
+						error.message.includes(
+							"Target page, context or browser has been closed",
+						)
+					) {
+						throw new Error(
+							`Sidepanel was closed during drag operation from ${sourceTabId} after ${targetTabId}. This might indicate an issue with tab move handling.`,
+						);
+					}
+					throw error;
+				}
 			},
 
-			dragTabToNewWindow: async (sourceTabId: number, waitAfter = 500) => {
+			moveTabToNewWindow: async (sourceTabId: number) => {
+				// Get current window ID and all descendants before the move
+				const helpersBefore = await getTestHelpers();
+				const tabBefore = helpersBefore.getTabById(sourceTabId);
+				if (!tabBefore) {
+					throw new Error(`Source tab ${sourceTabId} not found`);
+				}
+				const originalWindowId = tabBefore.windowId;
+
+				// Get all descendants that should move with the parent
+				const descendants = helpersBefore.getDescendants(sourceTabId);
+				const allTabsToMove = [sourceTabId, ...descendants.map((d) => d.id)];
+
+				// Use programmatic action instead of UI interaction
+				await sidepanel.evaluate(
+					({ sourceTabId }) => {
+						// @ts-expect-error - window is available in browser context
+						const actions = window.__tabCanopyBrowserActions;
+						if (!actions) {
+							throw new Error("Browser test actions not exposed");
+						}
+						return actions.sendUserAction({
+							type: "dragTabToNewWindow",
+							sourceTabId,
+						});
+					},
+					{ sourceTabId },
+				);
+
+				// Wait for ALL tabs (parent + descendants) to move to the new window
+				const start = Date.now();
+				const timeout = 10000;
+				while (Date.now() - start < timeout) {
+					const helpersAfter = await getTestHelpers();
+					const movedTabs = allTabsToMove.map((id) =>
+						helpersAfter.getTabById(id),
+					);
+
+					// Check if all tabs exist and are in a new window (same window, different from original)
+					if (movedTabs.every((t) => t !== null)) {
+						const newWindowIds = movedTabs.map((t) => t?.windowId);
+						const allInSameWindow = newWindowIds.every(
+							(w) => w === newWindowIds[0],
+						);
+						const inDifferentWindow = newWindowIds[0] !== originalWindowId;
+
+						if (allInSameWindow && inDifferentWindow) {
+							return; // Successfully moved all tabs to new window
+						}
+					}
+
+					await sidepanel.waitForTimeout(100);
+				}
+
+				// Provide detailed error message
+				const helpersAfter = await getTestHelpers();
+				const tabStates = allTabsToMove.map((id) => {
+					const tab = helpersAfter.getTabById(id);
+					return `  Tab ${id}: windowId=${tab?.windowId ?? "null"}`;
+				});
+
+				throw new Error(
+					`Not all tabs moved to new window within ${timeout}ms.\n` +
+						`Original window: ${originalWindowId}\n` +
+						`Expected to move: ${allTabsToMove.join(", ")}\n` +
+						`Current state:\n${tabStates.join("\n")}`,
+				);
+			},
+
+			dragTabToNewWindow: async (sourceTabId: number) => {
+				// Check if sidepanel is still valid
+				if (sidepanel.isClosed()) {
+					throw new Error("Sidepanel was closed before drag operation");
+				}
+
+				// Get current window ID before the move
+				const helpersBefore = await getTestHelpers();
+				const tabBefore = helpersBefore.getTabById(sourceTabId);
+				if (!tabBefore) {
+					throw new Error(`Source tab ${sourceTabId} not found`);
+				}
+				const originalWindowId = tabBefore.windowId;
+
 				const sourceElement = sidepanel.locator(
 					`[data-tab-id="${sourceTabId}"]`,
 				);
@@ -629,45 +882,75 @@ export const test = base.extend<ExtensionFixtures>({
 					);
 				}
 
-				// Perform drag - start at the source
-				await sidepanel.mouse.move(
-					sourceBox.x + 200,
-					sourceBox.y + sourceBox.height / 2,
-				);
-				await sidepanel.mouse.down();
-
-				// Move down to trigger drag and reveal the drop zone (with steps for dnd-kit)
-				await sidepanel.mouse.move(
-					sourceBox.x + 200,
-					sourceBox.y + sourceBox.height / 2 + 200,
-					{ steps: 10 },
-				);
-
-				await sidepanel.waitForTimeout(300);
-
-				// Find the new window drop zone
-				const dropZone = sidepanel.locator(
-					'[data-testid="new-window-drop-zone"]',
-				);
-				await dropZone.waitFor({ state: "visible", timeout: 3000 });
-
-				const dropBox = await dropZone.boundingBox();
-
-				if (!dropBox) {
-					throw new Error(
-						"Could not get bounding box for new window drop zone",
+				try {
+					// Perform drag - start at the source
+					await sidepanel.mouse.move(
+						sourceBox.x + 200,
+						sourceBox.y + sourceBox.height / 2,
 					);
-				}
+					await sidepanel.mouse.down();
 
-				// Move to the center of the drop zone (with steps)
-				await sidepanel.mouse.move(
-					dropBox.x + dropBox.width / 2,
-					dropBox.y + dropBox.height / 2,
-					{ steps: 10 },
-				);
-				await sidepanel.waitForTimeout(100);
-				await sidepanel.mouse.up();
-				await sidepanel.waitForTimeout(waitAfter);
+					// Move down to trigger drag and reveal the drop zone (with steps for dnd-kit)
+					await sidepanel.mouse.move(
+						sourceBox.x + 200,
+						sourceBox.y + sourceBox.height / 2 + 200,
+						{ steps: 10 },
+					);
+
+					await sidepanel.waitForTimeout(300);
+
+					// Find the new window drop zone
+					const dropZone = sidepanel.locator(
+						'[data-testid="new-window-drop-zone"]',
+					);
+					await dropZone.waitFor({ state: "visible", timeout: 3000 });
+
+					const dropBox = await dropZone.boundingBox();
+
+					if (!dropBox) {
+						throw new Error(
+							"Could not get bounding box for new window drop zone",
+						);
+					}
+
+					// Move to the center of the drop zone (with steps)
+					await sidepanel.mouse.move(
+						dropBox.x + dropBox.width / 2,
+						dropBox.y + dropBox.height / 2,
+						{ steps: 10 },
+					);
+					await sidepanel.waitForTimeout(100);
+					await sidepanel.mouse.up();
+
+					// Wait for the tab to actually move to a different window
+					const start = Date.now();
+					const timeout = 10000;
+					while (Date.now() - start < timeout) {
+						const helpersAfter = await getTestHelpers();
+						const tabAfter = helpersAfter.getTabById(sourceTabId);
+						if (tabAfter && tabAfter.windowId !== originalWindowId) {
+							return tabAfter.windowId; // Successfully moved to new window, return new window ID
+						}
+						await sidepanel.waitForTimeout(100);
+					}
+
+					throw new Error(
+						`Tab ${sourceTabId} did not move to new window within ${timeout}ms`,
+					);
+				} catch (error) {
+					// If sidepanel was closed during operation, provide better error message
+					if (
+						error instanceof Error &&
+						error.message.includes(
+							"Target page, context or browser has been closed",
+						)
+					) {
+						throw new Error(
+							`Sidepanel was closed during drag operation for tab ${sourceTabId} to new window. This might indicate an issue with window creation or tab move handling.`,
+						);
+					}
+					throw error;
+				}
 			},
 		};
 

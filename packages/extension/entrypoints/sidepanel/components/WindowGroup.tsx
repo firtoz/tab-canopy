@@ -320,10 +320,10 @@ export const WindowGroup = ({
 						{isCollapsed ? <IconCollapsed /> : <IconExpanded />}
 					</button>
 					<span className="text-sm font-medium pl-2 text-slate-700 dark:text-slate-200">
-						Window {win.browserWindowId}
+						Window
 						{isCurrentWindow && " (current)"}
 					</span>
-					<span className="text-xs text-slate-400 dark:text-slate-500">
+					<span className="text-xs text-slate-400 dark:text-slate-500 ml-2">
 						• {tabs.length} tabs
 					</span>
 					<button

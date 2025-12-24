@@ -1008,6 +1008,23 @@ export const setupTabListeners = (
 		const browserTab = await browser.tabs.get(tabId).catch(() => null);
 		if (!browserTab || !hasTabIds(browserTab)) return;
 
+		// First, check if there's a UI move intent (sent before browser.tabs.move was called)
+		// This is the definitive source of truth for UI-initiated moves
+		const uiIntent = consumeUiMoveIntent(tabId);
+		if (uiIntent) {
+			log(
+				`[Background] Tab ${tabId} has UI move intent, using it: parentId=${uiIntent.parentTabId}, treeOrder=${uiIntent.treeOrder}`,
+			);
+			const tabRecord = tabToRecord(browserTab, {
+				parentTabId: uiIntent.parentTabId,
+				treeOrder: uiIntent.treeOrder,
+			});
+			await putItems("tab", [tabRecord]);
+			// Update indices of other tabs in the new window
+			await updateTabIndicesInWindow(attachInfo.newWindowId, dbOps);
+			return;
+		}
+
 		// Check if this tab is part of a UI-managed move (e.g., drag to new window with children)
 		const managedMoveTabIds = getManagedMoveTabIds?.() || new Set<number>();
 		const isUiManagedMove = managedMoveTabIds.has(tabId);
@@ -1028,7 +1045,7 @@ export const setupTabListeners = (
 		// Check if the tab was already moved by our extension UI
 		// Either:
 		// 1. It's in the managed move set (definitive - the UI is coordinating this move)
-		// 2. The DB windowId already matches (fallback for race conditions)
+		// 2. The DB windowId already matches (DB update already committed)
 		const isExtensionMove =
 			isUiManagedMove ||
 			(existingTab && existingTab.browserWindowId === attachInfo.newWindowId);
@@ -1048,9 +1065,9 @@ export const setupTabListeners = (
 			await putItems("tab", [tabRecord]);
 		} else if (isUiManagedMove && !existingTab) {
 			// This tab is part of a UI-managed move but we don't have the DB record yet
-			// This is an error condition - log it but don't crash
+			// This shouldn't happen if UI sent move intent first, but handle it gracefully
 			log(
-				`[Background] ERROR: Tab ${tabId} is part of UI-managed move but DB record not found!`,
+				`[Background] ERROR: Tab ${tabId} is part of UI-managed move but no DB record or move intent found!`,
 			);
 			// Create as root tab with default tree order as fallback
 			const tabRecord = tabToRecord(browserTab, {

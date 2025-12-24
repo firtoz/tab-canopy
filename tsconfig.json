@@ -4,10 +4,9 @@
 		"module": "ESNext",
 		"lib": ["ES2022"],
 		"moduleResolution": "bundler",
-		"types": ["node", "@playwright/test"],
+		"types": ["node"],
 		"strict": true,
 		"esModuleInterop": true
 	},
-	"include": ["e2e/**/*", "playwright.config.ts"],
-	"exclude": ["node_modules", "packages"]
+	"exclude": ["node_modules"]
 }

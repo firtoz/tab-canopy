@@ -281,9 +281,7 @@ function PreviewWindowGroup({
 			<div className="flex items-center gap-1 text-zinc-400 py-1">
 				{isLastWindow ? <TreeEnd /> : <TreeBranch />}
 				<ChevronDown size={12} />
-				<span className="text-[11px] font-medium">
-					Window {win.browserWindowId}
-				</span>
+				<span className="text-[11px] font-medium">Window</span>
 				<span className="text-[10px] text-zinc-600">• {tabs.length} tabs</span>
 				{win.focused && (
 					<span className="text-[9px] text-blue-400">(focused)</span>
@@ -317,12 +315,10 @@ function PreviewWindowGroup({
 // ============================================================================
 
 function ChromeOrderView({
-	window: win,
 	tabs,
 	highlightTabId,
 	tabChanges,
 }: {
-	window: PreviewWindow;
 	tabs: PreviewTab[];
 	highlightTabId?: number;
 	tabChanges?: Map<number, "added" | "removed" | "modified">;
@@ -333,7 +329,7 @@ function ChromeOrderView({
 	return (
 		<div className="space-y-0.5">
 			<div className="flex items-center gap-1 text-zinc-500 text-[10px] font-semibold py-1">
-				<span>Window {win.browserWindowId}</span>
+				<span>Window</span>
 				<span className="text-zinc-600">• {tabs.length} tabs</span>
 			</div>
 			{sorted.map((tab) => {
@@ -444,7 +440,6 @@ export function TabTreePreview({
 					windowsWithTabs.map((wt) => (
 						<ChromeOrderView
 							key={wt.window.browserWindowId}
-							window={wt.window}
 							tabs={wt.tabs}
 							highlightTabId={highlightTabId}
 							tabChanges={tabChanges}
