@@ -1,4 +1,6 @@
+import { generateNKeysBetween } from "fractional-indexing";
 import type { Tab } from "@/schema/src/schema";
+import { DEFAULT_TREE_ORDER } from "../sidepanel/lib/tree";
 import { log } from "./constants";
 import type { DbOperations } from "./db-operations";
 import { tabToRecord, windowToRecord } from "./mappers";
@@ -44,11 +46,13 @@ export const performFullReset = async (dbOps: DbOperations) => {
 	}
 	log(`[Background] Inserted ${windowRecords.length} windows`);
 
+	const keys = generateNKeysBetween(null, null, browserTabs.length);
+
 	// Insert all tabs as root level (no tree structure)
-	const tabRecords = browserTabs.filter(hasTabIds).map((tab) =>
+	const tabRecords = browserTabs.filter(hasTabIds).map((tab, index) =>
 		tabToRecord(tab, {
 			parentTabId: null,
-			treeOrder: `a${String(tab.index).padStart(4, "0")}`, // Simple ordering by index
+			treeOrder: keys[index],
 		}),
 	);
 
@@ -118,7 +122,7 @@ export const performInitialSync = async (dbOps: DbOperations) => {
 		// Preserve tree structure if tab exists, otherwise use defaults
 		return tabToRecord(tab, {
 			parentTabId: existing?.parentTabId ?? null,
-			treeOrder: existing?.treeOrder ?? "a0",
+			treeOrder: existing?.treeOrder ?? DEFAULT_TREE_ORDER,
 		});
 	});
 

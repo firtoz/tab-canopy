@@ -1,7 +1,7 @@
 import { useDroppable } from "@dnd-kit/core";
 import type { DropDataGap } from "../../lib/dnd/dnd-types";
 
-export function GapDropZone({
+export function WindowTitleDropZone({
 	windowId,
 	slot,
 	isDragging,
@@ -15,7 +15,7 @@ export function GapDropZone({
 		[windowId, slot],
 	);
 	const { setNodeRef, isOver } = useDroppable({
-		id: `gap-${windowId}-${slot}`,
+		id: `window-title-${windowId}-${slot}`,
 		data: dropData,
 	});
 
@@ -26,7 +26,7 @@ export function GapDropZone({
 	return (
 		<div
 			ref={setNodeRef}
-			className={`h-2 -my-1 relative z-20 ${isOver ? "bg-yellow-500/50" : "bg-transparent"}`}
+			className={`absolute inset-0 z-20 ${isOver ? "bg-yellow-500/50" : "bg-transparent"}`}
 		/>
 	);
 }

@@ -297,6 +297,7 @@ export function calculateTreeMove(
 		}
 
 		case "root": {
+			console.log("Moving to root level", dropPosition);
 			// Moving to root level
 			const rootTabs = tabs
 				.filter((t) => t.parentTabId === null)
@@ -304,9 +305,12 @@ export function calculateTreeMove(
 
 			if (dropPosition.index <= 0) {
 				const first = rootTabs[0];
+				console.log("Moving to first position", first);
+				const newTreeOrder = generateKeyBetween(null, first?.treeOrder || null);
+				console.log("New tree order", newTreeOrder);
 				return {
 					parentTabId: null,
-					treeOrder: generateKeyBetween(null, first?.treeOrder || null),
+					treeOrder: newTreeOrder,
 				};
 			}
 

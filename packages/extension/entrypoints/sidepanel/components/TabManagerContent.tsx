@@ -35,6 +35,7 @@ import {
 import {
 	buildTabTree,
 	calculateTreeMove,
+	compareTreeOrder,
 	DEFAULT_TREE_ORDER,
 	flattenTree,
 	getDescendantIds,
@@ -181,19 +182,17 @@ export const TabManagerContent = () => {
 		[selectedTabIds, recordUserEvent],
 	);
 
-	const handleDragOver = useCallback((event: DragOverEvent) => {
-		const overData = event.over?.data?.current;
-		if (isDropData(overData)) {
-			const dragData = event.active?.data?.current;
-			// if (isDragDataTab(dragData)) {
-			console.log("dragData", dragData);
-			console.log("overData", overData);
-			// }
-			// setActiveDropData(overData);
-		} else {
-			// setActiveDropData(null);
-		}
-	}, []);
+	// const handleDragOver = useCallback((event: DragOverEvent) => {
+	// 	const overData = event.over?.data?.current;
+	// 	if (isDropData(overData)) {
+	// 		// const dragData = event.active?.data?.current;
+	// 		// if (isDragDataTab(dragData)) {
+	// 		// }
+	// 		// setActiveDropData(overData);
+	// 	} else {
+	// 		// setActiveDropData(null);
+	// 	}
+	// }, []);
 
 	const handleDragCancel = useCallback(() => {
 		setActiveId(null);
@@ -262,7 +261,7 @@ export const TabManagerContent = () => {
 					// Get siblings of the closing tab at its current level
 					const siblings = windowTabs
 						.filter((t) => t.parentTabId === tab.parentTabId)
-						.sort((a, b) => a.treeOrder.localeCompare(b.treeOrder));
+						.sort((a, b) => compareTreeOrder(a.treeOrder, b.treeOrder));
 
 					const currentIndex = siblings.findIndex(
 						(t) => t.browserTabId === browserTabId,
@@ -279,7 +278,7 @@ export const TabManagerContent = () => {
 
 					// Sort children by their current tree order to maintain relative positions
 					const sortedChildren = [...children].sort((a, b) =>
-						a.treeOrder.localeCompare(b.treeOrder),
+						compareTreeOrder(a.treeOrder, b.treeOrder),
 					);
 
 					// Generate new tree orders for all children at once using fractional-indexing
@@ -338,8 +337,8 @@ export const TabManagerContent = () => {
 
 	const handleDragEnd = useCallback(
 		async (event: DragEndEvent) => {
-			console.log("handleDragEnd", event);
-			console.log("event.over", event.over);
+			// console.log("handleDragEnd", event);
+			// console.log("event.over", event.over);
 			let dropData = event.over?.data?.current;
 
 			// Get info for recording before any early returns
@@ -410,7 +409,7 @@ export const TabManagerContent = () => {
 				return;
 			}
 
-			console.log("dropData", dropData);
+			// console.log("dropData", dropData);
 
 			setActiveId(null);
 
@@ -552,7 +551,7 @@ export const TabManagerContent = () => {
 				// Drop as child of target
 				treeDropPosition = { type: "child", parentTabId: finalDropData.tabId };
 			} else if (finalDropData.type === "sibling") {
-				console.log("finalDropData", finalDropData);
+				// console.log("finalDropData", finalDropData);
 				const ancestorId = finalDropData.ancestorId;
 
 				// ancestorId is the new parent for the dragged tab
@@ -635,7 +634,7 @@ export const TabManagerContent = () => {
 			// Find the next sibling to determine the upper bound
 			const siblings = tabsForTreeCalc
 				.filter((t) => t.parentTabId === newParentId)
-				.sort((a, b) => a.treeOrder.localeCompare(b.treeOrder));
+				.toSorted((a, b) => compareTreeOrder(a.treeOrder, b.treeOrder));
 			const firstTabIndex = siblings.findIndex(
 				(s) => s.treeOrder >= firstTreeOrder,
 			);
@@ -1052,7 +1051,7 @@ export const TabManagerContent = () => {
 			sensors={sensors}
 			collisionDetection={dropZoneCollision}
 			onDragStart={handleDragStart}
-			onDragOver={handleDragOver}
+			// onDragOver={handleDragOver}
 			onDragEnd={handleDragEnd}
 			onDragCancel={handleDragCancel}
 		>

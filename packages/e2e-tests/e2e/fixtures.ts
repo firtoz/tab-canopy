@@ -155,7 +155,7 @@ export interface TestTreeHelpers {
 	 * Drag a tab to the "new window" drop zone to create a new window (UI interaction)
 	 * @param sourceTabId The tab to drag
 	 */
-	dragTabToNewWindow: (sourceTabId: number) => Promise<void>;
+	dragTabToNewWindow: (sourceTabId: number) => Promise<number>;
 
 	/**
 	 * Programmatically move a tab to a new window (bypasses UI)
@@ -202,11 +202,14 @@ async function waitForExtensionBuild(maxWaitMs = 60000): Promise<void> {
 
 // Internal fixture for storing test state
 interface TestState {
-	latestTreeState: { windows: schema.Window[]; tabs: schema.Tab[] } | null;
+	latestTreeState: {
+		windows: Array<schema.Window>;
+		tabs: Array<schema.Tab>;
+	} | null;
 	stateReportedPromise: Promise<void>;
 	updateState: (state: {
-		windows: schema.Window[];
-		tabs: schema.Tab[];
+		windows: Array<schema.Window>;
+		tabs: Array<schema.Tab>;
 	}) => void;
 	backgroundLogs: string[];
 	addBackgroundLog: (message: string) => void;
@@ -365,8 +368,8 @@ export const test = base.extend<ExtensionFixtures>({
 			}
 
 			// Build helpers from the reported state in Node.js
-			const tabs = latestTreeState.tabs;
-			const windows = latestTreeState.windows;
+			const tabs: Array<schema.Tab> = latestTreeState.tabs;
+			const windows: Array<schema.Window> = latestTreeState.windows;
 
 			// Build tab nodes with tree metadata
 			const tabMap = new Map(tabs.map((t) => [t.browserTabId, t]));
@@ -856,7 +859,7 @@ export const test = base.extend<ExtensionFixtures>({
 				);
 			},
 
-			dragTabToNewWindow: async (sourceTabId: number) => {
+			dragTabToNewWindow: async (sourceTabId: number): Promise<number> => {
 				// Check if sidepanel is still valid
 				if (sidepanel.isClosed()) {
 					throw new Error("Sidepanel was closed before drag operation");

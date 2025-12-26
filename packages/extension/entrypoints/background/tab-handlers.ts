@@ -573,14 +573,6 @@ export const setupTabListeners = (
 		let shouldRecalculateTree = true;
 
 		if (existingTab) {
-			// Build tree with current DB state and see where this tab would be
-			const _sortedByTree = [...windowTabs].sort((a, b) => {
-				// Sort by tree structure (depth-first)
-				const aOrder = `${a.parentTabId ?? ""}-${a.treeOrder}`;
-				const bOrder = `${b.parentTabId ?? ""}-${b.treeOrder}`;
-				return aOrder.localeCompare(bOrder);
-			});
-
 			// Simple check: build expected order from tree
 			// If the expected position matches toIndex, the UI already set the correct tree position
 			const buildFlatOrder = (tabs: Tab[]): Tab[] => {

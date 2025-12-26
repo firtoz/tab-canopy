@@ -8,6 +8,7 @@ import type { Tab, Window } from "@/schema/src/schema";
 import {
 	buildTabTree,
 	calculateTreeMove,
+	compareTreeOrder,
 	flattenTree,
 	type TreeDropPosition,
 } from "../tree";
@@ -265,7 +266,7 @@ function applyDragEnd(state: SimulatedState, event: UserDragEndEvent): void {
 	// Generate proper order keys for multiple tabs using fractional-indexing
 	const siblings = windowTabs
 		.filter((t) => t.parentTabId === newParentId)
-		.sort((a, b) => a.treeOrder.localeCompare(b.treeOrder));
+		.toSorted((a, b) => compareTreeOrder(a.treeOrder, b.treeOrder));
 	const firstTabIndex = siblings.findIndex(
 		(s) => s.treeOrder >= firstTreeOrder,
 	);

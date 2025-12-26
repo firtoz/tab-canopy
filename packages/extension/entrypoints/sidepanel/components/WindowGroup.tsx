@@ -13,6 +13,7 @@ import { isDropData } from "../lib/dnd/dnd-types";
 import { buildTabTree, flattenTree } from "../lib/tree";
 import { DraggableTab } from "./dnd/DraggableTab";
 import { GapDropZone } from "./dnd/GapDropZone";
+import { WindowTitleDropZone } from "./dnd/WindowTitleDropZone";
 import { IconCollapsed } from "./icons/IconCollapsed";
 import { IconExpanded } from "./icons/IconExpanded";
 import { TreeBranch } from "./icons/TreeBranch";
@@ -287,7 +288,7 @@ export const WindowGroup = ({
 	return (
 		<div className="flex flex-col">
 			{/* Window header as tree node */}
-			<div className="flex items-stretch text-slate-300 dark:text-slate-600">
+			<div className="flex items-stretch text-slate-300 dark:text-slate-600 relative">
 				{/* Tree lines for window */}
 				{isLastWindow ? (
 					<TreeEnd highlighted={highlightedDepth === 0} />
@@ -335,6 +336,11 @@ export const WindowGroup = ({
 						<X size={14} />
 					</button>
 				</div>
+				<WindowTitleDropZone
+					windowId={win.browserWindowId}
+					slot={0}
+					isDragging={isDragging}
+				/>
 			</div>
 
 			{/* Tabs as children */}
