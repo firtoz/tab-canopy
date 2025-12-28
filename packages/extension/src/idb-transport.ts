@@ -3,6 +3,7 @@
  * Fully typed with discriminated unions for client and server messages.
  */
 
+import { pack, unpack } from "msgpackr";
 import { browser } from "wxt/browser";
 
 /**
@@ -72,7 +73,7 @@ export function createExtensionServerTransport<TClientMsg, TServerMsg>(
 		for (const [clientId, port] of connectedClients) {
 			if (clientId !== excludeClientId) {
 				try {
-					port.postMessage(portMessage);
+					port.postMessage([...pack(portMessage)]);
 				} catch (e) {
 					console.error(`[Server] Failed to send to ${clientId}:`, e);
 					connectedClients.delete(clientId);
@@ -90,7 +91,7 @@ export function createExtensionServerTransport<TClientMsg, TServerMsg>(
 				payload: message,
 			};
 			try {
-				port.postMessage(portMessage);
+				port.postMessage([...pack(portMessage)]);
 			} catch (e) {
 				console.error(`[Server] Failed to send to ${clientId}:`, e);
 				connectedClients.delete(clientId);
@@ -113,13 +114,16 @@ export function createExtensionServerTransport<TClientMsg, TServerMsg>(
 		onConnect?.(clientInfo);
 
 		// Handle messages from this client
-		port.onMessage.addListener(
-			(message: PortMessage<TClientMsg, TServerMsg>) => {
-				if (message.direction === "toServer") {
-					onMessage(message.payload, clientInfo, broadcast);
-				}
-			},
-		);
+		port.onMessage.addListener((packed: Array<number>) => {
+			const message = unpack(new Uint8Array(packed)) as PortMessage<
+				TClientMsg,
+				TServerMsg
+			>;
+
+			if (message.direction === "toServer") {
+				onMessage(message.payload, clientInfo, broadcast);
+			}
+		});
 
 		// Clean up on disconnect
 		port.onDisconnect.addListener(() => {
@@ -178,7 +182,12 @@ export function createExtensionClientTransport<TClientMsg, TServerMsg>(
 	let isDisconnected = false;
 
 	// Handle messages from server
-	port.onMessage.addListener((message: PortMessage<TClientMsg, TServerMsg>) => {
+	port.onMessage.addListener((packed: Uint8Array) => {
+		const message = unpack(new Uint8Array(packed)) as PortMessage<
+			TClientMsg,
+			TServerMsg
+		>;
+
 		if (message.direction === "toClient") {
 			onMessage(message.payload);
 		}
@@ -204,7 +213,7 @@ export function createExtensionClientTransport<TClientMsg, TServerMsg>(
 			};
 
 			try {
-				port.postMessage(portMessage);
+				port.postMessage([...pack(portMessage)]);
 			} catch (e) {
 				if (e instanceof Error && e.message.includes("disconnected port")) {
 					console.warn("[Client] Port disconnected during send");

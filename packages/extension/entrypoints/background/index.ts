@@ -7,6 +7,7 @@ import {
 	migrateIndexedDBWithFunctions,
 } from "@firtoz/drizzle-indexeddb";
 import { exhaustiveGuard } from "@firtoz/maybe-error";
+import { pack } from "msgpackr";
 import migrations from "@/schema/drizzle/indexeddb-migrations";
 import {
 	type ClientMessage,
@@ -73,27 +74,31 @@ export default defineBackground(() => {
 			switch (message.type) {
 				case "idbRequest": {
 					if (!requestHandler) {
-						client.port.postMessage({
-							direction: "toClient",
-							payload: {
-								type: "idbResponse",
+						client.port.postMessage([
+							...pack({
+								direction: "toClient",
 								payload: {
-									id: message.payload.id,
-									type: "error",
-									error: "Server not ready",
+									type: "idbResponse",
+									payload: {
+										id: message.payload.id,
+										type: "error",
+										error: "Server not ready",
+									},
 								},
-							},
-						});
+							}),
+						]);
 						return;
 					}
 					const response = await requestHandler({
 						...message.payload,
 						clientId: client.clientId,
 					});
-					client.port.postMessage({
-						direction: "toClient",
-						payload: { type: "idbResponse", payload: response },
-					});
+					client.port.postMessage([
+						...pack({
+							direction: "toClient",
+							payload: { type: "idbResponse", payload: response },
+						}),
+					]);
 					break;
 				}
 				case "broadcast":
@@ -146,13 +151,15 @@ export default defineBackground(() => {
 				}
 				case "getTabCreatedEvents":
 					// Return tab created events for tests
-					client.port.postMessage({
-						direction: "toClient",
-						payload: {
-							type: "tabCreatedEvents",
-							events: getTabCreatedEvents(),
-						},
-					});
+					client.port.postMessage([
+						...pack({
+							direction: "toClient",
+							payload: {
+								type: "tabCreatedEvents",
+								events: getTabCreatedEvents(),
+							},
+						}),
+					]);
 					break;
 				case "clearTabCreatedEvents":
 					// Clear tab created events for tests
