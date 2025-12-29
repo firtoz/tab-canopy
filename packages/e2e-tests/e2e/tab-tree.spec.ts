@@ -663,7 +663,7 @@ test.describe("Tab Movement with Children", () => {
 		await tab1.close();
 	});
 
-	test("moving tab between parent and child then back should flatten correctly", async ({
+	test("moving child tab before parent should flatten only that child", async ({
 		context,
 		sidepanel,
 		treeHelpers,
@@ -689,12 +689,11 @@ test.describe("Tab Movement with Children", () => {
 				2,
 			),
 		);
-		// This test reproduces a sync issue:
+		// This test verifies correct flattening behavior:
 		// 1. Start with tabs a, b, c (flat)
 		// 2. Make c a child of b: a, b, -c
-		// 3. Move a (in native) between b and c → a becomes a child of b (good)
-		// 4. Move a left again (in native) → should be flat a, b, c again
-		//    But extension stays as b, -a, -c (broken sync)
+		// 3. Move a (in native) between b and c → a becomes a child of b: b, -a, -c
+		// 4. Move a left again (in native) → a flattens to root, c stays as child of b: a, b, -c
 
 		// Create tabs a, b, c
 		const tabA = await createTab(context, "about:blank?title=a", sidepanel);
@@ -765,7 +764,7 @@ test.describe("Tab Movement with Children", () => {
 		// Wait for changes to be processed
 		await sidepanel.waitForTimeout(1000);
 
-		// Verify all tabs are now flat (a, b, c all at root level)
+		// Verify the final state: a moved to root, b at root, c still child of b
 		helpers = await treeHelpers.getHelpers();
 		aTab = helpers.getTabById(aInfo.browserTabId);
 		bTab = helpers.getTabById(bInfo.browserTabId);
@@ -791,15 +790,17 @@ test.describe("Tab Movement with Children", () => {
 			index: cTab?.tabIndex,
 		});
 
-		// All should be at root level
+		// a should be flattened to root level (moved before its parent)
+		// b should remain at root level
+		// c should remain as a child of b (still in valid position)
 		expect(aTab?.parentTabId).toBeNull();
 		expect(bTab?.parentTabId).toBeNull();
-		expect(cTab?.parentTabId).toBeNull();
+		expect(cTab?.parentTabId).toBe(bInfo.browserTabId);
 		expect(aTab?.depth).toBe(0);
 		expect(bTab?.depth).toBe(0);
-		expect(cTab?.depth).toBe(0);
+		expect(cTab?.depth).toBe(1);
 
-		// Verify order in native browser is a, b, c
+		// Verify order in native browser: a before b, c after b
 		expect(aTab?.tabIndex).toBeLessThan(bTab?.tabIndex ?? Infinity);
 		expect(bTab?.tabIndex).toBeLessThan(cTab?.tabIndex ?? Infinity);
 

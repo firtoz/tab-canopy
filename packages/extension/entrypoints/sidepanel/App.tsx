@@ -29,9 +29,9 @@ type StateGetter = () => { windows: schema.Window[]; tabs: schema.Tab[] };
 
 interface BackgroundApi {
 	resetDatabase: () => Promise<void>;
-	sendMoveIntent: (moves: UiMoveIntentData[]) => void;
+	sendMoveIntent: (moves: UiMoveIntentData[]) => Promise<void>;
 	managedWindowMove: {
-		start: (tabIds: number[]) => void;
+		start: (tabIds: number[]) => Promise<void>;
 		end: () => void;
 	};
 	registerStateGetter: (fn: StateGetter) => void;

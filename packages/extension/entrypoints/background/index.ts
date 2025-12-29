@@ -120,15 +120,16 @@ export default defineBackground(() => {
 					break;
 				case "uiMoveIntent": {
 					// Register UI move intents to prevent race conditions with onMoved handler
-					const moves = message.moves as Array<{
-						tabId: number;
-						parentTabId: number | null;
-						treeOrder: string;
-					}>;
+					const moves = message.moves;
 					log("[Background] Received UI move intent for", moves.length, "tabs");
 					for (const move of moves) {
 						registerUiMoveIntent(move.tabId, move.parentTabId, move.treeOrder);
 					}
+					// Send acknowledgment back to the client
+					serverTransport.send(client.clientId, {
+						type: "uiMoveIntentAck",
+						requestId: message.requestId,
+					});
 					break;
 				}
 				case "startManagedWindowMove": {

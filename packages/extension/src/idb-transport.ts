@@ -308,7 +308,7 @@ export type ClientMessage =
 	| { type: "idbRequest"; payload: IDBProxyRequest }
 	| { type: "broadcast"; channel: string; data: unknown }
 	| { type: "resetDatabase" }
-	| { type: "uiMoveIntent"; moves: UiMoveIntentData[] }
+	| { type: "uiMoveIntent"; requestId: string; moves: UiMoveIntentData[] }
 	| { type: "startManagedWindowMove"; tabIds: number[] }
 	| { type: "endManagedWindowMove" }
 	| { type: "getTabCreatedEvents" }
@@ -331,6 +331,7 @@ export type ServerMessage =
 			fromClientId?: string;
 	  }
 	| { type: "resetDatabaseComplete" }
+	| { type: "uiMoveIntentAck"; requestId: string }
 	| { type: "tabCreatedEvents"; events: TabCreatedEvent[] }
 	| { type: "pong" };
 

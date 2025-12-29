@@ -1,4 +1,4 @@
-import { generateKeyBetween } from "fractional-indexing";
+import { generateKeyBetween, generateNKeysBetween } from "fractional-indexing";
 import {
 	compareTreeOrder,
 	DEFAULT_TREE_ORDER,
@@ -442,10 +442,25 @@ export const setupTabListeners = (
 		const existingTabs = await getAll<Tab>("tab");
 		const existing = existingTabs.find((t) => t.browserTabId === tabId);
 
+		// If tab doesn't exist yet, generate unique treeOrder by finding max in window
+		let treeOrder = DEFAULT_TREE_ORDER;
+		if (existing) {
+			treeOrder = existing.treeOrder;
+		} else {
+			// Tab doesn't exist in DB yet - generate unique treeOrder
+			const windowTabs = existingTabs
+				.filter(
+					(t) => t.browserWindowId === tab.windowId && t.parentTabId === null,
+				)
+				.sort(treeOrderSort);
+			const lastRoot = windowTabs[windowTabs.length - 1];
+			treeOrder = generateKeyBetween(lastRoot?.treeOrder || null, null);
+		}
+
 		await putItems("tab", [
 			tabToRecord(tab, {
 				parentTabId: existing?.parentTabId ?? null,
-				treeOrder: existing?.treeOrder ?? DEFAULT_TREE_ORDER,
+				treeOrder,
 			}),
 		]);
 	};
@@ -554,11 +569,28 @@ export const setupTabListeners = (
 			const allBrowserTabs = await browser.tabs.query({
 				windowId: moveInfo.windowId,
 			});
+			const filteredTabs = allBrowserTabs.filter(hasTabIds);
 			const otherTabRecords: TabRecord[] = [];
-			for (const bt of allBrowserTabs.filter(hasTabIds)) {
+
+			// Separate tabs into those with existing records/intents and those without
+			const tabsWithData: typeof filteredTabs = [];
+			const tabsWithoutData: typeof filteredTabs = [];
+
+			for (const bt of filteredTabs) {
 				if (bt.id === tabId) continue;
 				const existing = existingMap.get(bt.id);
-				// Check if this tab also has a UI intent (for batch moves)
+				const otherIntent = uiMoveIntents.get(bt.id);
+				if (existing || otherIntent) {
+					tabsWithData.push(bt);
+				} else {
+					tabsWithoutData.push(bt);
+				}
+			}
+
+			// Update tabs with existing data
+			for (const bt of tabsWithData) {
+				if (!hasTabIds(bt)) continue;
+				const existing = existingMap.get(bt.id);
 				const otherIntent = uiMoveIntents.get(bt.id);
 				otherTabRecords.push(
 					tabToRecord(bt, {
@@ -571,6 +603,22 @@ export const setupTabListeners = (
 					}),
 				);
 			}
+
+			// For tabs without existing data, generate unique treeOrders
+			if (tabsWithoutData.length > 0) {
+				const keys = generateNKeysBetween(null, null, tabsWithoutData.length);
+				for (let i = 0; i < tabsWithoutData.length; i++) {
+					const bt = tabsWithoutData[i];
+					if (!hasTabIds(bt)) continue;
+					otherTabRecords.push(
+						tabToRecord(bt, {
+							parentTabId: null,
+							treeOrder: keys[i],
+						}),
+					);
+				}
+			}
+
 			if (otherTabRecords.length > 0) {
 				await putItems("tab", otherTabRecords);
 			}
@@ -898,13 +946,49 @@ export const setupTabListeners = (
 		}
 
 		const tabs = await browser.tabs.query({ windowId: activeInfo.windowId });
-		const tabRecords = tabs.filter(hasTabIds).map((tab) => {
+		const filteredTabs = tabs.filter(hasTabIds);
+
+		// Separate tabs into those with existing records and those without
+		const tabsWithRecords: typeof filteredTabs = [];
+		const tabsWithoutRecords: typeof filteredTabs = [];
+
+		for (const tab of filteredTabs) {
+			if (existingMap.has(tab.id)) {
+				tabsWithRecords.push(tab);
+			} else {
+				tabsWithoutRecords.push(tab);
+			}
+		}
+
+		const tabRecords: TabRecord[] = [];
+
+		// Update tabs with existing records (preserve tree structure)
+		for (const tab of tabsWithRecords) {
+			if (!hasTabIds(tab)) continue;
 			const existing = existingMap.get(tab.id);
-			return tabToRecord(tab, {
-				parentTabId: existing?.parentTabId ?? null,
-				treeOrder: existing?.treeOrder ?? DEFAULT_TREE_ORDER,
-			});
-		});
+			if (!existing) continue;
+			tabRecords.push(
+				tabToRecord(tab, {
+					parentTabId: existing.parentTabId,
+					treeOrder: existing.treeOrder,
+				}),
+			);
+		}
+
+		// For tabs without existing records, generate unique treeOrders
+		if (tabsWithoutRecords.length > 0) {
+			const keys = generateNKeysBetween(null, null, tabsWithoutRecords.length);
+			for (let i = 0; i < tabsWithoutRecords.length; i++) {
+				const tab = tabsWithoutRecords[i];
+				if (!hasTabIds(tab)) continue;
+				tabRecords.push(
+					tabToRecord(tab, {
+						parentTabId: null,
+						treeOrder: keys[i],
+					}),
+				);
+			}
+		}
 
 		if (tabRecords.length > 0) {
 			await putItems("tab", tabRecords);
@@ -995,8 +1079,11 @@ export const setupTabListeners = (
 				treeOrder: uiIntent.treeOrder,
 			});
 			await putItems("tab", [tabRecord]);
-			// Update indices of other tabs in the new window
-			await updateTabIndicesInWindow(attachInfo.newWindowId, dbOps);
+			// IMPORTANT: Don't call updateTabIndicesInWindow here!
+			// During a UI-managed batch move, each tab has its own uiIntent with the correct
+			// tree structure. If we call updateTabIndicesInWindow, it reads from IndexedDB
+			// which may have stale data (Electric-SQL updates haven't synced yet).
+			// Each tab will update its own index when its handler fires.
 			return;
 		}
 
@@ -1025,7 +1112,9 @@ export const setupTabListeners = (
 			isUiManagedMove ||
 			(existingTab && existingTab.browserWindowId === attachInfo.newWindowId);
 
-		log(`[Background] Tab ${tabId} isExtensionMove: ${isExtensionMove}`);
+		log(
+			`[Background] Tab ${tabId} isExtensionMove: ${isExtensionMove} (isUiManagedMove=${isUiManagedMove}, existingTab.browserWindowId=${existingTab?.browserWindowId}, newWindowId=${attachInfo.newWindowId})`,
+		);
 
 		if (isExtensionMove && existingTab) {
 			log(
@@ -1033,11 +1122,23 @@ export const setupTabListeners = (
 			);
 			// Preserve the tree structure from DB
 			// For UI-managed moves, the UI has already updated parentTabId, treeOrder, and browserWindowId
+			// for ALL tabs being moved. We just need to update this specific tab's browser index.
 			const tabRecord = tabToRecord(browserTab, {
 				parentTabId: existingTab.parentTabId,
 				treeOrder: existingTab.treeOrder,
 			});
 			await putItems("tab", [tabRecord]);
+
+			// IMPORTANT: Don't update other tabs here!
+			// During a UI-managed batch move, multiple tabs attach in quick succession.
+			// Each tab's onAttached handler will update itself when it fires.
+			// If we try to update "other tabs" here, we'll race with their own onAttached handlers
+			// and potentially overwrite correct data with stale data.
+			//
+			// The UI has already set the correct tree structure in the DB before starting the move.
+			// We just update browser indices as each tab attaches.
+
+			return; // Early return - we're done for UI-managed moves
 		} else if (isUiManagedMove && !existingTab) {
 			// This tab is part of a UI-managed move but we don't have the DB record yet
 			// This shouldn't happen if UI sent move intent first, but handle it gracefully
@@ -1050,6 +1151,7 @@ export const setupTabListeners = (
 				treeOrder: DEFAULT_TREE_ORDER,
 			});
 			await putItems("tab", [tabRecord]);
+			return; // Early return
 		} else if (!isExtensionMove) {
 			log(`[Background] Tab ${tabId} is browser-native move, creating as root`);
 			// This is a browser-native cross-window move (drag from tab bar)
@@ -1089,31 +1191,67 @@ export const setupTabListeners = (
 				treeOrder,
 			});
 			await putItems("tab", [tabRecord]);
-		}
 
-		// Update indices of other tabs in the new window
-		const existingMap = new Map<number, Tab>();
-		for (const tab of existingTabs) {
-			existingMap.set(tab.browserTabId, tab);
-		}
+			// For browser-native moves, update all tabs in the window
+			const existingMap = new Map<number, Tab>();
+			for (const tab of existingTabs) {
+				existingMap.set(tab.browserTabId, tab);
+			}
 
-		const allBrowserTabs = await browser.tabs.query({
-			windowId: attachInfo.newWindowId,
-		});
-		const otherTabRecords: TabRecord[] = [];
-		for (const bt of allBrowserTabs.filter(hasTabIds)) {
-			if (bt.id === tabId) continue; // Skip the attached tab, already updated
-			const existing = existingMap.get(bt.id);
-			otherTabRecords.push(
-				tabToRecord(bt, {
-					parentTabId: existing?.parentTabId ?? null,
-					treeOrder: existing?.treeOrder ?? DEFAULT_TREE_ORDER,
-				}),
-			);
-		}
+			const allBrowserTabs = await browser.tabs.query({
+				windowId: attachInfo.newWindowId,
+			});
+			const otherTabRecords: TabRecord[] = [];
 
-		if (otherTabRecords.length > 0) {
-			await putItems("tab", otherTabRecords);
+			// Separate tabs into those with existing records and those without
+			const tabsWithRecords: Browser.tabs.Tab[] = [];
+			const tabsWithoutRecords: Browser.tabs.Tab[] = [];
+
+			for (const bt of allBrowserTabs.filter(hasTabIds)) {
+				if (bt.id === tabId) continue; // Skip the attached tab, already updated
+				const existing = existingMap.get(bt.id);
+				if (existing) {
+					tabsWithRecords.push(bt);
+				} else {
+					tabsWithoutRecords.push(bt);
+				}
+			}
+
+			// Update tabs with existing records (preserve tree structure)
+			for (const bt of tabsWithRecords) {
+				if (!hasTabIds(bt)) continue;
+				const existing = existingMap.get(bt.id);
+				if (!existing) continue;
+				otherTabRecords.push(
+					tabToRecord(bt, {
+						parentTabId: existing.parentTabId,
+						treeOrder: existing.treeOrder,
+					}),
+				);
+			}
+
+			// For tabs without existing records, generate unique treeOrders
+			if (tabsWithoutRecords.length > 0) {
+				const keys = generateNKeysBetween(
+					null,
+					null,
+					tabsWithoutRecords.length,
+				);
+				for (let i = 0; i < tabsWithoutRecords.length; i++) {
+					const bt = tabsWithoutRecords[i];
+					if (!hasTabIds(bt)) continue;
+					otherTabRecords.push(
+						tabToRecord(bt, {
+							parentTabId: null,
+							treeOrder: keys[i],
+						}),
+					);
+				}
+			}
+
+			if (otherTabRecords.length > 0) {
+				await putItems("tab", otherTabRecords);
+			}
 		}
 	};
 

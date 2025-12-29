@@ -746,7 +746,9 @@ export const TabManagerContent = () => {
 				updatedWindowTabs = [...windowTabs, ...allMovedTabs];
 
 				// Tell background script to ignore these tab detach/attach events
-				managedWindowMove.start(Array.from(tabsToMove));
+				// Wait for acknowledgment to ensure the background has updated its managed set
+				// before tabs start attaching
+				await managedWindowMove.start(Array.from(tabsToMove));
 			}
 
 			// Flatten to get expected browser order
@@ -760,7 +762,7 @@ export const TabManagerContent = () => {
 				.map((node) => node.tab.browserTabId);
 
 			// Send move intent to background BEFORE calling browser.tabs.move
-			// This prevents the race condition where onMoved handler reads stale DB state
+			// This prevents the race condition where onAttached handler reads stale DB state
 			const moveIntents = orderedTabsToMove.map((browserTabId) => {
 				const tabData = updatedWindowTabs.find(
 					(t) => t.browserTabId === browserTabId,
@@ -771,7 +773,7 @@ export const TabManagerContent = () => {
 					treeOrder: tabData?.treeOrder ?? DEFAULT_TREE_ORDER,
 				};
 			});
-			sendMoveIntent(moveIntents);
+			await sendMoveIntent(moveIntents);
 
 			// Move each tab to its expected position sequentially
 			// Using sequential moves because browser.tabs.move with multiple tabs is unreliable

@@ -62,8 +62,8 @@ export function createIDBTransportAdapter(options?: {
 }): {
 	transport: IDBProxyClientTransport;
 	resetDatabase: () => Promise<void>;
-	sendMoveIntent: (moves: UiMoveIntentData[]) => void;
-	startManagedWindowMove: (tabIds: number[]) => void;
+	sendMoveIntent: (moves: UiMoveIntentData[]) => Promise<void>;
+	startManagedWindowMove: (tabIds: number[]) => Promise<void>;
 	endManagedWindowMove: () => void;
 	enableTestMode: () => void;
 	injectBrowserEvent: (event: InjectBrowserEvent) => void;
@@ -78,6 +78,7 @@ export function createIDBTransportAdapter(options?: {
 			reject: (error: Error) => void;
 		}
 	>();
+	const pendingMoveIntents = new Map<string, () => void>();
 	let syncHandler: ((message: IDBProxySyncMessage) => void) | null = null;
 	let resetResolve: (() => void) | null = null;
 	let tabCreatedEventsResolve: ((events: TabCreatedEvent[]) => void) | null =
@@ -110,6 +111,16 @@ export function createIDBTransportAdapter(options?: {
 					resetResolve();
 					resetResolve = null;
 				}
+			} else if (message.type === "uiMoveIntentAck") {
+				log(
+					"[Sidepanel] Received move intent acknowledgment:",
+					message.requestId,
+				);
+				const resolve = pendingMoveIntents.get(message.requestId);
+				if (resolve) {
+					resolve();
+					pendingMoveIntents.delete(message.requestId);
+				}
 			} else if (message.type === "tabCreatedEvents") {
 				console.log("[Sidepanel] Received tab created events");
 				if (tabCreatedEventsResolve) {
@@ -126,6 +137,11 @@ export function createIDBTransportAdapter(options?: {
 				pending.reject(new Error("Connection closed"));
 			}
 			pendingRequests.clear();
+			// Resolve all pending move intents so they don't hang
+			for (const resolve of pendingMoveIntents.values()) {
+				resolve();
+			}
+			pendingMoveIntents.clear();
 			// Notify App component to reconnect
 			options?.onDisconnect?.();
 		},
@@ -163,9 +179,24 @@ export function createIDBTransportAdapter(options?: {
 		});
 	};
 
-	const sendMoveIntent = (moves: UiMoveIntentData[]): void => {
+	const sendMoveIntent = async (moves: UiMoveIntentData[]): Promise<void> => {
 		log("[Sidepanel] Sending move intent for", moves.length, "tabs");
-		extensionTransport.send({ type: "uiMoveIntent", moves });
+		const requestId = `move-intent-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
+
+		return new Promise((resolve) => {
+			pendingMoveIntents.set(requestId, resolve);
+			extensionTransport.send({ type: "uiMoveIntent", requestId, moves });
+
+			// Timeout fallback in case ack is never received
+			setTimeout(() => {
+				const pending = pendingMoveIntents.get(requestId);
+				if (pending) {
+					log("[Sidepanel] Move intent ack timeout for", requestId);
+					pending();
+					pendingMoveIntents.delete(requestId);
+				}
+			}, 1000);
+		});
 	};
 
 	const enableTestMode = (): void => {
@@ -188,9 +219,16 @@ export function createIDBTransportAdapter(options?: {
 		extensionTransport.send({ type: "injectBrowserEvent", event });
 	};
 
-	const startManagedWindowMove = (tabIds: number[]): void => {
+	const startManagedWindowMove = async (tabIds: number[]): Promise<void> => {
 		log("[Sidepanel] Starting managed window move for", tabIds.length, "tabs");
-		extensionTransport.send({ type: "startManagedWindowMove", tabIds });
+		extensionTransport.send({
+			type: "startManagedWindowMove",
+			tabIds,
+		});
+		// Give the background a delay to process the message and update its managed set
+		// before we start calling browser.tabs.move(). This prevents the race condition where
+		// onAttached fires before the background has added the tab to managedMoveTabIds.
+		await new Promise((resolve) => setTimeout(resolve, 100));
 	};
 
 	const endManagedWindowMove = (): void => {
