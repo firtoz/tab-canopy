@@ -10,16 +10,17 @@ import type { TabCreatedEvent } from "../db/createIDBTransportAdapter";
 
 // Types for test helpers
 export interface TabTreeNode {
-	id: number;
-	parentId: number | null;
+	browserTabId: number;
+	parentTabId: number | null;
 	depth: number;
 	hasChildren: boolean;
 	isCollapsed: boolean;
 	childrenIds: number[];
 	title: string;
 	url: string;
-	windowId: number;
-	index: number;
+	browserWindowId: number;
+	tabIndex: number;
+	treeOrder: string;
 }
 
 export interface WindowInfo {
@@ -96,17 +97,18 @@ function buildTabNodes(tabs: schema.Tab[]): TabTreeNode[] {
 		}
 
 		return {
-			id: tab.browserTabId,
-			parentId: tab.parentTabId,
+			browserTabId: tab.browserTabId,
+			parentTabId: tab.parentTabId,
 			depth,
 			hasChildren: children.length > 0,
 			isCollapsed: tab.isCollapsed ?? false,
 			childrenIds: children.map((c) => c.browserTabId),
 			title: tab.title ?? "",
 			url: tab.url ?? "",
-			windowId: tab.browserWindowId,
-			index: tab.tabIndex,
-		};
+			browserWindowId: tab.browserWindowId,
+			tabIndex: tab.tabIndex,
+			treeOrder: tab.treeOrder ?? "",
+		} satisfies TabTreeNode;
 	});
 }
 
@@ -118,7 +120,7 @@ export function createTestHelpers(
 	tabs: schema.Tab[],
 ): TreeTestHelpers {
 	const nodes = buildTabNodes(tabs);
-	const nodeMap = new Map(nodes.map((n) => [n.id, n]));
+	const nodeMap = new Map(nodes.map((n) => [n.browserTabId, n]));
 
 	return {
 		getAllTabs: () => [...nodes],
@@ -126,7 +128,7 @@ export function createTestHelpers(
 		getTabById: (tabId: number) => nodeMap.get(tabId),
 
 		getChildren: (tabId: number) => {
-			return nodes.filter((n) => n.parentId === tabId);
+			return nodes.filter((n) => n.parentTabId === tabId);
 		},
 
 		getDescendants: (tabId: number) => {
@@ -136,9 +138,9 @@ export function createTestHelpers(
 			while (queue.length > 0) {
 				const currentId = queue.shift();
 				if (currentId === undefined) break;
-				const children = nodes.filter((n) => n.parentId === currentId);
+				const children = nodes.filter((n) => n.parentTabId === currentId);
 				result.push(...children);
-				queue.push(...children.map((c) => c.id));
+				queue.push(...children.map((c) => c.browserTabId));
 			}
 
 			return result;
@@ -146,24 +148,24 @@ export function createTestHelpers(
 
 		getParent: (tabId: number) => {
 			const node = nodeMap.get(tabId);
-			if (!node || node.parentId === null) return undefined;
-			return nodeMap.get(node.parentId);
+			if (!node || node.parentTabId === null) return undefined;
+			return nodeMap.get(node.parentTabId);
 		},
 
 		getRootTabs: (windowId?: number) => {
-			let rootTabs = nodes.filter((n) => n.parentId === null);
+			let rootTabs = nodes.filter((n) => n.parentTabId === null);
 			if (windowId !== undefined) {
-				rootTabs = rootTabs.filter((n) => n.windowId === windowId);
+				rootTabs = rootTabs.filter((n) => n.browserWindowId === windowId);
 			}
-			return rootTabs.sort((a, b) => a.index - b.index);
+			return rootTabs.sort((a, b) => a.tabIndex - b.tabIndex);
 		},
 
 		getWindows: () => {
 			return windows.map((win) => ({
 				id: win.browserWindowId,
 				tabIds: nodes
-					.filter((n) => n.windowId === win.browserWindowId)
-					.map((n) => n.id),
+					.filter((n) => n.browserWindowId === win.browserWindowId)
+					.map((n) => n.browserTabId),
 				focused: win.focused ?? false,
 			}));
 		},
@@ -171,17 +173,22 @@ export function createTestHelpers(
 		getTreeHierarchy: (windowId?: number) => {
 			const rootTabs =
 				windowId !== undefined
-					? nodes.filter((n) => n.parentId === null && n.windowId === windowId)
-					: nodes.filter((n) => n.parentId === null);
+					? nodes.filter(
+							(n) => n.parentTabId === null && n.browserWindowId === windowId,
+						)
+					: nodes.filter((n) => n.parentTabId === null);
 
-			return rootTabs.sort((a, b) => a.index - b.index);
+			return rootTabs.sort((a, b) => a.tabIndex - b.tabIndex);
 		},
 
 		isAncestor: (ancestorId: number, descendantId: number) => {
 			let current = nodeMap.get(descendantId);
-			while (current?.parentId !== null && current?.parentId !== undefined) {
-				if (current.parentId === ancestorId) return true;
-				current = nodeMap.get(current.parentId);
+			while (
+				current?.parentTabId !== null &&
+				current?.parentTabId !== undefined
+			) {
+				if (current.parentTabId === ancestorId) return true;
+				current = nodeMap.get(current.parentTabId);
 				if (!current) break;
 			}
 			return false;

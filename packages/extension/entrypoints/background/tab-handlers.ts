@@ -1,5 +1,9 @@
 import { generateKeyBetween } from "fractional-indexing";
-import { DEFAULT_TREE_ORDER } from "@/entrypoints/sidepanel/lib/tree";
+import {
+	compareTreeOrder,
+	DEFAULT_TREE_ORDER,
+	treeOrderSort,
+} from "@/entrypoints/sidepanel/lib/tree";
 import type { Tab } from "@/schema/src/schema";
 import { log, makeTabId } from "./constants";
 import type { DbOperations } from "./db-operations";
@@ -148,6 +152,34 @@ const updateTabIndicesInWindow = async (
 	}
 };
 
+// const buildFlatOrder = (tabs: Tab[]): Tab[] => {
+// 	const result: Tab[] = [];
+// 	const childrenMap = new Map<number | null, Tab[]>();
+
+// 	for (const tab of tabs) {
+// 		const parentId = tab.parentTabId;
+// 		if (!childrenMap.has(parentId)) {
+// 			childrenMap.set(parentId, []);
+// 		}
+// 		childrenMap.get(parentId)?.push(tab);
+// 	}
+
+// 	for (const children of childrenMap.values()) {
+// 		children.sort(treeOrderSort);
+// 	}
+
+// 	const traverse = (parentId: number | null) => {
+// 		const children = childrenMap.get(parentId) || [];
+// 		for (const child of children) {
+// 			result.push(child);
+// 			traverse(child.browserTabId);
+// 		}
+// 	};
+
+// 	traverse(null);
+// 	return result;
+// };
+
 // Helper to update only tabs in a specific index range (for moves)
 const _updateTabIndicesInRange = async (
 	windowId: number,
@@ -239,9 +271,7 @@ export const setupTabListeners = (
 						return tabIndexMap.get(parentId) ?? -1;
 					}
 					// Find the last child and recursively get its last descendant
-					const lastChild = children.sort((a, b) =>
-						a.treeOrder < b.treeOrder ? -1 : a.treeOrder > b.treeOrder ? 1 : 0,
-					)[children.length - 1];
+					const lastChild = children.sort(treeOrderSort)[children.length - 1];
 					return getLastDescendantIndex(lastChild.browserTabId);
 				};
 
@@ -271,13 +301,7 @@ export const setupTabListeners = (
 					// Find siblings (other children of the opener)
 					const siblings = existingTabs
 						.filter((t) => t.parentTabId === openerTabId)
-						.sort((a, b) =>
-							a.treeOrder < b.treeOrder
-								? -1
-								: a.treeOrder > b.treeOrder
-									? 1
-									: 0,
-						);
+						.sort(treeOrderSort);
 
 					// Find where to insert based on the new tab's browser index
 					const siblingWithIndices = siblings
@@ -343,13 +367,7 @@ export const setupTabListeners = (
 							(t) =>
 								t.parentTabId === null && t.browserWindowId === tab.windowId,
 						)
-						.sort((a, b) =>
-							a.treeOrder < b.treeOrder
-								? -1
-								: a.treeOrder > b.treeOrder
-									? 1
-									: 0,
-						);
+						.sort(treeOrderSort);
 
 					const lastRoot = rootTabs[rootTabs.length - 1];
 					treeOrder = generateKeyBetween(lastRoot?.treeOrder || null, null);
@@ -371,9 +389,7 @@ export const setupTabListeners = (
 				.filter(
 					(t) => t.parentTabId === null && t.browserWindowId === tab.windowId,
 				)
-				.sort((a, b) =>
-					a.treeOrder < b.treeOrder ? -1 : a.treeOrder > b.treeOrder ? 1 : 0,
-				);
+				.sort(treeOrderSort);
 
 			const lastRoot = rootTabs[rootTabs.length - 1];
 			treeOrder = generateKeyBetween(lastRoot?.treeOrder || null, null);
@@ -563,51 +579,24 @@ export const setupTabListeners = (
 
 		// Get existing tabs to calculate new tree position
 		const existingTabs = await getAll<Tab>("tab");
-		const windowTabs = existingTabs.filter(
-			(t) => t.browserWindowId === moveInfo.windowId,
+		const tabsInTargetWindow = existingTabs
+			.filter((t) => t.browserWindowId === moveInfo.windowId)
+			.sort((a, b) => {
+				return a.tabIndex - b.tabIndex;
+			});
+		const existingTabInTargetWindow = existingTabs.find(
+			(t) => t.browserTabId === tabId,
 		);
-		const existingTab = existingTabs.find((t) => t.browserTabId === tabId);
 
 		// Check if the move was initiated by our extension UI
 		// by seeing if the tab's current tree position already puts it at the right browser index
 		let shouldRecalculateTree = true;
 
-		if (existingTab) {
+		if (existingTabInTargetWindow) {
 			// Simple check: build expected order from tree
 			// If the expected position matches toIndex, the UI already set the correct tree position
-			const buildFlatOrder = (tabs: Tab[]): Tab[] => {
-				const result: Tab[] = [];
-				const childrenMap = new Map<number | null, Tab[]>();
 
-				for (const tab of tabs) {
-					const parentId = tab.parentTabId;
-					if (!childrenMap.has(parentId)) {
-						childrenMap.set(parentId, []);
-					}
-					childrenMap.get(parentId)?.push(tab);
-				}
-
-				// Sort children by treeOrder (using ASCII order, not locale)
-				for (const children of childrenMap.values()) {
-					children.sort((a, b) =>
-						a.treeOrder < b.treeOrder ? -1 : a.treeOrder > b.treeOrder ? 1 : 0,
-					);
-				}
-
-				const traverse = (parentId: number | null) => {
-					const children = childrenMap.get(parentId) || [];
-					for (const child of children) {
-						result.push(child);
-						traverse(child.browserTabId);
-					}
-				};
-
-				traverse(null);
-				return result;
-			};
-
-			const expectedOrder = buildFlatOrder(windowTabs);
-			const expectedIndex = expectedOrder.findIndex(
+			const expectedIndex = tabsInTargetWindow.findIndex(
 				(t) => t.browserTabId === tabId,
 			);
 
@@ -631,13 +620,13 @@ export const setupTabListeners = (
 		if (shouldRecalculateTree) {
 			// This is a browser-native move (drag from tab bar) - calculate tree position
 			const result = calculateTreePositionFromBrowserMove(
-				windowTabs,
+				tabsInTargetWindow,
 				tabId,
 				moveInfo.toIndex,
 			);
 			newParentId = result.parentTabId;
 			newTreeOrder = result.treeOrder;
-			childrenToFlatten = result.childrenToFlatten ?? [];
+			childrenToFlatten = result.childrenToFlatten;
 			log("[Background] Calculated new tree position:", {
 				newParentId,
 				newTreeOrder,
@@ -648,8 +637,8 @@ export const setupTabListeners = (
 			);
 		} else {
 			// Preserve the existing tree position (set by extension UI)
-			newParentId = existingTab?.parentTabId ?? null;
-			newTreeOrder = existingTab?.treeOrder ?? DEFAULT_TREE_ORDER;
+			newParentId = existingTabInTargetWindow?.parentTabId ?? null;
+			newTreeOrder = existingTabInTargetWindow?.treeOrder ?? DEFAULT_TREE_ORDER;
 			log("[Background] Preserving existing tree position:", {
 				newParentId,
 				newTreeOrder,
@@ -733,13 +722,7 @@ export const setupTabListeners = (
 								t.browserTabId !== tabId &&
 								!descendantsToFlatten.includes(t.browserTabId),
 						)
-						.sort((a, b) =>
-							a.treeOrder < b.treeOrder
-								? -1
-								: a.treeOrder > b.treeOrder
-									? 1
-									: 0,
-						);
+						.sort(treeOrderSort);
 
 					// For each child to flatten, give it the same parent as the moved tab
 					// and a treeOrder that places it before the moved tab
@@ -804,15 +787,15 @@ export const setupTabListeners = (
 		});
 
 		// Build a map of what we've already updated with new tree orders
-		const updatedTreeOrders = new Map<number, string>();
-		updatedTreeOrders.set(tabId, newTreeOrder);
-		for (const flattenedId of flattenedDescendantIds) {
-			const _flattenedTab = existingTabs.find(
-				(t) => t.browserTabId === flattenedId,
-			);
-			// The flattened tab got a new treeOrder, but we need to know what it was
-			// For now, we'll regenerate it
-		}
+		// const updatedTreeOrders = new Map<number, string>();
+		// updatedTreeOrders.set(tabId, newTreeOrder);
+		// for (const flattenedId of flattenedDescendantIds) {
+		// 	const _flattenedTab = existingTabs.find(
+		// 		(t) => t.browserTabId === flattenedId,
+		// 	);
+		// 	// The flattened tab got a new treeOrder, but we need to know what it was
+		// 	// For now, we'll regenerate it
+		// }
 
 		const otherTabRecords: TabRecord[] = [];
 
@@ -1079,9 +1062,7 @@ export const setupTabListeners = (
 			let treeOrder = DEFAULT_TREE_ORDER;
 			const rootTabs = newWindowTabs
 				.filter((t) => t.parentTabId === null)
-				.sort((a, b) =>
-					a.treeOrder < b.treeOrder ? -1 : a.treeOrder > b.treeOrder ? 1 : 0,
-				);
+				.sort(treeOrderSort);
 
 			// Find the appropriate position based on attachInfo.newPosition
 			if (attachInfo.newPosition === 0) {

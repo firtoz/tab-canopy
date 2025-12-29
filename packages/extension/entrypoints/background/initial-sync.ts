@@ -117,19 +117,49 @@ export const performInitialSync = async (dbOps: DbOperations) => {
 	log(`[Background] Synced ${windowRecords.length} windows`);
 
 	// Sync tabs while preserving tree structure for existing tabs
-	const tabRecords = browserTabs.filter(hasTabIds).map((tab) => {
-		const existing = existingTabMap.get(tab.id);
-		// Preserve tree structure if tab exists, otherwise use defaults
+	// For new tabs, we need to generate unique treeOrder values
+	const filteredTabs = browserTabs.filter(hasTabIds);
+
+	// Separate existing and new tabs
+	const existingTabs: typeof filteredTabs = [];
+	const newTabs: typeof filteredTabs = [];
+
+	for (const tab of filteredTabs) {
+		if (existingTabMap.has(tab.id)) {
+			existingTabs.push(tab);
+		} else {
+			newTabs.push(tab);
+		}
+	}
+
+	// Generate unique treeOrder keys for new tabs
+	const newTabKeys = generateNKeysBetween(null, null, newTabs.length);
+
+	// Map existing tabs with preserved tree structure
+	const existingTabRecords = existingTabs.map((tab) => {
+		const existing = existingTabMap.get(tab.id)!;
 		return tabToRecord(tab, {
-			parentTabId: existing?.parentTabId ?? null,
-			treeOrder: existing?.treeOrder ?? DEFAULT_TREE_ORDER,
+			parentTabId: existing.parentTabId,
+			treeOrder: existing.treeOrder,
 		});
 	});
+
+	// Map new tabs with unique treeOrder values
+	const newTabRecords = newTabs.map((tab, index) =>
+		tabToRecord(tab, {
+			parentTabId: null,
+			treeOrder: newTabKeys[index],
+		}),
+	);
+
+	const tabRecords = [...existingTabRecords, ...newTabRecords];
 
 	if (tabRecords.length > 0) {
 		await putItems("tab", tabRecords);
 	}
-	log(`[Background] Synced ${tabRecords.length} tabs`);
+	log(
+		`[Background] Synced ${tabRecords.length} tabs (${existingTabs.length} existing, ${newTabs.length} new)`,
+	);
 
 	log(
 		`[Background] Initial sync complete (removed ${staleWindowIds.length} windows, ${staleTabIds.length} tabs)`,

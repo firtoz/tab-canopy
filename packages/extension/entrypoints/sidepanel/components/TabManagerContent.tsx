@@ -40,6 +40,7 @@ import {
 	getDescendantIds,
 	isAncestor,
 	type TreeDropPosition,
+	treeOrderSort,
 } from "../lib/tree";
 import { cursorOffsetModifier } from "./dnd/cursorOffsetModifier";
 import { dropZoneCollision } from "./dnd/dropZoneCollision";
@@ -260,7 +261,7 @@ export const TabManagerContent = () => {
 					// Get siblings of the closing tab at its current level
 					const siblings = windowTabs
 						.filter((t) => t.parentTabId === tab.parentTabId)
-						.sort((a, b) => compareTreeOrder(a.treeOrder, b.treeOrder));
+						.sort(treeOrderSort);
 
 					const currentIndex = siblings.findIndex(
 						(t) => t.browserTabId === browserTabId,
@@ -276,9 +277,7 @@ export const TabManagerContent = () => {
 							: null;
 
 					// Sort children by their current tree order to maintain relative positions
-					const sortedChildren = [...children].sort((a, b) =>
-						compareTreeOrder(a.treeOrder, b.treeOrder),
-					);
+					const sortedChildren = [...children].sort(treeOrderSort);
 
 					// Generate new tree orders for all children at once using fractional-indexing
 					const newTreeOrders = generateNKeysBetween(
@@ -633,7 +632,7 @@ export const TabManagerContent = () => {
 			// Find the next sibling to determine the upper bound
 			const siblings = tabsForTreeCalc
 				.filter((t) => t.parentTabId === newParentId)
-				.toSorted((a, b) => compareTreeOrder(a.treeOrder, b.treeOrder));
+				.toSorted(treeOrderSort);
 			const firstTabIndex = siblings.findIndex(
 				(s) => s.treeOrder >= firstTreeOrder,
 			);

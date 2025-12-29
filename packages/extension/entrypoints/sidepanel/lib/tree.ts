@@ -52,6 +52,10 @@ export function compareTreeOrder(a: string, b: string): number {
 	return 0;
 }
 
+export function treeOrderSort(a: Tab, b: Tab): number {
+	return compareTreeOrder(a.treeOrder, b.treeOrder);
+}
+
 /**
  * Build a tree structure from a flat list of tabs
  */
@@ -72,9 +76,8 @@ export function buildTabTree(tabs: Tab[]): TabTreeNode[] {
 		childrenMap.get(parentId)?.push(tab);
 	}
 
-	// Sort children by treeOrder (using ASCII order, not locale)
 	for (const children of childrenMap.values()) {
-		children.sort((a, b) => compareTreeOrder(a.treeOrder, b.treeOrder));
+		children.sort(treeOrderSort);
 	}
 
 	// Recursively build tree
@@ -210,7 +213,7 @@ export function getSiblings(tabs: Tab[], tab: Tab): Tab[] {
 				t.parentTabId === tab.parentTabId &&
 				t.browserWindowId === tab.browserWindowId,
 		)
-		.sort((a, b) => compareTreeOrder(a.treeOrder, b.treeOrder));
+		.sort(treeOrderSort);
 }
 
 /**
@@ -238,7 +241,7 @@ export function calculateTreeMove(
 			// Get existing children
 			const siblings = tabs
 				.filter((t) => t.parentTabId === dropPosition.parentTabId)
-				.sort((a, b) => compareTreeOrder(a.treeOrder, b.treeOrder));
+				.sort(treeOrderSort);
 
 			// Insert at the beginning of children
 			const firstSibling = siblings[0];
@@ -301,7 +304,7 @@ export function calculateTreeMove(
 			// Moving to root level
 			const rootTabs = tabs
 				.filter((t) => t.parentTabId === null)
-				.sort((a, b) => compareTreeOrder(a.treeOrder, b.treeOrder));
+				.sort(treeOrderSort);
 
 			if (dropPosition.index <= 0) {
 				const first = rootTabs[0];

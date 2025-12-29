@@ -11,6 +11,7 @@ import {
 	compareTreeOrder,
 	flattenTree,
 	type TreeDropPosition,
+	treeOrderSort,
 } from "../tree";
 import type {
 	RecordedEvent,
@@ -266,7 +267,7 @@ function applyDragEnd(state: SimulatedState, event: UserDragEndEvent): void {
 	// Generate proper order keys for multiple tabs using fractional-indexing
 	const siblings = windowTabs
 		.filter((t) => t.parentTabId === newParentId)
-		.toSorted((a, b) => compareTreeOrder(a.treeOrder, b.treeOrder));
+		.toSorted(treeOrderSort);
 	const firstTabIndex = siblings.findIndex(
 		(s) => s.treeOrder >= firstTreeOrder,
 	);

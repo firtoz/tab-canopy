@@ -356,7 +356,7 @@ export const test = base.extend<ExtensionFixtures>({
 		await sidepanelPage.close();
 	},
 
-	treeHelpers: async ({ sidepanel, testState }, use) => {
+	treeHelpers: async ({ sidepanel, testState, context }, use) => {
 		const getTestHelpers = async (): Promise<TreeTestHelpers> => {
 			// Get the latest state (should already be reported by now)
 			const latestTreeState = testState.latestTreeState;
@@ -386,75 +386,77 @@ export const test = base.extend<ExtensionFixtures>({
 				}
 
 				return {
-					id: tab.browserTabId,
-					parentId: tab.parentTabId,
+					browserTabId: tab.browserTabId,
+					parentTabId: tab.parentTabId,
 					depth,
 					hasChildren: children.length > 0,
 					isCollapsed: tab.isCollapsed ?? false,
 					childrenIds: children.map((c) => c.browserTabId),
 					title: tab.title ?? "",
 					url: tab.url ?? "",
-					windowId: tab.browserWindowId,
-					index: tab.tabIndex,
-				};
+					browserWindowId: tab.browserWindowId,
+					tabIndex: tab.tabIndex,
+					treeOrder: tab.treeOrder ?? "",
+				} satisfies TabTreeNode;
 			});
 
-			const nodeMap = new Map(nodes.map((n) => [n.id, n]));
+			const nodeMap = new Map(nodes.map((n) => [n.browserTabId, n]));
 
 			return {
 				getAllTabs: () => [...nodes],
 				getTabById: (tabId: number) => nodeMap.get(tabId),
 				getChildren: (tabId: number) =>
-					nodes.filter((n) => n.parentId === tabId),
+					nodes.filter((n) => n.parentTabId === tabId),
 				getDescendants: (tabId: number) => {
 					const result: typeof nodes = [];
 					const queue = [tabId];
 					while (queue.length > 0) {
 						const currentId = queue.shift();
 						if (currentId === undefined) break;
-						const children = nodes.filter((n) => n.parentId === currentId);
+						const children = nodes.filter((n) => n.parentTabId === currentId);
 						result.push(...children);
-						queue.push(...children.map((c) => c.id));
+						queue.push(...children.map((c) => c.browserTabId));
 					}
 					return result;
 				},
 				getParent: (tabId: number) => {
 					const node = nodeMap.get(tabId);
-					if (!node || node.parentId === null) return undefined;
-					return nodeMap.get(node.parentId);
+					if (!node || node.parentTabId === null) return undefined;
+					return nodeMap.get(node.parentTabId);
 				},
 				getRootTabs: (windowId?: number) => {
-					let rootTabs = nodes.filter((n) => n.parentId === null);
+					let rootTabs = nodes.filter((n) => n.parentTabId === null);
 					if (windowId !== undefined) {
-						rootTabs = rootTabs.filter((n) => n.windowId === windowId);
+						rootTabs = rootTabs.filter((n) => n.browserWindowId === windowId);
 					}
-					return rootTabs.sort((a, b) => a.index - b.index);
+					return rootTabs.sort((a, b) => a.tabIndex - b.tabIndex);
 				},
 				getWindows: () =>
 					windows.map((win) => ({
 						id: win.browserWindowId,
 						tabIds: nodes
-							.filter((n) => n.windowId === win.browserWindowId)
-							.map((n) => n.id),
+							.filter((n) => n.browserWindowId === win.browserWindowId)
+							.map((n) => n.browserTabId),
 						focused: win.focused ?? false,
 					})),
 				getTreeHierarchy: (windowId?: number) => {
 					const rootTabs =
 						windowId !== undefined
 							? nodes.filter(
-									(n) => n.parentId === null && n.windowId === windowId,
+									(n) =>
+										n.parentTabId === null && n.browserWindowId === windowId,
 								)
-							: nodes.filter((n) => n.parentId === null);
-					return rootTabs.sort((a, b) => a.index - b.index);
+							: nodes.filter((n) => n.parentTabId === null);
+					return rootTabs.sort((a, b) => a.tabIndex - b.tabIndex);
 				},
 				isAncestor: (ancestorId: number, descendantId: number) => {
 					let current = nodeMap.get(descendantId);
 					while (
-						current?.parentId !== null &&
-						current?.parentId !== undefined
+						current?.parentTabId !== null &&
+						current?.parentTabId !== undefined
 					) {
-						if (current.parentId === ancestorId) return true;
-						current = nodeMap.get(current.parentId);
+						if (current.parentTabId === ancestorId) return true;
+						current = nodeMap.get(current.parentTabId);
 						if (!current) break;
 					}
 					return false;
@@ -488,7 +490,7 @@ export const test = base.extend<ExtensionFixtures>({
 				while (Date.now() - start < timeout) {
 					const helpers = await getTestHelpers();
 					const tab = helpers.getTabById(tabId);
-					if (tab && tab.parentId === expectedParentId) {
+					if (tab && tab.parentTabId === expectedParentId) {
 						return;
 					}
 					await sidepanel.waitForTimeout(100);
@@ -496,7 +498,7 @@ export const test = base.extend<ExtensionFixtures>({
 				const helpers = await getTestHelpers();
 				const tab = helpers.getTabById(tabId);
 				throw new Error(
-					`Tab ${tabId} did not reach expected parent state within ${timeout}ms. Current parentId: ${tab?.parentId}, expected: ${expectedParentId}`,
+					`Tab ${tabId} did not reach expected parent state within ${timeout}ms. Current parentId: ${tab?.parentTabId}, expected: ${expectedParentId}`,
 				);
 			},
 
@@ -509,7 +511,7 @@ export const test = base.extend<ExtensionFixtures>({
 				while (Date.now() - start < timeout) {
 					const helpers = await getTestHelpers();
 					const tab = helpers.getTabById(tabId);
-					if (tab && tab.windowId === windowId) {
+					if (tab && tab.browserWindowId === windowId) {
 						return;
 					}
 					await sidepanel.waitForTimeout(100);
@@ -517,7 +519,7 @@ export const test = base.extend<ExtensionFixtures>({
 				const helpers = await getTestHelpers();
 				const tab = helpers.getTabById(tabId);
 				throw new Error(
-					`Tab ${tabId} did not reach expected window within ${timeout}ms. Current windowId: ${tab?.windowId}, expected: ${windowId}`,
+					`Tab ${tabId} did not reach expected window within ${timeout}ms. Current windowId: ${tab?.browserWindowId}, expected: ${windowId}`,
 				);
 			},
 
@@ -533,32 +535,34 @@ export const test = base.extend<ExtensionFixtures>({
 			verifyParentChild: async (parentId: number, childId: number) => {
 				const helpers = await getTestHelpers();
 				const child = helpers.getTabById(childId);
-				const isChild = child?.parentId === parentId;
+				const isChild = child?.parentTabId === parentId;
 				const childDepth = child?.depth ?? 0;
 				return { isChild, childDepth };
 			},
 
 			moveBrowserTab: async (tabId: number, moveProperties) => {
-				// Call the exposed browser API action
-				await sidepanel.evaluate(
-					({ tabId, moveProperties }) => {
-						// @ts-expect-error - window is available in browser context
-						const actions = window.__tabCanopyBrowserActions;
+				await test.step(`moveBrowserTab ${tabId} to tab index ${moveProperties.index}${moveProperties.windowId ? ` in window ${moveProperties.windowId}` : ""}`, async () => {
+					// Call the exposed browser API action
+					await sidepanel.evaluate(
+						({ tabId, moveProperties }) => {
+							// @ts-expect-error - window is available in browser context
+							const actions = window.__tabCanopyBrowserActions;
 
-						if (!actions) {
-							throw new Error(
-								"Browser test actions not exposed. Make sure the app is in test mode.",
-							);
-						}
+							if (!actions) {
+								throw new Error(
+									"Browser test actions not exposed. Make sure the app is in test mode.",
+								);
+							}
 
-						return actions.moveTab(tabId, moveProperties);
-					},
-					{ tabId, moveProperties },
-				);
+							return actions.moveTab(tabId, moveProperties);
+						},
+						{ tabId, moveProperties },
+					);
 
-				// Wait for the state to update
-				// Give it more time for the background script to process the move
-				await sidepanel.waitForTimeout(2000);
+					// Wait for the state to update
+					// Give it more time for the background script to process the move
+					await sidepanel.waitForTimeout(2000);
+				});
 			},
 
 			getBackgroundLogs: () => {
@@ -797,11 +801,14 @@ export const test = base.extend<ExtensionFixtures>({
 				if (!tabBefore) {
 					throw new Error(`Source tab ${sourceTabId} not found`);
 				}
-				const originalWindowId = tabBefore.windowId;
+				const originalWindowId = tabBefore.browserWindowId;
 
 				// Get all descendants that should move with the parent
 				const descendants = helpersBefore.getDescendants(sourceTabId);
-				const allTabsToMove = [sourceTabId, ...descendants.map((d) => d.id)];
+				const allTabsToMove = [
+					sourceTabId,
+					...descendants.map((d) => d.browserTabId),
+				];
 
 				// Use programmatic action instead of UI interaction
 				await sidepanel.evaluate(
@@ -830,7 +837,7 @@ export const test = base.extend<ExtensionFixtures>({
 
 					// Check if all tabs exist and are in a new window (same window, different from original)
 					if (movedTabs.every((t) => t !== null)) {
-						const newWindowIds = movedTabs.map((t) => t?.windowId);
+						const newWindowIds = movedTabs.map((t) => t?.browserWindowId);
 						const allInSameWindow = newWindowIds.every(
 							(w) => w === newWindowIds[0],
 						);
@@ -848,7 +855,7 @@ export const test = base.extend<ExtensionFixtures>({
 				const helpersAfter = await getTestHelpers();
 				const tabStates = allTabsToMove.map((id) => {
 					const tab = helpersAfter.getTabById(id);
-					return `  Tab ${id}: windowId=${tab?.windowId ?? "null"}`;
+					return `  Tab ${id}: windowId=${tab?.browserWindowId ?? "null"}`;
 				});
 
 				throw new Error(
@@ -871,7 +878,7 @@ export const test = base.extend<ExtensionFixtures>({
 				if (!tabBefore) {
 					throw new Error(`Source tab ${sourceTabId} not found`);
 				}
-				const originalWindowId = tabBefore.windowId;
+				const originalWindowId = tabBefore.browserWindowId;
 
 				const sourceElement = sidepanel.locator(
 					`[data-tab-id="${sourceTabId}"]`,
@@ -931,8 +938,8 @@ export const test = base.extend<ExtensionFixtures>({
 					while (Date.now() - start < timeout) {
 						const helpersAfter = await getTestHelpers();
 						const tabAfter = helpersAfter.getTabById(sourceTabId);
-						if (tabAfter && tabAfter.windowId !== originalWindowId) {
-							return tabAfter.windowId; // Successfully moved to new window, return new window ID
+						if (tabAfter && tabAfter.browserWindowId !== originalWindowId) {
+							return tabAfter.browserWindowId; // Successfully moved to new window, return new window ID
 						}
 						await sidepanel.waitForTimeout(100);
 					}
