@@ -179,6 +179,14 @@ export interface UserToggleCollapseEvent {
 	};
 }
 
+export interface UserToggleWindowCollapseEvent {
+	type: "user.toggleWindowCollapse";
+	timestamp: number;
+	data: {
+		windowId: number;
+	};
+}
+
 export interface UserSelectionChangeEvent {
 	type: "user.selectionChange";
 	timestamp: number;
@@ -230,6 +238,7 @@ export type UserEvent =
 	| UserTabCloseEvent
 	| UserTabActivateEvent
 	| UserToggleCollapseEvent
+	| UserToggleWindowCollapseEvent
 	| UserSelectionChangeEvent
 	| UserWindowCloseEvent
 	| ChromeStateSnapshotEvent;

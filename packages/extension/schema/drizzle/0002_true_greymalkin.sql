@@ -1,0 +1,1 @@
+ALTER TABLE `window` ADD `is_collapsed` integer DEFAULT false NOT NULL;

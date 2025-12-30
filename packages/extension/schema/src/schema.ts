@@ -17,6 +17,10 @@ export const windowTable = syncableTable(
 			.default(false),
 		// Window type
 		type: text("type"), // "normal" | "popup" | "panel" | "devtools"
+		// UI state - collapse/expand in sidepanel
+		isCollapsed: integer("is_collapsed", { mode: "boolean" })
+			.notNull()
+			.default(false),
 	},
 	(t) => [
 		index("window_browser_id_index").on(t.browserWindowId),

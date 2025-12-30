@@ -4,8 +4,9 @@ import { useDndContext } from "@dnd-kit/core";
 // 	useSortable,
 // 	verticalListSortingStrategy,
 // } from "@dnd-kit/sortable";
+import { useDrizzleIndexedDB } from "@firtoz/drizzle-indexeddb";
 import { X } from "lucide-react";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo } from "react";
 import type * as schema from "@/schema/src/schema";
 import { cn } from "../lib/cn";
 import { useDevTools } from "../lib/devtools";
@@ -67,9 +68,10 @@ export const WindowGroup = ({
 	onCloseTab: (tabId: number) => void;
 	onCloseWindow: (windowId: number) => void;
 }) => {
+	const { useCollection } = useDrizzleIndexedDB<typeof schema>();
+	const windowCollection = useCollection("windowTable");
 	const { active } = useDndContext();
 	const isDragging = active !== null;
-	const [isCollapsed, setIsCollapsed] = useState(false);
 	const { recordUserEvent } = useDevTools();
 
 	// Build tree structure and flatten for rendering
@@ -272,10 +274,43 @@ export const WindowGroup = ({
 		browser.windows.update(win.browserWindowId, { focused: true });
 	}, [win.browserWindowId]);
 
-	const handleToggleWindowCollapse = useCallback((e: React.MouseEvent) => {
-		e.stopPropagation();
-		setIsCollapsed((prev) => !prev);
-	}, []);
+	const handleToggleWindowCollapse = useCallback(
+		(e: React.MouseEvent) => {
+			e.stopPropagation();
+
+			console.log(
+				"[WindowGroup] Toggling collapse for window:",
+				win.browserWindowId,
+				"current state:",
+				win.isCollapsed,
+				"window.id:",
+				win.id,
+			);
+
+			// Record user event for DevTools
+			recordUserEvent({
+				type: "user.toggleWindowCollapse",
+				data: {
+					windowId: win.browserWindowId,
+				},
+			});
+
+			// Update the window's collapsed state in the database
+			// The IDB proxy will automatically broadcast this change to all connected clients
+			windowCollection.update(win.id, (draft) => {
+				console.log(
+					"[WindowGroup] Inside update draft, changing isCollapsed from",
+					draft.isCollapsed,
+					"to",
+					!win.isCollapsed,
+				);
+				draft.isCollapsed = !win.isCollapsed;
+			});
+
+			console.log("[WindowGroup] windowCollection.update() called");
+		},
+		[win, windowCollection, recordUserEvent],
+	);
 
 	const handleCloseWindow = useCallback(
 		(e: React.MouseEvent) => {
@@ -318,7 +353,7 @@ export const WindowGroup = ({
 						className="shrink-0 text-slate-400 dark:text-slate-500 select-none hover:text-slate-600 dark:hover:text-slate-300"
 						onClick={handleToggleWindowCollapse}
 					>
-						{isCollapsed ? <IconCollapsed /> : <IconExpanded />}
+						{win.isCollapsed ? <IconCollapsed /> : <IconExpanded />}
 					</button>
 					<span className="text-sm font-medium pl-2 text-slate-700 dark:text-slate-200">
 						Window
@@ -344,7 +379,7 @@ export const WindowGroup = ({
 			</div>
 
 			{/* Tabs as children */}
-			{!isCollapsed && (
+			{!win.isCollapsed && (
 				// <SortableContext
 				// 	items={items.map((i) => i.id)}
 				// 	// strategy={verticalListSortingStrategy}

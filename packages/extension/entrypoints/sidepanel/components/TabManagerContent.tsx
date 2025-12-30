@@ -216,7 +216,7 @@ export const TabManagerContent = () => {
 			});
 
 			// Update the tab's collapsed state in the database
-			// The collection key is the tab's id field, not browserTabId
+			// The IDB proxy will automatically broadcast this change to all connected clients
 			tabCollection.update(tab.id, (draft) => {
 				draft.isCollapsed = !tab.isCollapsed;
 			});

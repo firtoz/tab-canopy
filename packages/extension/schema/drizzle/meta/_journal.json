@@ -1,20 +1,27 @@
 {
-	"version": "7",
-	"dialect": "sqlite",
-	"entries": [
-		{
-			"idx": 0,
-			"version": "6",
-			"when": 1765067366306,
-			"tag": "0000_silent_revanche",
-			"breakpoints": true
-		},
-		{
-			"idx": 1,
-			"version": "6",
-			"when": 1765137872182,
-			"tag": "0001_overconfident_secret_warriors",
-			"breakpoints": true
-		}
-	]
+  "version": "7",
+  "dialect": "sqlite",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "6",
+      "when": 1765067366306,
+      "tag": "0000_silent_revanche",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1765137872182,
+      "tag": "0001_overconfident_secret_warriors",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1767099487261,
+      "tag": "0002_true_greymalkin",
+      "breakpoints": true
+    }
+  ]
 }
