@@ -1,6 +1,5 @@
 import { generateKeyBetween, generateNKeysBetween } from "fractional-indexing";
 import {
-	compareTreeOrder,
 	DEFAULT_TREE_ORDER,
 	treeOrderSort,
 } from "@/entrypoints/sidepanel/lib/tree";

@@ -356,7 +356,7 @@ export const test = base.extend<ExtensionFixtures>({
 		await sidepanelPage.close();
 	},
 
-	treeHelpers: async ({ sidepanel, testState, context }, use) => {
+	treeHelpers: async ({ sidepanel, testState }, use) => {
 		const getTestHelpers = async (): Promise<TreeTestHelpers> => {
 			// Get the latest state (should already be reported by now)
 			const latestTreeState = testState.latestTreeState;

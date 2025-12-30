@@ -34,7 +34,6 @@ import {
 import {
 	buildTabTree,
 	calculateTreeMove,
-	compareTreeOrder,
 	DEFAULT_TREE_ORDER,
 	flattenTree,
 	getDescendantIds,

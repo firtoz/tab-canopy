@@ -8,7 +8,6 @@ import type { Tab, Window } from "@/schema/src/schema";
 import {
 	buildTabTree,
 	calculateTreeMove,
-	compareTreeOrder,
 	flattenTree,
 	type TreeDropPosition,
 	treeOrderSort,

@@ -1,6 +1,5 @@
 import { generateNKeysBetween } from "fractional-indexing";
 import type { Tab } from "@/schema/src/schema";
-import { DEFAULT_TREE_ORDER } from "../sidepanel/lib/tree";
 import { log } from "./constants";
 import type { DbOperations } from "./db-operations";
 import { tabToRecord, windowToRecord } from "./mappers";
@@ -137,7 +136,10 @@ export const performInitialSync = async (dbOps: DbOperations) => {
 
 	// Map existing tabs with preserved tree structure
 	const existingTabRecords = existingTabs.map((tab) => {
-		const existing = existingTabMap.get(tab.id)!;
+		const existing = existingTabMap.get(tab.id);
+		if (!existing) {
+			throw new Error(`Existing tab not found for tab ${tab.id}`);
+		}
 		return tabToRecord(tab, {
 			parentTabId: existing.parentTabId,
 			treeOrder: existing.treeOrder,
