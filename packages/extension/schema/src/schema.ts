@@ -21,6 +21,8 @@ export const windowTable = syncableTable(
 		isCollapsed: integer("is_collapsed", { mode: "boolean" })
 			.notNull()
 			.default(false),
+		// Custom title override
+		titleOverride: text("title_override"),
 	},
 	(t) => [
 		index("window_browser_id_index").on(t.browserWindowId),
@@ -50,6 +52,8 @@ export const tabTable = syncableTable(
 		title: text("title"),
 		url: text("url"),
 		favIconUrl: text("fav_icon_url"),
+		// Custom title override
+		titleOverride: text("title_override"),
 		// Tab state
 		active: integer("active", { mode: "boolean" }).notNull().default(false),
 		pinned: integer("pinned", { mode: "boolean" }).notNull().default(false),

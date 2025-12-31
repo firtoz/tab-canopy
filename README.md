@@ -14,6 +14,8 @@
 - **Developer Tools**: Built-in dev tools panel for debugging and state inspection
 - **Multi-browser Support**: Compatible with Chrome and Firefox
 
+See [TODO.md](TODO.md) for the roadmap of planned features and improvements.
+
 ## Tech Stack
 
 - **Framework**: [WXT](https://wxt.dev/) - Modern WebExtension framework

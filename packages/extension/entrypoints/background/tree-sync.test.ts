@@ -19,6 +19,7 @@ function createMockTab(
 		title: `Tab ${browserTabId}`,
 		url: `about:blank?${browserTabId}`,
 		favIconUrl: null,
+		titleOverride: null,
 		active: false,
 		pinned: false,
 		highlighted: false,

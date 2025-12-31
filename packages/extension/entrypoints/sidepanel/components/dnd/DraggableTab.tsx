@@ -1,5 +1,5 @@
 import { useDraggable } from "@dnd-kit/core";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import type * as schema from "@/schema/src/schema";
 import type { DragDataTab } from "../../lib/dnd/dnd-types";
 import { TabCard } from "../TabCard";
@@ -16,8 +16,6 @@ export interface DraggableTabProps {
 		tabId: number,
 		options: { ctrlKey: boolean; shiftKey: boolean },
 	) => void;
-	onToggleCollapse: (tabId: number) => void;
-	onClose: (tabId: number) => void;
 	// activeDropData: DropData | null;
 	depth: number;
 	hasChildren: boolean;
@@ -36,8 +34,6 @@ export function DraggableTab({
 	isPartOfDrag,
 	isDragging,
 	onSelect,
-	onToggleCollapse,
-	onClose,
 	depth,
 	hasChildren,
 	isLastChild,
@@ -45,6 +41,7 @@ export function DraggableTab({
 	highlightedDepth,
 	ancestorIds,
 }: DraggableTabProps) {
+	const [isEditingTitle, setIsEditingTitle] = useState(false);
 	const dragData: DragDataTab = useMemo(
 		() => ({
 			type: "tab",
@@ -74,7 +71,7 @@ export function DraggableTab({
 			ref={setNodeRef}
 			style={style}
 			{...attributes}
-			{...listeners}
+			{...(isEditingTitle ? {} : listeners)}
 			className="relative"
 			data-tab-id={tab.browserTabId}
 			data-selected={isSelected}
@@ -83,8 +80,7 @@ export function DraggableTab({
 				tab={tab}
 				isSelected={isSelected}
 				onSelect={onSelect}
-				onToggleCollapse={onToggleCollapse}
-				onClose={onClose}
+				onEditingChange={setIsEditingTitle}
 				// activeDropData={activeDropData}
 				isDragging={isDragging}
 				depth={depth}

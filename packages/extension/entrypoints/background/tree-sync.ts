@@ -308,3 +308,106 @@ export function isAncestor(
 	}
 	return false;
 }
+
+/**
+ * Determine the tree position for a new tab based on its browser index.
+ *
+ * This is used when:
+ * - A new tab is created (handleTabCreated)
+ * - A tab is attached to a window (handleTabAttached)
+ *
+ * The logic is: look at the tab that will be AFTER the new tab.
+ * If that tab has a parent, the new tab should have the same parent
+ * (becoming a sibling of that tab).
+ *
+ * @param existingTabs - All existing tabs in the window (from DB)
+ * @param browserTabs - All browser tabs in the window with their current indices
+ * @param newTabIndex - The browser index where the new tab is being inserted
+ * @param newTabId - The ID of the new tab (to exclude from lookups)
+ */
+export function calculateTreePositionForNewTab(
+	existingTabs: Tab[],
+	browserTabs: Array<{ id: number; index: number }>,
+	newTabIndex: number,
+	newTabId: number,
+): {
+	parentTabId: number | null;
+	treeOrder: string;
+} {
+	// Create a map from browserTabId to Tab for quick lookup
+	const existingMap = new Map<number, Tab>();
+	for (const tab of existingTabs) {
+		existingMap.set(tab.browserTabId, tab);
+	}
+
+	// Sort browser tabs by index (excluding the new tab)
+	const sortedBrowserTabs = browserTabs
+		.filter((t) => t.id !== newTabId)
+		.sort((a, b) => a.index - b.index);
+
+	// Find the tab that will be AFTER the new tab
+	// We need to account for the fact that if the new tab is at index N,
+	// other tabs at index >= N have been shifted
+	let tabAfterIndex = -1;
+	for (let i = 0; i < sortedBrowserTabs.length; i++) {
+		const bt = sortedBrowserTabs[i];
+		// If the browser tab's index is >= newTabIndex, it's at or after our position
+		// (tabs shift when a new one is inserted)
+		if (bt.index >= newTabIndex) {
+			tabAfterIndex = i;
+			break;
+		}
+	}
+
+	// Determine parent based on what's after the new tab
+	let parentTabId: number | null = null;
+
+	if (tabAfterIndex >= 0 && tabAfterIndex < sortedBrowserTabs.length) {
+		const tabAfterId = sortedBrowserTabs[tabAfterIndex].id;
+		const tabAfter = existingMap.get(tabAfterId);
+		if (tabAfter) {
+			// New tab gets the same parent as the tab after it
+			parentTabId = tabAfter.parentTabId;
+		}
+	}
+
+	// Calculate treeOrder - find siblings at the same level
+	const siblings = existingTabs
+		.filter((t) => t.parentTabId === parentTabId)
+		.sort(treeOrderSort);
+
+	// Find where to insert among siblings based on browser position
+	// We want to be before the tab that's after us (if it's a sibling)
+	let insertBeforeSibling: Tab | null = null;
+	let insertAfterSibling: Tab | null = null;
+
+	if (tabAfterIndex >= 0) {
+		const tabAfterId = sortedBrowserTabs[tabAfterIndex].id;
+		const tabAfter = existingMap.get(tabAfterId);
+		if (tabAfter && tabAfter.parentTabId === parentTabId) {
+			insertBeforeSibling = tabAfter;
+			// Find the sibling before this one
+			const siblingIndex = siblings.findIndex(
+				(s) => s.browserTabId === tabAfterId,
+			);
+			if (siblingIndex > 0) {
+				insertAfterSibling = siblings[siblingIndex - 1];
+			}
+		}
+	}
+
+	// If we didn't find a sibling to insert before, we're at the end
+	if (!insertBeforeSibling && siblings.length > 0) {
+		insertAfterSibling = siblings[siblings.length - 1];
+	}
+
+	const treeOrder = generateKeyBetween(
+		insertAfterSibling?.treeOrder ?? null,
+		insertBeforeSibling?.treeOrder ?? null,
+	);
+
+	return {
+		parentTabId,
+		treeOrder,
+	};
+}

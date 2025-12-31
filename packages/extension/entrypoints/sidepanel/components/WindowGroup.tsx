@@ -5,13 +5,15 @@ import { useDndContext } from "@dnd-kit/core";
 // 	verticalListSortingStrategy,
 // } from "@dnd-kit/sortable";
 import { useDrizzleIndexedDB } from "@firtoz/drizzle-indexeddb";
-import { X } from "lucide-react";
-import { useCallback, useMemo } from "react";
+import * as ContextMenu from "@radix-ui/react-context-menu";
+import { Plus, X } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type * as schema from "@/schema/src/schema";
 import { cn } from "../lib/cn";
 import { useDevTools } from "../lib/devtools";
 import { isDropData } from "../lib/dnd/dnd-types";
 import { buildTabTree, flattenTree } from "../lib/tree";
+import { useTabActions } from "../store/useTabActions";
 import { DraggableTab } from "./dnd/DraggableTab";
 import { GapDropZone } from "./dnd/GapDropZone";
 import { WindowTitleDropZone } from "./dnd/WindowTitleDropZone";
@@ -19,6 +21,7 @@ import { IconCollapsed } from "./icons/IconCollapsed";
 import { IconExpanded } from "./icons/IconExpanded";
 import { TreeBranch } from "./icons/TreeBranch";
 import { TreeEnd } from "./icons/TreeEnd";
+import { WindowContextMenu } from "./WindowContextMenu";
 
 // ============================================================================
 // Drop Zone Components - Tabs Outliner Style
@@ -52,9 +55,6 @@ export const WindowGroup = ({
 	setSelectedTabIds,
 	lastSelectedTabId,
 	setLastSelectedTabId,
-	onToggleCollapse,
-	onCloseTab,
-	onCloseWindow,
 }: {
 	window: schema.Window;
 	tabs: schema.Tab[];
@@ -64,15 +64,26 @@ export const WindowGroup = ({
 	setSelectedTabIds: (ids: Set<number>) => void;
 	lastSelectedTabId: number | undefined;
 	setLastSelectedTabId: (id: number | undefined) => void;
-	onToggleCollapse: (tabId: number) => void;
-	onCloseTab: (tabId: number) => void;
-	onCloseWindow: (windowId: number) => void;
 }) => {
 	const { useCollection } = useDrizzleIndexedDB<typeof schema>();
 	const windowCollection = useCollection("windowTable");
 	const { active } = useDndContext();
 	const isDragging = active !== null;
 	const { recordUserEvent } = useDevTools();
+	const [isEditingTitle, setIsEditingTitle] = useState(false);
+	const [editTitleValue, setEditTitleValue] = useState("");
+	const windowInputRef = useRef<HTMLInputElement>(null);
+
+	// Get actions from Zustand store
+	const { closeWindow, renameWindow, newTabInWindow } = useTabActions();
+
+	// Auto-focus and select text when entering edit mode
+	useEffect(() => {
+		if (isEditingTitle && windowInputRef.current) {
+			windowInputRef.current.focus();
+			windowInputRef.current.select();
+		}
+	}, [isEditingTitle]);
 
 	// Build tree structure and flatten for rendering
 	// Tabs are now at depth 1+ (window is depth 0)
@@ -270,205 +281,306 @@ export const WindowGroup = ({
 		return null;
 	}, [activeDropData, win.browserWindowId, items]);
 
-	const handleWindowClick = useCallback(() => {
-		browser.windows.update(win.browserWindowId, { focused: true });
-	}, [win.browserWindowId]);
-
-	const handleToggleWindowCollapse = useCallback(
+	const handleWindowClick = useCallback(
 		(e: React.MouseEvent) => {
-			e.stopPropagation();
-
-			console.log(
-				"[WindowGroup] Toggling collapse for window:",
-				win.browserWindowId,
-				"current state:",
-				win.isCollapsed,
-				"window.id:",
-				win.id,
-			);
-
-			// Record user event for DevTools
-			recordUserEvent({
-				type: "user.toggleWindowCollapse",
-				data: {
-					windowId: win.browserWindowId,
-				},
-			});
-
-			// Update the window's collapsed state in the database
-			// The IDB proxy will automatically broadcast this change to all connected clients
-			windowCollection.update(win.id, (draft) => {
-				console.log(
-					"[WindowGroup] Inside update draft, changing isCollapsed from",
-					draft.isCollapsed,
-					"to",
-					!win.isCollapsed,
-				);
-				draft.isCollapsed = !win.isCollapsed;
-			});
-
-			console.log("[WindowGroup] windowCollection.update() called");
+			// Middle click closes the window
+			if (e.button === 1) {
+				e.stopPropagation();
+				closeWindow(win.browserWindowId);
+				return;
+			}
+			browser.windows.update(win.browserWindowId, { focused: true });
 		},
-		[win, windowCollection, recordUserEvent],
+		[win.browserWindowId, closeWindow],
 	);
+
+	const handleToggleWindowCollapse = useCallback(() => {
+		console.log(
+			"[WindowGroup] Toggling collapse for window:",
+			win.browserWindowId,
+			"current state:",
+			win.isCollapsed,
+			"window.id:",
+			win.id,
+		);
+
+		// Record user event for DevTools
+		recordUserEvent({
+			type: "user.toggleWindowCollapse",
+			data: {
+				windowId: win.browserWindowId,
+			},
+		});
+
+		// Update the window's collapsed state in the database
+		// The IDB proxy will automatically broadcast this change to all connected clients
+		windowCollection.update(win.id, (draft) => {
+			console.log(
+				"[WindowGroup] Inside update draft, changing isCollapsed from",
+				draft.isCollapsed,
+				"to",
+				!win.isCollapsed,
+			);
+			draft.isCollapsed = !win.isCollapsed;
+		});
+
+		console.log("[WindowGroup] windowCollection.update() called");
+	}, [win, windowCollection, recordUserEvent]);
 
 	const handleCloseWindow = useCallback(
 		(e: React.MouseEvent) => {
 			e.stopPropagation();
-			onCloseWindow(win.browserWindowId);
+			closeWindow(win.browserWindowId);
 		},
-		[win.browserWindowId, onCloseWindow],
+		[win.browserWindowId, closeWindow],
 	);
 
+	const handleStartRenameWindow = useCallback(() => {
+		setEditTitleValue(win.titleOverride || "Window");
+		setIsEditingTitle(true);
+	}, [win.titleOverride]);
+
+	const handleSaveRenameWindow = useCallback(() => {
+		const trimmed = editTitleValue.trim();
+		// If empty or matches "Window" (the default), treat it as clearing the override
+		const finalValue = !trimmed || trimmed === "Window" ? null : trimmed;
+		renameWindow(win.browserWindowId, finalValue);
+		setIsEditingTitle(false);
+	}, [editTitleValue, win.browserWindowId, renameWindow]);
+
+	const handleCancelRenameWindow = useCallback(() => {
+		setIsEditingTitle(false);
+		setEditTitleValue("");
+	}, []);
+
+	const handleRenameWindowKeyDown = useCallback(
+		(e: React.KeyboardEvent) => {
+			if (e.key === "Enter") {
+				e.preventDefault();
+				e.stopPropagation();
+				handleSaveRenameWindow();
+			} else if (e.key === "Escape") {
+				e.preventDefault();
+				e.stopPropagation();
+				handleCancelRenameWindow();
+			}
+		},
+		[handleSaveRenameWindow, handleCancelRenameWindow],
+	);
+
+	const displayWindowTitle = win.titleOverride || "Window";
+
 	return (
-		<div className="flex flex-col">
-			{/* Window header as tree node */}
-			<div className="flex items-stretch text-slate-300 dark:text-slate-600 relative">
-				{/* Tree lines for window */}
-				{isLastWindow ? (
-					<TreeEnd highlighted={highlightedDepth === 0} />
-				) : (
-					<TreeBranch highlighted={highlightedDepth === 0} />
+		<ContextMenu.Root>
+			<div className="flex flex-col">
+				{/* Window header as tree node */}
+				<ContextMenu.Trigger asChild>
+					<div className="flex items-stretch text-slate-300 dark:text-slate-600 relative">
+						{/* Tree lines for window */}
+						{isLastWindow ? (
+							<TreeEnd highlighted={highlightedDepth === 0} />
+						) : (
+							<TreeBranch highlighted={highlightedDepth === 0} />
+						)}
+						{/* <TreeHorizontal /> */}
+						{/* Window content */}
+						{/* biome-ignore lint/a11y/useSemanticElements: div with role used for nested button */}
+						<div
+							className={cn(
+								"flex-1 flex items-center gap-0 group",
+								{
+									"cursor-pointer": !isEditingTitle,
+								},
+								isCurrentWindow && "text-blue-600 dark:text-blue-400",
+							)}
+							onClick={isEditingTitle ? undefined : handleWindowClick}
+							onMouseDown={isEditingTitle ? undefined : handleWindowClick}
+							onKeyDown={
+								isEditingTitle
+									? undefined
+									: (e) => {
+											if (e.key === "Enter" || e.key === " ") {
+												e.preventDefault();
+												handleWindowClick(e as unknown as React.MouseEvent);
+											}
+										}
+							}
+							role="button"
+							tabIndex={0}
+						>
+							<button
+								type="button"
+								className="shrink-0 text-slate-400 dark:text-slate-500 select-none hover:text-slate-600 dark:hover:text-slate-300"
+								onClick={(e) => {
+									e.stopPropagation();
+
+									handleToggleWindowCollapse();
+								}}
+							>
+								{win.isCollapsed ? <IconCollapsed /> : <IconExpanded />}
+							</button>
+							{isEditingTitle ? (
+								<input
+									ref={windowInputRef}
+									type="text"
+									value={editTitleValue}
+									onChange={(e) => setEditTitleValue(e.target.value)}
+									onKeyDown={handleRenameWindowKeyDown}
+									onBlur={handleSaveRenameWindow}
+									className="text-sm font-medium px-1 py-0.5 ml-2 rounded border border-blue-400 dark:border-blue-500 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 outline-none focus:ring-1 focus:ring-blue-500 min-w-[100px]"
+									onClick={(e) => e.stopPropagation()}
+									onMouseDown={(e) => e.stopPropagation()}
+									onPointerDown={(e) => e.stopPropagation()}
+								/>
+							) : (
+								<span className="text-sm font-medium pl-2 text-slate-700 dark:text-slate-200">
+									{displayWindowTitle}
+									{isCurrentWindow && " (current)"}
+									{win.titleOverride && (
+										<span className="text-xs text-slate-400 dark:text-slate-500 ml-1">
+											✏️
+										</span>
+									)}
+								</span>
+							)}
+							{!isEditingTitle && (
+								<span className="text-xs text-slate-400 dark:text-slate-500 ml-2">
+									• {tabs.length} tabs
+								</span>
+							)}
+							{!isEditingTitle && (
+								<>
+									<button
+										type="button"
+										className="ml-auto mr-1 p-1 opacity-0 group-hover:opacity-100 hover:bg-green-100 dark:hover:bg-green-900/30 rounded text-slate-400 hover:text-green-600 dark:hover:text-green-400 transition-all"
+										onClick={(e) => {
+											e.stopPropagation();
+											newTabInWindow(win.browserWindowId);
+										}}
+										title="New tab in window"
+									>
+										<Plus size={14} />
+									</button>
+									<button
+										type="button"
+										className="mr-2 p-1 opacity-0 group-hover:opacity-100 hover:bg-red-100 dark:hover:bg-red-900/30 rounded text-slate-400 hover:text-red-600 dark:hover:text-red-400 transition-all"
+										onClick={handleCloseWindow}
+										title="Close window"
+									>
+										<X size={14} />
+									</button>
+								</>
+							)}
+						</div>
+						<WindowTitleDropZone
+							windowId={win.browserWindowId}
+							slot={0}
+							isDragging={isDragging}
+						/>
+					</div>
+				</ContextMenu.Trigger>
+
+				{/* Tabs as children */}
+				{!win.isCollapsed && (
+					// <SortableContext
+					// 	items={items.map((i) => i.id)}
+					// 	// strategy={verticalListSortingStrategy}
+					// >
+					<div className="flex flex-col relative">
+						<GapDropZone
+							windowId={win.browserWindowId}
+							slot={0}
+							isDragging={isDragging}
+						/>
+						{items.map((item, index) => {
+							const isSelected = selectedTabIds.has(item.tabId);
+							const isPartOfDrag =
+								isDragging &&
+								selectedItems.some((si) => si.tabId === item.tabId);
+
+							const showIndicatorBefore =
+								indicator &&
+								((indicator.type === "gap" && indicator.slot === index) ||
+									((indicator.type === "sibling" ||
+										indicator.type === "child") &&
+										indicator.index === index));
+
+							// Calculate indicator position based on type
+							// For sibling: line starts at expand/collapse icon position
+							// For child: line starts at favicon position (more indented)
+							const indicatorLeftPx =
+								indicator?.type === "sibling"
+									? indicator.depth * 24 // Tree structure width
+									: indicator?.type === "child"
+										? indicator.depth * 24 // Already includes +1 depth from child
+										: 0;
+
+							const indicatorColor =
+								indicator?.type === "child" ? "bg-blue-500" : "bg-emerald-500";
+
+							return (
+								<div key={item.id} className="relative">
+									{showIndicatorBefore && (
+										<div
+											className={`absolute -top-1 right-0 h-0.5 ${indicatorColor} rounded-full z-30 shadow-[0_0_6px_rgba(59,130,246,0.6)] pointer-events-none`}
+											style={{
+												left: `${indicatorLeftPx}px`,
+											}}
+										/>
+									)}
+									<DraggableTab
+										id={item.id}
+										windowId={win.browserWindowId}
+										tab={item.tab}
+										isSelected={isSelected}
+										isPartOfDrag={isPartOfDrag}
+										isDragging={isDragging}
+										onSelect={handleTabSelect}
+										depth={item.depth}
+										hasChildren={item.hasChildren}
+										isLastChild={item.isLastChild}
+										indentGuides={item.indentGuides}
+										highlightedDepth={highlightedDepth}
+										ancestorIds={item.ancestorIds}
+									/>
+								</div>
+							);
+						})}
+						{indicator &&
+							((indicator.type === "gap" && indicator.slot === items.length) ||
+								((indicator.type === "sibling" || indicator.type === "child") &&
+									indicator.index === items.length)) && (
+								<div
+									className={`absolute -bottom-1 right-0 h-0.5 ${
+										indicator.type === "child"
+											? "bg-blue-500"
+											: "bg-emerald-500"
+									} rounded-full z-30 shadow-[0_0_6px_rgba(59,130,246,0.6)] pointer-events-none`}
+									style={{
+										left: `${
+											indicator.type === "sibling" || indicator.type === "child"
+												? indicator.depth * 24
+												: 0
+										}px`,
+									}}
+								/>
+							)}
+						<GapDropZone
+							windowId={win.browserWindowId}
+							slot={items.length}
+							isDragging={isDragging}
+						/>
+					</div>
+					// </SortableContext>
 				)}
-				{/* <TreeHorizontal /> */}
-				{/* Window content */}
-				{/* biome-ignore lint/a11y/useSemanticElements: div with role used for nested button */}
-				<div
-					className={cn(
-						"flex-1 flex items-center gap-0 cursor-pointer group",
-						isCurrentWindow && "text-blue-600 dark:text-blue-400",
-					)}
-					onClick={handleWindowClick}
-					onKeyDown={(e) => {
-						if (e.key === "Enter" || e.key === " ") {
-							e.preventDefault();
-							handleWindowClick();
-						}
-					}}
-					role="button"
-					tabIndex={0}
-				>
-					<button
-						type="button"
-						className="shrink-0 text-slate-400 dark:text-slate-500 select-none hover:text-slate-600 dark:hover:text-slate-300"
-						onClick={handleToggleWindowCollapse}
-					>
-						{win.isCollapsed ? <IconCollapsed /> : <IconExpanded />}
-					</button>
-					<span className="text-sm font-medium pl-2 text-slate-700 dark:text-slate-200">
-						Window
-						{isCurrentWindow && " (current)"}
-					</span>
-					<span className="text-xs text-slate-400 dark:text-slate-500 ml-2">
-						• {tabs.length} tabs
-					</span>
-					<button
-						type="button"
-						className="ml-auto mr-2 p-1 opacity-0 group-hover:opacity-100 hover:bg-red-100 dark:hover:bg-red-900/30 rounded text-slate-400 hover:text-red-600 dark:hover:text-red-400 transition-all"
-						onClick={handleCloseWindow}
-						title="Close window"
-					>
-						<X size={14} />
-					</button>
-				</div>
-				<WindowTitleDropZone
-					windowId={win.browserWindowId}
-					slot={0}
-					isDragging={isDragging}
+				<WindowContextMenu
+					isCollapsed={win.isCollapsed}
+					onRename={handleStartRenameWindow}
+					onToggleCollapse={handleToggleWindowCollapse}
+					onClose={() => closeWindow(win.browserWindowId)}
+					onNewTab={() => newTabInWindow(win.browserWindowId)}
 				/>
 			</div>
-
-			{/* Tabs as children */}
-			{!win.isCollapsed && (
-				// <SortableContext
-				// 	items={items.map((i) => i.id)}
-				// 	// strategy={verticalListSortingStrategy}
-				// >
-				<div className="flex flex-col relative">
-					<GapDropZone
-						windowId={win.browserWindowId}
-						slot={0}
-						isDragging={isDragging}
-					/>
-					{items.map((item, index) => {
-						const isSelected = selectedTabIds.has(item.tabId);
-						const isPartOfDrag =
-							isDragging && selectedItems.some((si) => si.tabId === item.tabId);
-
-						const showIndicatorBefore =
-							indicator &&
-							((indicator.type === "gap" && indicator.slot === index) ||
-								((indicator.type === "sibling" || indicator.type === "child") &&
-									indicator.index === index));
-
-						// Calculate indicator position based on type
-						// For sibling: line starts at expand/collapse icon position
-						// For child: line starts at favicon position (more indented)
-						const indicatorLeftPx =
-							indicator?.type === "sibling"
-								? indicator.depth * 24 // Tree structure width
-								: indicator?.type === "child"
-									? indicator.depth * 24 // Already includes +1 depth from child
-									: 0;
-
-						const indicatorColor =
-							indicator?.type === "child" ? "bg-blue-500" : "bg-emerald-500";
-
-						return (
-							<div key={item.id} className="relative">
-								{showIndicatorBefore && (
-									<div
-										className={`absolute -top-1 right-0 h-0.5 ${indicatorColor} rounded-full z-30 shadow-[0_0_6px_rgba(59,130,246,0.6)] pointer-events-none`}
-										style={{
-											left: `${indicatorLeftPx}px`,
-										}}
-									/>
-								)}
-								<DraggableTab
-									id={item.id}
-									windowId={win.browserWindowId}
-									tab={item.tab}
-									isSelected={isSelected}
-									isPartOfDrag={isPartOfDrag}
-									isDragging={isDragging}
-									onSelect={handleTabSelect}
-									onToggleCollapse={onToggleCollapse}
-									onClose={onCloseTab}
-									depth={item.depth}
-									hasChildren={item.hasChildren}
-									isLastChild={item.isLastChild}
-									indentGuides={item.indentGuides}
-									highlightedDepth={highlightedDepth}
-									ancestorIds={item.ancestorIds}
-								/>
-							</div>
-						);
-					})}
-					{indicator &&
-						((indicator.type === "gap" && indicator.slot === items.length) ||
-							((indicator.type === "sibling" || indicator.type === "child") &&
-								indicator.index === items.length)) && (
-							<div
-								className={`absolute -bottom-1 right-0 h-0.5 ${
-									indicator.type === "child" ? "bg-blue-500" : "bg-emerald-500"
-								} rounded-full z-30 shadow-[0_0_6px_rgba(59,130,246,0.6)] pointer-events-none`}
-								style={{
-									left: `${
-										indicator.type === "sibling" || indicator.type === "child"
-											? indicator.depth * 24
-											: 0
-									}px`,
-								}}
-							/>
-						)}
-					<GapDropZone
-						windowId={win.browserWindowId}
-						slot={items.length}
-						isDragging={isDragging}
-					/>
-				</div>
-				// </SortableContext>
-			)}
-		</div>
+		</ContextMenu.Root>
 	);
 };

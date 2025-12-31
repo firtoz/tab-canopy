@@ -8,7 +8,10 @@ import { log, makeTabId } from "./constants";
 import type { DbOperations } from "./db-operations";
 import { queuedHandler } from "./event-queue";
 import { type TabRecord, tabToRecord } from "./mappers";
-import { calculateTreePositionFromBrowserMove } from "./tree-sync";
+import {
+	calculateTreePositionForNewTab,
+	calculateTreePositionFromBrowserMove,
+} from "./tree-sync";
 import { hasTabIds } from "./type-guards";
 
 /**
@@ -226,6 +229,8 @@ export const setupTabListeners = (
 		log(
 			"[Background] Tab created:",
 			tab.id,
+			"at index:",
+			tab.index,
 			"openerTabId:",
 			(tab as { openerTabId?: number }).openerTabId,
 		);
@@ -233,183 +238,74 @@ export const setupTabListeners = (
 
 		// Get existing tabs to determine tree position
 		const existingTabs = await getAll<Tab>("tab");
-		const existingMap = new Map<number, Tab>();
-		for (const t of existingTabs) {
-			existingMap.set(t.browserTabId, t);
-		}
+		const windowTabs = existingTabs.filter(
+			(t) => t.browserWindowId === tab.windowId,
+		);
 
-		// Check for openerTabId - if present, this tab was opened from another tab
+		// Get all browser tabs in this window for index mapping
+		const browserTabs = await browser.tabs.query({ windowId: tab.windowId });
+		const browserTabsWithIds = browserTabs
+			.filter(hasTabIds)
+			.map((t) => ({ id: t.id, index: t.index }));
+
+		// Calculate tree position based on where the tab was inserted
+		let { parentTabId, treeOrder } = calculateTreePositionForNewTab(
+			windowTabs,
+			browserTabsWithIds,
+			tab.index,
+			tab.id,
+		);
+
 		const openerTabId = (tab as { openerTabId?: number }).openerTabId;
-		let parentTabId: number | null = null;
-		let treeOrder = DEFAULT_TREE_ORDER;
+		let reason = "";
 
-		if (openerTabId && existingMap.has(openerTabId)) {
-			// This tab was opened from another tab (e.g., middle click, Ctrl+T)
-			// But we need to check if the browser position allows it to be a child
-
-			const openerTab = existingMap.get(openerTabId);
-			if (!openerTab) {
-				// Shouldn't happen, but handle it
-				log("[Background] Opener tab not found in DB, treating as root level");
+		// If position-based didn't place it in a tree, but there's an opener, make it a child of opener
+		if (parentTabId === null && openerTabId !== undefined) {
+			const openerTab = windowTabs.find((t) => t.browserTabId === openerTabId);
+			if (openerTab) {
+				parentTabId = openerTabId;
+				// Calculate treeOrder among opener's existing children
+				const openerChildren = windowTabs
+					.filter((t) => t.parentTabId === openerTabId)
+					.sort((a, b) => (a.treeOrder < b.treeOrder ? -1 : 1));
+				const lastChild = openerChildren[openerChildren.length - 1];
+				treeOrder = generateKeyBetween(lastChild?.treeOrder ?? null, null);
+				reason = `Opener-based: made child of opener tab ${openerTabId}`;
 			} else {
-				// Get all tabs in the window to determine browser positions
-				const windowTabs = await browser.tabs.query({ windowId: tab.windowId });
-				const tabIndexMap = new Map<number, number>();
-				for (const wt of windowTabs.filter(hasTabIds)) {
-					tabIndexMap.set(wt.id, wt.index);
-				}
-
-				const openerIndex = tabIndexMap.get(openerTabId);
-
-				// Find the last descendant of the opener to determine valid child position range
-				const getLastDescendantIndex = (parentId: number): number => {
-					const children = existingTabs.filter(
-						(t) => t.parentTabId === parentId,
-					);
-					if (children.length === 0) {
-						return tabIndexMap.get(parentId) ?? -1;
-					}
-					// Find the last child and recursively get its last descendant
-					const lastChild = children.sort(treeOrderSort)[children.length - 1];
-					return getLastDescendantIndex(lastChild.browserTabId);
-				};
-
-				const lastDescendantIndex = getLastDescendantIndex(openerTabId);
-
-				log(
-					"[Background] Tab opened from",
-					openerTabId,
-					"at index",
-					tab.index,
-					"- opener at",
-					openerIndex,
-					", last descendant at",
-					lastDescendantIndex,
-				);
-
-				// Check if the new tab is placed in a position that allows it to be a child
-				// It should be placed after the opener and before any sibling of the opener
-				if (
-					openerIndex !== undefined &&
-					tab.index > openerIndex &&
-					tab.index <= lastDescendantIndex + 1
-				) {
-					// Position allows child relationship - make it a child
-					parentTabId = openerTabId;
-
-					// Find siblings (other children of the opener)
-					const siblings = existingTabs
-						.filter((t) => t.parentTabId === openerTabId)
-						.sort(treeOrderSort);
-
-					// Find where to insert based on the new tab's browser index
-					const siblingWithIndices = siblings
-						.map((s) => {
-							const browserIndex = tabIndexMap.get(s.browserTabId);
-							return browserIndex !== undefined
-								? { tab: s, browserIndex }
-								: null;
-						})
-						.filter((s): s is { tab: Tab; browserIndex: number } => s !== null);
-
-					let insertAfter: Tab | undefined;
-					let insertBefore: Tab | undefined;
-
-					for (const sibling of siblingWithIndices) {
-						if (sibling.browserIndex < tab.index) {
-							if (
-								!insertAfter ||
-								sibling.browserIndex >
-									(tabIndexMap.get(insertAfter.browserTabId) ?? -1)
-							) {
-								insertAfter = sibling.tab;
-							}
-						} else {
-							if (
-								!insertBefore ||
-								sibling.browserIndex <
-									(tabIndexMap.get(insertBefore.browserTabId) ??
-										Number.MAX_VALUE)
-							) {
-								insertBefore = sibling.tab;
-							}
-						}
-					}
-
-					treeOrder = generateKeyBetween(
-						insertAfter?.treeOrder || null,
-						insertBefore?.treeOrder || null,
-					);
-
-					log(
-						"[Background] Position allows child - setting as child with treeOrder:",
-						treeOrder,
-					);
-
-					trackTabCreatedEvent({
-						tabId: tab.id,
-						openerTabId,
-						tabIndex: tab.index,
-						decidedParentId: parentTabId,
-						reason: `Position allows child: index ${tab.index} is after opener ${openerIndex} and within descendant range ${lastDescendantIndex + 1}`,
-					});
-				} else {
-					// Position doesn't allow child relationship - treat as sibling at root level
-					log(
-						"[Background] Position prevents child relationship - treating as root level sibling",
-					);
-					parentTabId = null;
-
-					// Place at root level, positioned based on browser index
-					const rootTabs = existingTabs
-						.filter(
-							(t) =>
-								t.parentTabId === null && t.browserWindowId === tab.windowId,
-						)
-						.sort(treeOrderSort);
-
-					const lastRoot = rootTabs[rootTabs.length - 1];
-					treeOrder = generateKeyBetween(lastRoot?.treeOrder || null, null);
-
-					trackTabCreatedEvent({
-						tabId: tab.id,
-						openerTabId,
-						tabIndex: tab.index,
-						decidedParentId: null,
-						reason: `Position prevents child: index ${tab.index} is not in valid range (opener ${openerIndex}, last descendant ${lastDescendantIndex})`,
-					});
-				}
+				reason = "Position-based: inserted at root level (opener not in DB)";
 			}
+		} else if (parentTabId !== null) {
+			reason = `Position-based: inserted within tree of parent ${parentTabId}`;
+		} else {
+			reason = "Position-based: inserted at root level";
 		}
 
-		if (parentTabId === null && !openerTabId) {
-			// Root level tab - place at end of root tabs in this window
-			const rootTabs = existingTabs
-				.filter(
-					(t) => t.parentTabId === null && t.browserWindowId === tab.windowId,
-				)
-				.sort(treeOrderSort);
+		trackTabCreatedEvent({
+			tabId: tab.id,
+			openerTabId,
+			tabIndex: tab.index,
+			decidedParentId: parentTabId,
+			reason,
+		});
 
-			const lastRoot = rootTabs[rootTabs.length - 1];
-			treeOrder = generateKeyBetween(lastRoot?.treeOrder || null, null);
-
-			trackTabCreatedEvent({
-				tabId: tab.id,
-				openerTabId: undefined,
-				tabIndex: tab.index,
-				decidedParentId: null,
-				reason: "No openerTabId - creating as root level tab",
-			});
-		}
+		log("[Background] Tab tree position calculated:", {
+			parentTabId,
+			treeOrder,
+			reason,
+		});
 
 		// Create the new tab record
 		const newTabRecord = tabToRecord(tab, { parentTabId, treeOrder });
 		await putItems("tab", [newTabRecord]);
 
 		// Update other tabs in window since indices shifted
-		const otherTabs = await browser.tabs.query({ windowId: tab.windowId });
+		const existingMap = new Map<number, Tab>();
+		for (const t of existingTabs) {
+			existingMap.set(t.browserTabId, t);
+		}
+
 		const otherRecords: TabRecord[] = [];
-		for (const t of otherTabs.filter(hasTabIds)) {
+		for (const t of browserTabs.filter(hasTabIds)) {
 			if (t.id === tab.id) continue; // Skip the new tab
 			const existing = existingMap.get(t.id);
 			otherRecords.push(
@@ -1152,41 +1048,39 @@ export const setupTabListeners = (
 			await putItems("tab", [tabRecord]);
 			return; // Early return
 		} else if (!isExtensionMove) {
-			log(`[Background] Tab ${tabId} is browser-native move, creating as root`);
+			log(
+				`[Background] Tab ${tabId} is browser-native move, calculating tree position`,
+			);
 			// This is a browser-native cross-window move (drag from tab bar)
-			// The tab becomes a root in the new window, and its children were already
-			// promoted by handleTabDetached
+			// Its children were already promoted by handleTabDetached
+			// Now we determine its position in the new window based on where it was dropped
 			const newWindowTabs = existingTabs.filter(
 				(t) => t.browserWindowId === attachInfo.newWindowId,
 			);
 
-			let treeOrder = DEFAULT_TREE_ORDER;
-			const rootTabs = newWindowTabs
-				.filter((t) => t.parentTabId === null)
-				.sort(treeOrderSort);
+			// Get all browser tabs in the new window for index mapping
+			const allBrowserTabsInWindow = await browser.tabs.query({
+				windowId: attachInfo.newWindowId,
+			});
+			const browserTabsWithIds = allBrowserTabsInWindow
+				.filter(hasTabIds)
+				.map((t) => ({ id: t.id, index: t.index }));
 
-			// Find the appropriate position based on attachInfo.newPosition
-			if (attachInfo.newPosition === 0) {
-				// Inserted at the beginning
-				const firstRoot = rootTabs[0];
-				treeOrder = generateKeyBetween(null, firstRoot?.treeOrder || null);
-			} else if (attachInfo.newPosition >= rootTabs.length) {
-				// Inserted at the end
-				const lastRoot = rootTabs[rootTabs.length - 1];
-				treeOrder = generateKeyBetween(lastRoot?.treeOrder || null, null);
-			} else {
-				// Inserted in the middle - use the position
-				const prevRoot = rootTabs[attachInfo.newPosition - 1];
-				const nextRoot = rootTabs[attachInfo.newPosition];
-				treeOrder = generateKeyBetween(
-					prevRoot?.treeOrder || null,
-					nextRoot?.treeOrder || null,
-				);
-			}
+			// Calculate tree position based on where the tab was attached
+			const { parentTabId, treeOrder } = calculateTreePositionForNewTab(
+				newWindowTabs,
+				browserTabsWithIds,
+				attachInfo.newPosition,
+				tabId,
+			);
 
-			// Create the tab record with reset tree structure (root level in new window)
+			log(
+				`[Background] Tab ${tabId} attached at position ${attachInfo.newPosition}, calculated tree position: parentId=${parentTabId}, treeOrder=${treeOrder}`,
+			);
+
+			// Create the tab record with calculated tree position
 			const tabRecord = tabToRecord(browserTab, {
-				parentTabId: null, // Root level when moving via browser native UI
+				parentTabId,
 				treeOrder,
 			});
 			await putItems("tab", [tabRecord]);

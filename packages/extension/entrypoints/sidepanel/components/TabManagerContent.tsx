@@ -12,7 +12,7 @@ import { useDrizzleIndexedDB } from "@firtoz/drizzle-indexeddb";
 import { exhaustiveGuard } from "@firtoz/maybe-error";
 import { useLiveQuery } from "@tanstack/react-db";
 import { generateNKeysBetween } from "fractional-indexing";
-import { RefreshCw, Settings } from "lucide-react";
+import { Plus, RefreshCw, Settings } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { browser } from "wxt/browser";
 import type * as schema from "@/schema/src/schema";
@@ -41,6 +41,7 @@ import {
 	type TreeDropPosition,
 	treeOrderSort,
 } from "../lib/tree";
+import { useTabActions } from "../store/useTabActions";
 import { cursorOffsetModifier } from "./dnd/cursorOffsetModifier";
 import { dropZoneCollision } from "./dnd/dropZoneCollision";
 import { NewWindowDropZone } from "./dnd/NewWindowDropZone";
@@ -61,6 +62,7 @@ export const TabManagerContent = () => {
 	const testActions = useTestActions();
 	const { recordUserEvent } = useDevTools();
 	const [isResetting, setIsResetting] = useState(false);
+	const { setCollections } = useTabActions();
 
 	// Reactive queries for windows and tabs
 	const { data: windows, isLoading: windowsLoading } = useLiveQuery((q) =>
@@ -70,6 +72,11 @@ export const TabManagerContent = () => {
 	const { data: tabs, isLoading: tabsLoading } = useLiveQuery((q) =>
 		q.from({ tab: tabCollection }),
 	);
+
+	// Provide collections to Zustand store
+	useEffect(() => {
+		setCollections(tabCollection, windowCollection);
+	}, [tabCollection, windowCollection, setCollections]);
 
 	// Register state getter for DevTools snapshots
 	useEffect(() => {
@@ -198,139 +205,10 @@ export const TabManagerContent = () => {
 		// setActiveDropData(null);
 	}, []);
 
-	// Handle toggle collapse for a tab
-	const handleToggleCollapse = useCallback(
-		async (browserTabId: number) => {
-			if (!tabs) return;
-
-			const tab = tabs.find((t) => t.browserTabId === browserTabId);
-			if (!tab) return;
-
-			// Record user event for DevTools
-			recordUserEvent({
-				type: "user.toggleCollapse",
-				data: {
-					tabId: browserTabId,
-					windowId: tab.browserWindowId,
-				},
-			});
-
-			// Update the tab's collapsed state in the database
-			// The IDB proxy will automatically broadcast this change to all connected clients
-			tabCollection.update(tab.id, (draft) => {
-				draft.isCollapsed = !tab.isCollapsed;
-			});
-		},
-		[tabs, tabCollection, recordUserEvent],
-	);
-
-	// Handle tab close with children
-	const handleCloseTab = useCallback(
-		async (browserTabId: number) => {
-			if (!tabs) return;
-
-			const tab = tabs.find((t) => t.browserTabId === browserTabId);
-			if (!tab) return;
-
-			// Record user event for DevTools
-			recordUserEvent({
-				type: "user.tabClose",
-				data: {
-					tabId: browserTabId,
-					windowId: tab.browserWindowId,
-				},
-			});
-
-			// Find all children of this tab
-			const children = tabs.filter((t) => t.parentTabId === browserTabId);
-
-			if (children.length > 0) {
-				if (tab.isCollapsed) {
-					// If collapsed, close all children recursively first, then the parent
-					const allDescendantIds = getDescendantIds(tabs, browserTabId);
-					// Close all descendants
-					await browser.tabs.remove(allDescendantIds);
-				} else {
-					// If expanded, detach children and reconnect to parent's parent
-					const newParentId = tab.parentTabId; // null for root, or parent's parent
-					const windowTabs = tabs.filter(
-						(t) => t.browserWindowId === tab.browserWindowId,
-					);
-
-					// Get siblings of the closing tab at its current level
-					const siblings = windowTabs
-						.filter((t) => t.parentTabId === tab.parentTabId)
-						.sort(treeOrderSort);
-
-					const currentIndex = siblings.findIndex(
-						(t) => t.browserTabId === browserTabId,
-					);
-
-					// Calculate tree order positions for children
-					// They should be inserted where the parent was
-					const prevSibling =
-						currentIndex > 0 ? siblings[currentIndex - 1] : null;
-					const nextSibling =
-						currentIndex < siblings.length - 1
-							? siblings[currentIndex + 1]
-							: null;
-
-					// Sort children by their current tree order to maintain relative positions
-					const sortedChildren = [...children].sort(treeOrderSort);
-
-					// Generate new tree orders for all children at once using fractional-indexing
-					const newTreeOrders = generateNKeysBetween(
-						prevSibling?.treeOrder || null,
-						nextSibling?.treeOrder || null,
-						sortedChildren.length,
-					);
-
-					const childUpdates = sortedChildren.map((child, index) => ({
-						childId: child.id,
-						parentTabId: newParentId,
-						treeOrder: newTreeOrders[index],
-					}));
-
-					// Apply all updates to database
-					for (const update of childUpdates) {
-						tabCollection.update(update.childId, (draft) => {
-							draft.parentTabId = update.parentTabId;
-							draft.treeOrder = update.treeOrder;
-						});
-					}
-
-					// Small delay to let database updates propagate
-					await new Promise((resolve) => setTimeout(resolve, 50));
-				}
-			}
-
-			// Finally, close the tab itself
-			await browser.tabs.remove(browserTabId);
-		},
-		[tabs, tabCollection, recordUserEvent],
-	);
-
-	// Handle window close
-	const handleCloseWindow = useCallback(
-		async (browserWindowId: number) => {
-			if (!windows) return;
-
-			const win = windows.find((w) => w.browserWindowId === browserWindowId);
-			if (!win) return;
-
-			// Record user event for DevTools
-			recordUserEvent({
-				type: "user.windowClose",
-				data: {
-					windowId: browserWindowId,
-				},
-			});
-
-			// Close the window (all tabs will be closed automatically)
-			await browser.windows.remove(browserWindowId);
-		},
-		[windows, recordUserEvent],
-	);
+	const handleNewWindow = useCallback(async () => {
+		const { newWindow } = useTabActions.getState();
+		await newWindow();
+	}, []);
 
 	const handleDragEnd = useCallback(
 		async (event: DragEndEvent) => {
@@ -1094,6 +972,17 @@ export const TabManagerContent = () => {
 						>
 							<Settings size={18} />
 						</button>
+						<button
+							type="button"
+							className={cn(
+								"flex items-center justify-center p-2 bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 rounded-md text-black/60 dark:text-white/70 transition-all hover:bg-green-100 dark:hover:bg-green-900/30 hover:text-green-600 dark:hover:text-green-400 hover:border-green-300 dark:hover:border-green-700 active:scale-95",
+								{ "cursor-pointer": !activeId },
+							)}
+							onClick={handleNewWindow}
+							title="New window"
+						>
+							<Plus size={18} />
+						</button>
 					</div>
 				</div>
 				<div className="flex flex-col">
@@ -1111,9 +1000,6 @@ export const TabManagerContent = () => {
 							setSelectedTabIds={setSelectedTabIds}
 							lastSelectedTabId={lastSelectedTabId}
 							setLastSelectedTabId={setLastSelectedTabId}
-							onToggleCollapse={handleToggleCollapse}
-							onCloseTab={handleCloseTab}
-							onCloseWindow={handleCloseWindow}
 						/>
 					))}
 				</div>
