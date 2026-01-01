@@ -26,9 +26,6 @@ jobs:
 
       - name: Build and zip extension
         run: bun run zip
-
-      - name: Setup Google Cloud SDK
-        uses: google-github-actions/setup-gcloud@v2
         
       - name: Authenticate with Google Cloud
         uses: google-github-actions/auth@v2
@@ -58,12 +55,24 @@ jobs:
           
           if [ "$HTTP_STATUS" -eq 200 ]; then
             echo "✅ Extension uploaded successfully to Chrome Web Store (draft mode)"
-            echo ""
-            echo "📋 Next step: Manually publish from dashboard"
-            echo "🔗 https://chrome.google.com/webstore/devconsole/${{ secrets.CHROME_EXTENSION_ID }}"
-            echo ""
-            echo "💡 Click the link above, review the changes, and click 'Submit for review'"
+            
+            # Create annotation (visible in Actions UI without drilling down)
+            echo "::notice title=Upload Successful::Extension uploaded as draft. Manually publish from: https://chrome.google.com/webstore/devconsole/${{ secrets.CHROME_EXTENSION_ID }}"
+            
+            # Create job summary with clickable link
+            echo "## ✅ Extension Uploaded Successfully" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "The extension has been uploaded to Chrome Web Store as a **draft**." >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### 📋 Next Step: Manual Review & Publish" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "👉 [Open Chrome Web Store Dashboard](https://chrome.google.com/webstore/devconsole/${{ secrets.CHROME_EXTENSION_ID }})" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "1. Review the uploaded changes" >> $GITHUB_STEP_SUMMARY
+            echo "2. Click **'Submit for review'**" >> $GITHUB_STEP_SUMMARY
+            echo "3. Wait for Google's approval (usually 1-3 days)" >> $GITHUB_STEP_SUMMARY
           else
             echo "❌ Upload failed with status: $HTTP_STATUS"
+            echo "::error title=Upload Failed::Chrome Web Store upload failed with HTTP status $HTTP_STATUS"
             exit 1
           fi
