@@ -24,11 +24,8 @@ jobs:
       - name: Install dependencies
         run: bun install
 
-      - name: Build extension for Chrome
-        run: bun build
-
-      - name: Create zip file
-        run: bun zip
+      - name: Build and zip extension
+        run: bun run zip
 
       - name: Setup Google Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
@@ -43,11 +40,15 @@ jobs:
           # Get access token from service account
           ACCESS_TOKEN=$(gcloud auth print-access-token)
           
+          # Find the zip file
+          ZIP_FILE=$(find packages/extension/.output -name "*-chrome.zip" -type f)
+          echo "Found zip file: $ZIP_FILE"
+          
           # Upload the extension
           curl -X PUT \
             -H "Authorization: Bearer $ACCESS_TOKEN" \
             -H "x-goog-api-version: 2" \
-            -T .output/chrome-mv3.zip \
+            -T "$ZIP_FILE" \
             https://www.googleapis.com/upload/chromewebstore/v1.1/items/${{ secrets.CHROME_EXTENSION_ID }}
           
           echo "Extension uploaded to Chrome Web Store (draft mode)"
