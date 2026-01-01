@@ -8,6 +8,7 @@ This document outlines planned features and improvements for TabCanopy.
   - [ ] Arrow keys for tree traversal
   - [ ] Common keyboard shortcuts (close, new tab, etc.)
   - [ ] Quick search/command palette (Cmd/Ctrl+K)
+  - [ ] Ctrl+F for searching/filtering tabs
 
 - [ ] **Session Management**
   - [ ] Save and restore tab hierarchies using native Chrome Session API
@@ -64,3 +65,8 @@ This document outlines planned features and improvements for TabCanopy.
 - [ ] **Performance**
   - [ ] Virtualized rendering for large tab lists
   - [ ] Memory optimization for inactive tabs
+
+## Known Issues
+
+- [ ] Closing a non-collapsed tab sometimes causes children to disappear when they shouldn't
+- [ ] Dragging a tab or tree to create a new window sometimes causes them to disappear temporarily (they eventually return to original window)

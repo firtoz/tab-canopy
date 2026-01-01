@@ -1,8 +1,28 @@
 <div align="center">
   <img src="packages/extension/assets/icons/base-icon.png" alt="Tab Canopy Logo" width="128"/>
   <h1>Tab Canopy</h1>
-  <p>A modern browser extension for hierarchical tab management with a tree-based interface.</p>
+  <p><strong>⚠️ Alpha / Experimental</strong></p>
+  <p>A browser extension for hierarchical tab management with a tree-based interface.</p>
+  <p><em>Started as an experiment with IndexedDB syncing for TanStack collections,<br/>grew into a tool I actually use daily. Rough edges expected—contributions welcome!</em></p>
 </div>
+
+## Demo
+
+https://github.com/firtoz/tab-canopy/raw/main/docs/demo.mp4
+
+> See Tab Canopy in action - tree-based organization, drag & drop, and real-time sync.
+
+## Project Status
+
+🚧 **Alpha Quality** - This is an experimental project that started as a playground for IndexedDB syncing patterns with TanStack collections. It evolved into a functional tab manager that I use daily, but there are many rough edges and missing features.
+
+**Help Wanted!** This project needs contributors to:
+- Review security (see [SECURITY.md](SECURITY.md) - especially the extension messaging concerns)
+- Implement missing features (see [TODO.md](TODO.md))
+- Fix bugs and improve UX
+- Test on different browsers and setups
+
+If you're interested in browser extension development, React, or database syncing patterns, this is a great project to explore!
 
 ## Features
 
@@ -27,77 +47,86 @@ See [TODO.md](TODO.md) for the roadmap of planned features and improvements.
 - **Testing**: Playwright (E2E) + Bun Test (Unit)
 - **Code Quality**: Biome
 
-## Prerequisites
+## Installation
 
+### ⚠️ Not Yet on Extension Stores
+
+Tab Canopy is currently in **alpha** and is **not available** on the Chrome Web Store or Firefox Add-ons. You need to install it manually from source.
+
+### For End Users
+
+**Requirements:**
 - [Bun](https://bun.sh/) 1.3.3 or higher
-- Node.js (for Playwright)
+- Basic comfort with command line
 
-## Getting Started
+**Steps:**
 
-### Installation
-
+1. **Clone and build the extension:**
 ```bash
-# Install dependencies
+git clone https://github.com/firtoz/tab-canopy.git
+cd tab-canopy
 bun install
+bun build  # for Chrome
+# OR
+bun build:firefox  # for Firefox
 ```
 
-### Development
+2. **Load into your browser:**
 
-```bash
-# Start development server (Chrome)
-bun dev
-
-# Start development server (Firefox)
-bun dev:firefox
-```
-
-This will:
-1. Build the extension in development mode with hot reload
-2. Output to `.output/chrome-mv3-dev` or `.output/firefox-mv3-dev`
-3. Watch for file changes and rebuild automatically
-
-### Loading the Extension
-
-#### Chrome
+**Chrome:**
 1. Open `chrome://extensions/`
-2. Enable "Developer mode"
+2. Enable "Developer mode" (toggle in top-right)
 3. Click "Load unpacked"
-4. Select `.output/chrome-mv3-dev` directory (or `chrome-mv3` for production builds)
+4. Select the `.output/chrome-mv3` directory
 
-#### Firefox
+**Firefox:**
 1. Open `about:debugging#/runtime/this-firefox`
 2. Click "Load Temporary Add-on"
-3. Select any file in `.output/firefox-mv3-dev` directory (or `firefox-mv3` for production builds)
+3. Select any file in `.output/firefox-mv3` directory
 
-### Building for Production
+**Note:** Firefox temporary extensions are removed when the browser closes. You'll need to reload it each time.
 
-```bash
-# Build for Chrome
-bun build
+### For Developers / Contributors
 
-# Build for Firefox
-bun build:firefox
-
-# Create distribution zip
-bun zip
-bun zip:firefox
-```
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup instructions.
 
 ## Project Structure
 
 ```
 tabcanopy/
 ├── packages/
-│   └── extension/           # Browser extension package
-│       ├── entrypoints/
-│       │   ├── background/  # Service worker (MV3)
-│       │   ├── sidepanel/   # Side panel React app
-│       │   └── content.ts   # Content script
-│       ├── schema/          # Drizzle ORM schema & migrations
-│       └── src/             # Shared utilities
-├── e2e/                     # Playwright E2E tests
+│   ├── extension/           # Browser extension package
+│   │   ├── entrypoints/
+│   │   │   ├── background/  # Service worker (MV3)
+│   │   │   ├── sidepanel/   # Side panel React app
+│   │   │   └── content.ts   # Content script
+│   │   ├── schema/          # Drizzle ORM schema & migrations
+│   │   └── src/             # Shared utilities
+│   └── e2e-tests/           # Playwright E2E tests
 └── package.json             # Monorepo root
 ```
+
+## Development
+
+Want to contribute? See [CONTRIBUTING.md](CONTRIBUTING.md) for full setup instructions.
+
+### Quick Start for Development
+
+```bash
+# Install dependencies
+bun install
+
+# Start development server with hot reload
+bun dev                # Chrome
+bun dev:firefox        # Firefox
+
+# Load from .output/chrome-mv3-dev or .output/firefox-mv3-dev
+```
+
+### Prerequisites
+
+- [Bun](https://bun.sh/) 1.3.3 or higher
+- Node.js (for Playwright)
 
 ## Development Scripts
 
@@ -173,8 +202,15 @@ bun db:generate
 - Broadcast system keeps all clients in sync
 - Move intents allow UI to declare pending operations
 
+## Publishing
+
+Tab Canopy includes GitHub Actions workflows for automated publishing to both Chrome Web Store and Firefox Add-ons. See [docs/PUBLISHING.md](docs/PUBLISHING.md) for setup instructions.
+
 ## Contributing
 
+We welcome contributions! See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed instructions.
+
+Quick summary:
 1. Fork the repository
 2. Create a feature branch
 3. Make your changes

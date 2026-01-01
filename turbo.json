@@ -106,10 +106,7 @@
 				"packages/extension/tsconfig.json"
 			]
 		},
-		"zip": {
-			"dependsOn": ["build"],
-			"outputs": ["*.zip"]
-		},
+		"zip": {},
 		"zip:firefox": {
 			"dependsOn": ["build:firefox"],
 			"outputs": ["*.zip"]
