@@ -14,7 +14,7 @@
 
 ## Demo
 
-<video src="raw/main/docs/demo.mp4" width="300" />
+https://github.com/user-attachments/assets/e597bb23-945f-439b-901e-4cfa1fd07842
 
 > See Tab Canopy in action - tree-based organization, drag & drop, and real-time sync.
 
