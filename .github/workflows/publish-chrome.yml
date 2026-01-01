@@ -37,19 +37,29 @@ jobs:
 
       - name: Upload to Chrome Web Store
         run: |
-          # Get access token from service account
-          ACCESS_TOKEN=$(gcloud auth print-access-token)
+          # Get access token from service account with Chrome Web Store scope
+          ACCESS_TOKEN=$(gcloud auth print-access-token --scopes=https://www.googleapis.com/auth/chromewebstore)
           
           # Find the zip file
           ZIP_FILE=$(find packages/extension/.output -name "*-chrome.zip" -type f)
           echo "Found zip file: $ZIP_FILE"
           
           # Upload the extension
-          curl -X PUT \
+          RESPONSE=$(curl -w "\nHTTP_STATUS:%{http_code}" -X PUT \
             -H "Authorization: Bearer $ACCESS_TOKEN" \
             -H "x-goog-api-version: 2" \
             -T "$ZIP_FILE" \
-            https://www.googleapis.com/upload/chromewebstore/v1.1/items/${{ secrets.CHROME_EXTENSION_ID }}
+            https://www.googleapis.com/upload/chromewebstore/v1.1/items/${{ secrets.CHROME_EXTENSION_ID }})
           
-          echo "Extension uploaded to Chrome Web Store (draft mode)"
-          echo "Manual publish still required from dashboard"
+          HTTP_STATUS=$(echo "$RESPONSE" | grep HTTP_STATUS | cut -d: -f2)
+          BODY=$(echo "$RESPONSE" | sed '/HTTP_STATUS/d')
+          
+          echo "Response: $BODY"
+          
+          if [ "$HTTP_STATUS" -eq 200 ]; then
+            echo "✅ Extension uploaded successfully to Chrome Web Store (draft mode)"
+            echo "Manual publish still required from dashboard"
+          else
+            echo "❌ Upload failed with status: $HTTP_STATUS"
+            exit 1
+          fi
