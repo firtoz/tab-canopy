@@ -58,7 +58,11 @@ jobs:
           
           if [ "$HTTP_STATUS" -eq 200 ]; then
             echo "✅ Extension uploaded successfully to Chrome Web Store (draft mode)"
-            echo "Manual publish still required from dashboard"
+            echo ""
+            echo "📋 Next step: Manually publish from dashboard"
+            echo "🔗 https://chrome.google.com/webstore/devconsole/${{ secrets.CHROME_EXTENSION_ID }}"
+            echo ""
+            echo "💡 Click the link above, review the changes, and click 'Submit for review'"
           else
             echo "❌ Upload failed with status: $HTTP_STATUS"
             exit 1
