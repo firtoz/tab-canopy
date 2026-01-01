@@ -1,6 +1,12 @@
 <div align="center">
   <img src="packages/extension/assets/icons/base-icon.png" alt="Tab Canopy Logo" width="128"/>
   <h1>Tab Canopy</h1>
+  
+  [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
+  [![Chrome Web Store](https://img.shields.io/badge/Chrome-v0.1.1-brightgreen.svg)](https://chrome.google.com/webstore/detail/kghaoebcnfieahcepdmalkjhdnfnlodg)
+  [![Firefox](https://img.shields.io/badge/Firefox-planned-orange.svg)](https://github.com/firtoz/tab-canopy)
+  [![Build Status](https://github.com/firtoz/tab-canopy/workflows/Publish%20to%20Chrome%20Web%20Store/badge.svg)](https://github.com/firtoz/tab-canopy/actions)
+  
   <p><strong>⚠️ Alpha / Experimental</strong></p>
   <p>A browser extension for hierarchical tab management with a tree-based interface.</p>
   <p><em>Started as an experiment with IndexedDB syncing for TanStack collections,<br/>grew into a tool I actually use daily. Rough edges expected—contributions welcome!</em></p>
