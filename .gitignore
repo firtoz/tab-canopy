@@ -30,6 +30,9 @@ web-ext.config.ts
 .env
 .env.*.turbo
 
+# GitHub Actions credentials (from google-github-actions/auth)
+gha-creds-*.json
+
 # Playwright
 playwright-report
 test-results    
