@@ -531,6 +531,7 @@ export const WindowGroup = ({
 									<DraggableTab
 										id={item.id}
 										windowId={win.browserWindowId}
+										windowFocused={win.focused}
 										tab={item.tab}
 										isSelected={isSelected}
 										isPartOfDrag={isPartOfDrag}

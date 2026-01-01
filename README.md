@@ -5,7 +5,7 @@
   [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
   [![Chrome Web Store](https://img.shields.io/badge/Chrome-v0.1.1-brightgreen.svg)](https://chrome.google.com/webstore/detail/kghaoebcnfieahcepdmalkjhdnfnlodg)
   [![Firefox](https://img.shields.io/badge/Firefox-planned-orange.svg)](https://github.com/firtoz/tab-canopy)
-  [![Build Status](https://github.com/firtoz/tab-canopy/workflows/Publish%20to%20Chrome%20Web%20Store/badge.svg)](https://github.com/firtoz/tab-canopy/actions)
+  [![Actions Status](https://github.com/firtoz/tab-canopy/actions/workflows/publish-chrome.yml/badge.svg)](https://github.com/firtoz/tab-canopy/actions)
   
   <p><strong>⚠️ Alpha / Experimental</strong></p>
   <p>A browser extension for hierarchical tab management with a tree-based interface.</p>
@@ -41,6 +41,45 @@ If you're interested in browser extension development, React, or database syncin
 - **Multi-browser Support**: Compatible with Chrome and Firefox
 
 See [TODO.md](TODO.md) for the roadmap of planned features and improvements.
+
+## Quick Start
+
+### Using Tab Canopy
+
+Once installed, using Tab Canopy is simple:
+
+1. **Open the side panel** - Click the Tab Canopy icon in your browser toolbar
+2. **View your tabs** - All open tabs appear in the side panel organized by window
+3. **Navigate** - Click any tab to switch to it
+4. **Organize with drag & drop**:
+   - Drag a tab up or down to reorder it
+   - Drag a tab onto another tab to make it a child (nested)
+   - Drag a tab to the left to un-nest it
+
+### Pro Tips
+
+- **Collapse/expand branches** - Click the arrow icon next to parent tabs
+- **Multi-level nesting** - Create deep hierarchies to organize complex research or projects
+- **Visual tree lines** - Lines show parent-child relationships at a glance
+- **Right-click for options** - Context menu with additional actions for tabs and windows
+- **Real-time updates** - Changes sync instantly with your browser tabs
+
+### Example Workflow
+
+Organizing a research project:
+
+```
+Research: React Server Components
+├── Official RFC
+├── Tutorials
+│   ├── Building with RSC
+│   └── Migration Guide
+└── Examples
+    ├── Next.js App
+    └── Remix Implementation
+```
+
+Simply drag tabs to create this structure - Tab Canopy remembers your organization!
 
 ## Tech Stack
 

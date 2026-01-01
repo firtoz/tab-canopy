@@ -57,7 +57,7 @@ jobs:
             echo "✅ Extension uploaded successfully to Chrome Web Store (draft mode)"
             
             # Create annotation (visible in Actions UI without drilling down)
-            echo "::notice title=Upload Successful::Extension uploaded as draft. Manually publish from: https://chrome.google.com/webstore/devconsole/${{ vars.CHROME_EXTENSION_ID }}"
+            echo "::notice title=Upload Successful::Extension uploaded as draft. Manually publish from: https://chrome.google.com/webstore/devconsole/${{ vars.CHROME_PUBLISHER_ID }}/${{ vars.CHROME_EXTENSION_ID }}/edit"
             
             # Create job summary with clickable link
             echo "## ✅ Extension Uploaded Successfully" >> $GITHUB_STEP_SUMMARY
@@ -66,7 +66,7 @@ jobs:
             echo "" >> $GITHUB_STEP_SUMMARY
             echo "### 📋 Next Step: Manual Review & Publish" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
-            echo "👉 [Open Chrome Web Store Dashboard](https://chrome.google.com/webstore/devconsole/${{ vars.CHROME_EXTENSION_ID }})" >> $GITHUB_STEP_SUMMARY
+            echo "👉 [Open Chrome Web Store Dashboard](https://chrome.google.com/webstore/devconsole/${{ vars.CHROME_PUBLISHER_ID }}/${{ vars.CHROME_EXTENSION_ID }}/edit)" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
             echo "1. Review the uploaded changes" >> $GITHUB_STEP_SUMMARY
             echo "2. Click **'Submit for review'**" >> $GITHUB_STEP_SUMMARY

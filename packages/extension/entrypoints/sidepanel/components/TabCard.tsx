@@ -18,6 +18,7 @@ import { TabContextMenu } from "./TabContextMenu";
 
 export const TabCard = ({
 	tab,
+	windowFocused,
 	isSelected,
 	onSelect,
 	onEditingChange,
@@ -30,6 +31,7 @@ export const TabCard = ({
 	highlightedDepth,
 }: {
 	tab: schema.Tab;
+	windowFocused: boolean;
 	isSelected: boolean;
 	onSelect: (
 		tabId: number,
@@ -117,8 +119,9 @@ export const TabCard = ({
 				return;
 			}
 
-			// Check for click-to-rename: if tab is already selected and we didn't drag much
+			// Check for click-to-rename: only if window is focused, tab is active, and we didn't drag much
 			if (
+				windowFocused &&
 				tab.active &&
 				mouseDownPos &&
 				!e.ctrlKey &&
@@ -154,6 +157,7 @@ export const TabCard = ({
 			tab.browserTabId,
 			tab.browserWindowId,
 			tab.active,
+			windowFocused,
 			mouseDownPos,
 			onSelect,
 			closeTab,
@@ -246,8 +250,12 @@ export const TabCard = ({
 								// Base hover state - subtle slate
 								"hover:bg-slate-100 dark:hover:bg-slate-800/50":
 									!tab.active && !isSelected && !isEditing,
-								// Active tab (blue) - clear but soft
-								"bg-blue-50 dark:bg-blue-900/20": tab.active && !isSelected,
+								// Active tab in focused window (blue) - clear highlight
+								"bg-blue-50 dark:bg-blue-900/20":
+									tab.active && windowFocused && !isSelected,
+								// Active tab in unfocused window - subtle left border only
+								"border-l-2 border-l-blue-300 dark:border-l-blue-600":
+									tab.active && !windowFocused && !isSelected,
 								// Selected tab (indigo) - distinct from active
 								"bg-indigo-50 dark:bg-indigo-900/20": isSelected,
 								// Drop target - sibling (emerald) or child (blue)
@@ -355,8 +363,12 @@ export const TabCard = ({
 											{
 												"text-slate-700 dark:text-slate-200":
 													!tab.active && !isSelected,
+												// Active tab in focused window - bright blue
 												"text-blue-700 dark:text-blue-300":
-													tab.active && !isSelected,
+													tab.active && windowFocused && !isSelected,
+												// Active tab in unfocused window - muted blue
+												"text-blue-500/70 dark:text-blue-400/70":
+													tab.active && !windowFocused && !isSelected,
 												"text-indigo-700 dark:text-indigo-300": isSelected,
 											},
 										)}

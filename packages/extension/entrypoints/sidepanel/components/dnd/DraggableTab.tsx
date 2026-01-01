@@ -9,6 +9,7 @@ export interface DraggableTabProps {
 	tab: schema.Tab;
 	id: string;
 	windowId: number;
+	windowFocused: boolean;
 	isSelected: boolean;
 	isPartOfDrag?: boolean;
 	isDragging: boolean;
@@ -30,6 +31,7 @@ export function DraggableTab({
 	tab,
 	id,
 	windowId,
+	windowFocused,
 	isSelected,
 	isPartOfDrag,
 	isDragging,
@@ -78,6 +80,7 @@ export function DraggableTab({
 		>
 			<TabCard
 				tab={tab}
+				windowFocused={windowFocused}
 				isSelected={isSelected}
 				onSelect={onSelect}
 				onEditingChange={setIsEditingTitle}

@@ -70,3 +70,4 @@ This document outlines planned features and improvements for TabCanopy.
 
 - [ ] Closing a non-collapsed tab sometimes causes children to disappear when they shouldn't
 - [ ] Dragging a tab or tree to create a new window sometimes causes them to disappear temporarily (they eventually return to original window)
+- [ ] Window renaming does not persist
