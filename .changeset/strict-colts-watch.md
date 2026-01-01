@@ -12,5 +12,6 @@ Infrastructure improvements for release automation:
 - Added GitHub Actions workflow annotations and job summaries for better visibility
 - Fixed .gitignore to exclude Google Cloud credentials files (gha-creds-*.json)
 - Added comprehensive Cursor rules for changeset workflow management
+- Created version-controlled store metadata structure (store-metadata/) for Chrome and Firefox
 
 These changes improve the development workflow but don't affect the extension functionality.
