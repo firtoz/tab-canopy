@@ -40,8 +40,8 @@ jobs:
           # Get access token from service account with Chrome Web Store scope
           ACCESS_TOKEN=$(gcloud auth print-access-token --scopes=https://www.googleapis.com/auth/chromewebstore)
           
-          # Find the zip file
-          ZIP_FILE=$(find packages/extension/.output -name "*-chrome.zip" -type f)
+          # Find the latest zip file (in case multiple versions exist)
+          ZIP_FILE=$(find packages/extension/.output -name "*-chrome.zip" -type f | sort -V | tail -1)
           echo "Found zip file: $ZIP_FILE"
           
           # Upload the extension
