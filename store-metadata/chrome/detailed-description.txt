@@ -2,6 +2,12 @@ Lost in a sea of browser tabs? Organize them like you think.
 
 Tab Canopy brings tree-based organization to your browser tabs. Unlike traditional tab managers that use flat lists or simple groups, Tab Canopy lets you nest tabs hierarchically - perfect for research, development workflows, and complex projects.
 
+🔓 Open Source (MIT License)
+
+Tab Canopy is fully open source. You can inspect the code, fork it, modify it, or contribute improvements. No vendor lock-in, no hidden behaviors.
+
+GitHub: https://github.com/firtoz/tab-canopy
+
 🌳 Why Tree Structure?
 
 Your work isn't linear. You open a main article, then supporting sources, then references from those sources. Tab Canopy mirrors this natural workflow:
@@ -31,9 +37,8 @@ Research Project
 
 ⚠️ Alpha Status
 
-This extension is in active development and experimental. It works well for daily use but has rough edges and missing features. We're open source and actively seeking feedback!
+This extension is in active development. It works well for daily use but has rough edges and missing features. We're actively seeking feedback!
 
-Open Source: https://github.com/firtoz/tab-canopy
 Report Issues: https://github.com/firtoz/tab-canopy/issues
 
 🔒 Privacy & Permissions
