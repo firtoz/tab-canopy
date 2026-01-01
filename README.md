@@ -14,7 +14,7 @@
 
 ## Demo
 
-https://github.com/firtoz/tab-canopy/raw/main/docs/demo.mp4
+<video src="raw/main/docs/demo.mp4" width="300" />
 
 > See Tab Canopy in action - tree-based organization, drag & drop, and real-time sync.
 
