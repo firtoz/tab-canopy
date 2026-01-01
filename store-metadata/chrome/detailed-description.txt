@@ -1,0 +1,45 @@
+Lost in a sea of browser tabs? Organize them like you think.
+
+Tab Canopy brings tree-based organization to your browser tabs. Unlike traditional tab managers that use flat lists or simple groups, Tab Canopy lets you nest tabs hierarchically - perfect for research, development workflows, and complex projects.
+
+🌳 Why Tree Structure?
+
+Your work isn't linear. You open a main article, then supporting sources, then references from those sources. Tab Canopy mirrors this natural workflow:
+
+Research Project
+├── Main Article
+├── Supporting Sources
+│   ├── Study 1
+│   ├── Study 2
+│   └── Background Info
+└── Draft Document
+
+✨ Key Features
+
+• Drag & Drop Organization - Intuitive tree building with smooth drag-and-drop
+• Side Panel Interface - Clean, always-accessible panel that doesn't clutter your screen
+• Multi-Window Support - Manage tabs across all browser windows
+• Real-time Sync - Changes sync instantly between browser and UI
+• Privacy First - All data stays local in your browser. No cloud, no tracking.
+
+🎯 Perfect For
+
+• Researchers juggling multiple sources
+• Developers with docs, code repos, and Stack Overflow
+• Students organizing study materials
+• Anyone who regularly works with 10+ tabs
+
+⚠️ Alpha Status
+
+This extension is in active development and experimental. It works well for daily use but has rough edges and missing features. We're open source and actively seeking feedback!
+
+Open Source: https://github.com/firtoz/tab-canopy
+Report Issues: https://github.com/firtoz/tab-canopy/issues
+
+🔒 Privacy & Permissions
+
+Tab Canopy only requests two permissions:
+• tabs: To read tab titles/URLs and manage positions
+• sidePanel: To display the management interface
+
+No host permissions. No access to page content. All data stored locally using IndexedDB.
