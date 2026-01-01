@@ -5,7 +5,7 @@
   [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
   [![Chrome Web Store](https://img.shields.io/badge/Chrome-v0.1.1-brightgreen.svg)](https://chrome.google.com/webstore/detail/kghaoebcnfieahcepdmalkjhdnfnlodg)
   [![Firefox](https://img.shields.io/badge/Firefox-planned-orange.svg)](https://github.com/firtoz/tab-canopy)
-  [![Actions Status](https://github.com/firtoz/tab-canopy/actions/workflows/publish-chrome.yml/badge.svg)](https://github.com/firtoz/tab-canopy/actions)
+  [![Release Status](https://github.com/firtoz/tab-canopy/actions/workflows/release.yml/badge.svg)](https://github.com/firtoz/tab-canopy/actions)
   
   <p><strong>⚠️ Alpha / Experimental</strong></p>
   <p>A browser extension for hierarchical tab management with a tree-based interface.</p>
@@ -249,7 +249,16 @@ bun db:generate
 
 ## Publishing
 
-Tab Canopy includes GitHub Actions workflows for automated publishing to both Chrome Web Store and Firefox Add-ons. See [docs/PUBLISHING.md](docs/PUBLISHING.md) for setup instructions.
+Tab Canopy uses [Changesets](https://github.com/changesets/changesets) for automated versioning and publishing:
+
+1. **Make changes** → `bun changeset` → **Describe changes**
+2. **Push to main** → **GitHub Actions creates "Version Packages" PR**
+3. **Merge PR** → **Automatically uploads to Chrome Web Store as draft**
+4. **Manually publish** from developer dashboard
+
+See [docs/RELEASING.md](docs/RELEASING.md) for the complete workflow guide.
+
+For initial setup instructions, see [docs/PUBLISHING.md](docs/PUBLISHING.md).
 
 ## Contributing
 
