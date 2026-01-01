@@ -11,6 +11,7 @@ Infrastructure improvements for release automation:
 - Updated README with new release workflow information
 - Added GitHub Actions workflow annotations and job summaries for better visibility
 - Fixed .gitignore to exclude Google Cloud credentials files (gha-creds-*.json)
+- Fixed .gitattributes to properly treat icon PNG files as binary (prevents corruption)
 - Added comprehensive Cursor rules for changeset workflow management
 - Created version-controlled store metadata structure (store-metadata/) for Chrome and Firefox
 
