@@ -1,5 +1,24 @@
 # @tabcanopy/extension
 
+## 0.1.3
+
+### Patch Changes
+
+- [`a7e78f1`](https://github.com/firtoz/tab-canopy/commit/a7e78f197a9450e69e9b328d72331699ff26d415) Thanks [@firtoz](https://github.com/firtoz)! - Remove DevTools panel and event recording system
+
+  - Removed DevToolsPanel UI component and related toggle button
+  - Removed event recording/replay system (DevToolsProvider, useDevTools hook)
+  - Removed all recordUserEvent calls throughout the codebase
+  - Removed TabTreePreview component (was only used by DevTools)
+  - Cleaned up unused state management related to DevTools
+  - This functionality has been superseded by comprehensive e2e tests
+
+- [`a7e78f1`](https://github.com/firtoz/tab-canopy/commit/a7e78f197a9450e69e9b328d72331699ff26d415) Thanks [@firtoz](https://github.com/firtoz)! - Fix middle-click to close tabs and windows
+
+  - Fixed middle-click (auxclick) on tabs not closing them - the handler was incorrectly placed in onClick instead of onAuxClick
+  - Fixed middle-click on windows to properly use onAuxClick event handler
+  - Added middle-click handler to DraggableTab wrapper for reliable event handling
+
 ## 0.1.2
 
 ### Patch Changes
