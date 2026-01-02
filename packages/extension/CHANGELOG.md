@@ -1,5 +1,18 @@
 # @tabcanopy/extension
 
+## 0.1.4
+
+### Patch Changes
+
+- [`46598bb`](https://github.com/firtoz/tab-canopy/commit/46598bbc7cc76c85d6c0bb214a61e90697407d69) Thanks [@firtoz](https://github.com/firtoz)! - Fix Chrome Web Store upload failure detection and CI job summary
+
+  - Fixed publish-chrome.ts to properly parse API response and check uploadState
+  - Script now throws error when uploadState is "FAILURE" instead of incorrectly reporting success
+  - Added proper TypeScript types for Chrome Web Store API response
+  - Added detailed error messages showing error_code and error_detail from API
+  - Fixed GitHub Actions workflow to show job summary when packages are published
+  - Prevents silent failures during release process
+
 ## 0.1.3
 
 ### Patch Changes
