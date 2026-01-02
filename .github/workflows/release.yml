@@ -47,7 +47,7 @@ jobs:
           CHROME_PUBLISHER_ID: ${{ vars.CHROME_PUBLISHER_ID }}
 
       - name: Add Job Summary and Notice
-        if: steps.changesets.outputs.published == 'true'
+        if: steps.changesets.outputs.published == 'true' || steps.changesets.outputs.publishedPackages != '[]'
         run: |
           # Add notice annotation for easy visibility
           echo "::notice title=Upload Successful::Extension uploaded as draft. Manually publish from: https://chrome.google.com/webstore/devconsole/${{ vars.CHROME_PUBLISHER_ID }}/${{ vars.CHROME_EXTENSION_ID }}/edit"

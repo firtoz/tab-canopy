@@ -10,6 +10,27 @@ import { $ } from "bun";
 
 const rootDir = join(import.meta.dir, "..");
 
+type ChromeWebStoreUploadResponse =
+	| {
+			kind: string;
+			id: string;
+			uploadState: "SUCCESS";
+	  }
+	| {
+			kind: string;
+			id: string;
+			uploadState: "FAILURE";
+			itemError: Array<{
+				error_code: string;
+				error_detail: string;
+			}>;
+	  }
+	| {
+			kind: string;
+			id: string;
+			uploadState: "IN_PROGRESS";
+	  };
+
 export async function publishChrome(): Promise<void> {
 	console.log("📦 Building extension for Chrome...");
 
@@ -59,10 +80,36 @@ export async function publishChrome(): Promise<void> {
   -T ${zipPath} \
   https://www.googleapis.com/upload/chromewebstore/v1.1/items/${extensionId}`
 		.cwd(rootDir)
-		.nothrow();
+		.nothrow()
+		.text();
 
-	if (uploadProc.exitCode !== 0) {
+	if (!uploadProc) {
 		throw new Error("Failed to upload to Chrome Web Store");
+	}
+
+	// Parse and check the response
+	let response: ChromeWebStoreUploadResponse;
+	try {
+		response = JSON.parse(uploadProc);
+	} catch (_error) {
+		console.error("\n❌ Failed to parse upload response:", uploadProc);
+		throw new Error("Invalid response from Chrome Web Store API");
+	}
+
+	// Check for upload failure
+	if (response.uploadState === "FAILURE") {
+		const errorDetails = response.itemError
+			?.map((err) => `${err.error_code}: ${err.error_detail}`)
+			.join(", ");
+		throw new Error(
+			`Chrome Web Store upload failed: ${errorDetails || "Unknown error"}`,
+		);
+	}
+
+	if (response.uploadState !== "SUCCESS") {
+		throw new Error(
+			`Unexpected upload state: ${response.uploadState || "unknown"}`,
+		);
 	}
 
 	const publisherId =
