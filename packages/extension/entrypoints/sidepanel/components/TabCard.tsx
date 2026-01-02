@@ -4,7 +4,6 @@ import { Info, Puzzle, Volume2, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type * as schema from "@/schema/src/schema";
 import { cn } from "../lib/cn";
-import { useDevTools } from "../lib/devtools";
 import { isDropData } from "../lib/dnd/dnd-types";
 import { useTabActions } from "../store/useTabActions";
 import { IconCollapsed } from "./icons/IconCollapsed";
@@ -54,7 +53,6 @@ export const TabCard = ({
 		y: number;
 	} | null>(null);
 	const inputRef = useRef<HTMLInputElement>(null);
-	const { recordUserEvent } = useDevTools();
 
 	// Get actions from Zustand store
 	const { toggleCollapse, closeTab, renameTab, newTabAsChild } =
@@ -109,15 +107,21 @@ export const TabCard = ({
 		setMouseDownPos({ x: e.clientX, y: e.clientY });
 	}, []);
 
+	// Middle click (auxclick) closes the tab
+	const handleAuxClick = useCallback(
+		(e: React.MouseEvent) => {
+			if (e.button === 1) {
+				e.preventDefault();
+				e.stopPropagation();
+				closeTab(tab.browserTabId);
+			}
+		},
+		[tab.browserTabId, closeTab],
+	);
+
 	const handleClick = useCallback(
 		(e: React.MouseEvent) => {
 			e.preventDefault();
-
-			// Middle click closes the tab
-			if (e.button === 1) {
-				closeTab(tab.browserTabId);
-				return;
-			}
 
 			// Check for click-to-rename: only if window is focused, tab is active, and we didn't drag much
 			if (
@@ -139,15 +143,6 @@ export const TabCard = ({
 				}
 			}
 
-			// Record tab activation event
-			recordUserEvent({
-				type: "user.tabActivate",
-				data: {
-					tabId: tab.browserTabId,
-					windowId: tab.browserWindowId,
-				},
-			});
-
 			onSelect(tab.browserTabId, {
 				ctrlKey: e.ctrlKey || e.metaKey,
 				shiftKey: e.shiftKey,
@@ -155,13 +150,10 @@ export const TabCard = ({
 		},
 		[
 			tab.browserTabId,
-			tab.browserWindowId,
 			tab.active,
 			windowFocused,
 			mouseDownPos,
 			onSelect,
-			closeTab,
-			recordUserEvent,
 			handleStartRename,
 		],
 	);
@@ -270,6 +262,7 @@ export const TabCard = ({
 								"cursor-pointer": !isDragging && !isEditing,
 							})}
 							onClick={isEditing ? undefined : handleClick}
+							onAuxClick={isEditing ? undefined : handleAuxClick}
 							onMouseDown={isEditing ? undefined : handleMouseDown}
 							onKeyDown={
 								isEditing

@@ -266,6 +266,7 @@ export const test = base.extend<ExtensionFixtures>({
 		const args = [
 			`--disable-extensions-except=${extensionPath}`,
 			`--load-extension=${extensionPath}`,
+			"--disable-features=GlobalShortcutsPortal",
 			"--no-first-run",
 			"--disable-infobars",
 		];

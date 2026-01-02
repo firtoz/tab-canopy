@@ -18,13 +18,11 @@ import { browser } from "wxt/browser";
 import type * as schema from "@/schema/src/schema";
 import {
 	useManagedWindowMove,
-	useRegisterStateGetter,
 	useResetDatabase,
 	useSendMoveIntent,
 	useTestActions,
 } from "../App";
 import { cn } from "../lib/cn";
-import { useDevTools } from "../lib/devtools";
 import { isDropData } from "../lib/dnd/dnd-types";
 import {
 	exposeBrowserTestActions,
@@ -58,9 +56,7 @@ export const TabManagerContent = () => {
 	const resetDatabase = useResetDatabase();
 	const sendMoveIntent = useSendMoveIntent();
 	const managedWindowMove = useManagedWindowMove();
-	const registerStateGetter = useRegisterStateGetter();
 	const testActions = useTestActions();
-	const { recordUserEvent } = useDevTools();
 	const [isResetting, setIsResetting] = useState(false);
 	const { setCollections } = useTabActions();
 
@@ -77,14 +73,6 @@ export const TabManagerContent = () => {
 	useEffect(() => {
 		setCollections(tabCollection, windowCollection);
 	}, [tabCollection, windowCollection, setCollections]);
-
-	// Register state getter for DevTools snapshots
-	useEffect(() => {
-		registerStateGetter(() => ({
-			windows: windows ?? [],
-			tabs: tabs ?? [],
-		}));
-	}, [registerStateGetter, windows, tabs]);
 
 	// Expose current tree state to Playwright tests (updates when state changes)
 	useEffect(() => {
@@ -165,27 +153,12 @@ export const TabManagerContent = () => {
 
 			const parts = (event.active.id as string).split("-");
 			const draggedTabId = Number.parseInt(parts[parts.length - 1], 10);
-			const windowIdPart = Number.parseInt(parts[parts.length - 2], 10);
 
 			if (!selectedTabIds.has(draggedTabId)) {
 				setSelectedTabIds(new Set([draggedTabId]));
 			}
-
-			// Record user event for DevTools
-			const selectedIds = selectedTabIds.has(draggedTabId)
-				? Array.from(selectedTabIds)
-				: [draggedTabId];
-
-			recordUserEvent({
-				type: "user.dragStart",
-				data: {
-					tabId: draggedTabId,
-					windowId: windowIdPart,
-					selectedTabIds: selectedIds,
-				},
-			});
 		},
-		[selectedTabIds, recordUserEvent],
+		[selectedTabIds],
 	);
 
 	// const handleDragOver = useCallback((event: DragOverEvent) => {
@@ -215,69 +188,6 @@ export const TabManagerContent = () => {
 			// console.log("handleDragEnd", event);
 			// console.log("event.over", event.over);
 			let dropData = event.over?.data?.current;
-
-			// Get info for recording before any early returns
-			const allItemsForRecord = getAllItems();
-			const activeItemForRecord = allItemsForRecord.find(
-				(item) => item.id === event.active.id,
-			);
-			const draggedTabIdForRecord = activeItemForRecord?.tabId;
-			const draggedWindowIdForRecord = activeItemForRecord?.windowId;
-			const selectedIdsForRecord =
-				draggedTabIdForRecord && selectedTabIds.has(draggedTabIdForRecord)
-					? Array.from(selectedTabIds)
-					: draggedTabIdForRecord
-						? [draggedTabIdForRecord]
-						: [];
-
-			// Record the drag end event
-			if (
-				draggedTabIdForRecord !== undefined &&
-				draggedWindowIdForRecord !== undefined
-			) {
-				let dropTarget: Parameters<typeof recordUserEvent>[0] extends {
-					data: infer D;
-				}
-					? D extends { dropTarget: infer T }
-						? T
-						: never
-					: never = null;
-
-				if (isDropData(dropData)) {
-					if (dropData.type === "new-window") {
-						dropTarget = { type: "new-window" };
-					} else if (dropData.type === "sibling") {
-						dropTarget = {
-							type: "sibling",
-							windowId: dropData.windowId,
-							tabId: dropData.tabId,
-							ancestorId: dropData.ancestorId,
-						};
-					} else if (dropData.type === "child") {
-						dropTarget = {
-							type: "child",
-							windowId: dropData.windowId,
-							tabId: dropData.tabId,
-						};
-					} else if (dropData.type === "gap") {
-						dropTarget = {
-							type: "gap",
-							windowId: dropData.windowId,
-							slot: dropData.slot,
-						};
-					}
-				}
-
-				recordUserEvent({
-					type: "user.dragEnd",
-					data: {
-						tabId: draggedTabIdForRecord,
-						windowId: draggedWindowIdForRecord,
-						selectedTabIds: selectedIdsForRecord,
-						dropTarget,
-					},
-				});
-			}
 
 			if (!isDropData(dropData)) {
 				setActiveId(null);
@@ -687,7 +597,6 @@ export const TabManagerContent = () => {
 			selectedTabIds,
 			tabs,
 			tabCollection,
-			recordUserEvent,
 			sendMoveIntent,
 			managedWindowMove.end, // Tell background script to ignore these tab detach/attach events
 			managedWindowMove.start,

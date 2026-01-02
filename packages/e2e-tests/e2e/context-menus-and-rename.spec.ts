@@ -28,29 +28,60 @@ test.describe("Middle-Click Actions", () => {
 		expect(closedTab).toBeUndefined();
 	});
 
-	test("middle-click closes a window", async ({
-		context,
-		sidepanel,
-		treeHelpers,
-	}) => {
-		// Create a new window with a tab
-		const newWindow = await context.newPage();
-		await newWindow.goto("about:blank?new-window");
-		await sidepanel.bringToFront();
+	test("middle-click closes a window", async ({ sidepanel, treeHelpers }) => {
+		// Get initial window count
+		const helpersBefore = await treeHelpers.getHelpers();
+		const initialWindows = helpersBefore.getWindows();
+		const initialWindowCount = initialWindows.length;
 
-		// Wait for the tab to appear
-		const tabInfo = await treeHelpers.waitForTab("about:blank?new-window");
-		const windowId = tabInfo.browserWindowId;
+		// Create a new window using the + button in the header
+		const plusButton = sidepanel.locator('button[title="New window"]');
+		await plusButton.click();
 
-		// Find the window header and middle-click it
-		const windowHeader = sidepanel.locator(`text=Window`).first();
-		await windowHeader.click({ button: "middle" });
+		// Wait for new window to appear
+		await sidepanel.waitForTimeout(1000);
+
+		// Get the new window ID
+		const helpersAfter = await treeHelpers.getHelpers();
+		const windowsAfter = helpersAfter.getWindows();
+		expect(windowsAfter.length).toBe(initialWindowCount + 1);
+
+		// Find the new window (the one that wasn't in the initial list)
+		const newWindow = windowsAfter.find(
+			(w) => !initialWindows.some((iw) => iw.id === w.id),
+		);
+		if (!newWindow) {
+			throw new Error("New window not found after creation");
+		}
+		const newWindowId = newWindow.id;
+
+		// Find the window header that does NOT have "(current)" - that's the new window
+		// The new window won't be focused because we're staying in the sidepanel
+		const windowHeaders = sidepanel.locator("text=Window").all();
+		const allHeaders = await windowHeaders;
+
+		// Find the header that is just "Window" without "(current)"
+		let targetHeader = null;
+		for (const header of allHeaders) {
+			const text = await header.textContent();
+			if (text && !text.includes("(current)")) {
+				targetHeader = header;
+				break;
+			}
+		}
+
+		if (!targetHeader) {
+			throw new Error("Could not find non-current window header");
+		}
+
+		// Middle-click the new window header
+		await targetHeader.click({ button: "middle" });
 
 		// Wait for window to close
 		await sidepanel.waitForTimeout(500);
-		const helpers = await treeHelpers.getHelpers();
-		const windows = helpers.getWindows();
-		const closedWindow = windows.find((w) => w.id === windowId);
+		const helpersFinal = await treeHelpers.getHelpers();
+		const windowsFinal = helpersFinal.getWindows();
+		const closedWindow = windowsFinal.find((w) => w.id === newWindowId);
 		expect(closedWindow).toBeUndefined();
 	});
 });

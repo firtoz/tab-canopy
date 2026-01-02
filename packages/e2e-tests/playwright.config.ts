@@ -55,6 +55,7 @@ export default defineConfig({
 					args: [
 						`--disable-extensions-except=${extensionPath}`,
 						`--load-extension=${extensionPath}`,
+						"--disable-features=GlobalShortcutsPortal",
 						"--no-first-run",
 						"--disable-infobars",
 					],

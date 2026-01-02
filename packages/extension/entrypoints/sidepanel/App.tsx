@@ -12,10 +12,8 @@ import {
 	useState,
 } from "react";
 import * as schema from "@/schema/src/schema";
-import { DevToolsPanel, DevToolsToggle } from "./components/dev/DevToolsPanel";
 import { TabManagerContent } from "./components/TabManagerContent";
 import { createIDBTransportAdapter } from "./lib/db/createIDBTransportAdapter";
-import { DevToolsProvider } from "./lib/devtools";
 
 const DB_NAME = "tabcanopy.db";
 
@@ -25,8 +23,6 @@ const DB_NAME = "tabcanopy.db";
 
 import type { UiMoveIntentData } from "@/src/idb-transport";
 
-type StateGetter = () => { windows: schema.Window[]; tabs: schema.Tab[] };
-
 interface BackgroundApi {
 	resetDatabase: () => Promise<void>;
 	sendMoveIntent: (moves: UiMoveIntentData[]) => Promise<void>;
@@ -34,7 +30,6 @@ interface BackgroundApi {
 		start: (tabIds: number[]) => Promise<void>;
 		end: () => void;
 	};
-	registerStateGetter: (fn: StateGetter) => void;
 }
 
 const BackgroundApiContext = createContext<BackgroundApi | null>(null);
@@ -61,14 +56,6 @@ export const useManagedWindowMove = () => {
 		throw new Error("useManagedWindowMove must be used within App");
 	}
 	return ctx.managedWindowMove;
-};
-
-export const useRegisterStateGetter = () => {
-	const ctx = useContext(BackgroundApiContext);
-	if (!ctx) {
-		throw new Error("useRegisterStateGetter must be used within App");
-	}
-	return ctx.registerStateGetter;
 };
 
 // ============================================================================
@@ -103,7 +90,6 @@ export const useTestActions = () => {
 function App() {
 	const [isReady, setIsReady] = useState(false);
 	const [connectionKey, setConnectionKey] = useState(0);
-	const stateGetterRef = useRef<StateGetter>(() => ({ windows: [], tabs: [] }));
 	const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 	const prevAdapterRef = useRef<ReturnType<
 		typeof createIDBTransportAdapter
@@ -182,9 +168,6 @@ function App() {
 				start: startManagedWindowMove,
 				end: endManagedWindowMove,
 			},
-			registerStateGetter: (fn: StateGetter) => {
-				stateGetterRef.current = fn;
-			},
 		}),
 		[
 			resetDatabase,
@@ -209,10 +192,6 @@ function App() {
 		],
 	);
 
-	const getCurrentState = useMemo(() => {
-		return () => stateGetterRef.current();
-	}, []);
-
 	useEffect(() => {
 		// Small delay to ensure connection is established
 		const timer = setTimeout(() => {
@@ -236,19 +215,15 @@ function App() {
 	return (
 		<BackgroundApiContext.Provider value={backgroundApiValue}>
 			<TestActionsContext.Provider value={testActionsValue}>
-				<DevToolsProvider getCurrentState={getCurrentState}>
-					<DrizzleIndexedDBProvider
-						key={connectionKey}
-						dbName={DB_NAME}
-						schema={schema}
-						dbCreator={dbCreator}
-						onSyncReady={handleSyncReady}
-					>
-						<TabManagerContent />
-						<DevToolsPanel />
-						<DevToolsToggle />
-					</DrizzleIndexedDBProvider>
-				</DevToolsProvider>
+				<DrizzleIndexedDBProvider
+					key={connectionKey}
+					dbName={DB_NAME}
+					schema={schema}
+					dbCreator={dbCreator}
+					onSyncReady={handleSyncReady}
+				>
+					<TabManagerContent />
+				</DrizzleIndexedDBProvider>
 			</TestActionsContext.Provider>
 		</BackgroundApiContext.Provider>
 	);

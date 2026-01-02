@@ -1,7 +1,8 @@
 import { useDraggable } from "@dnd-kit/core";
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import type * as schema from "@/schema/src/schema";
 import type { DragDataTab } from "../../lib/dnd/dnd-types";
+import { useTabActions } from "../../store/useTabActions";
 import { TabCard } from "../TabCard";
 import { TabDropZones } from "./TabDropZones";
 
@@ -44,6 +45,20 @@ export function DraggableTab({
 	ancestorIds,
 }: DraggableTabProps) {
 	const [isEditingTitle, setIsEditingTitle] = useState(false);
+	const { closeTab } = useTabActions();
+
+	// Middle click (auxclick) closes the tab - handler on wrapper to ensure it fires
+	const handleAuxClick = useCallback(
+		(e: React.MouseEvent) => {
+			if (e.button === 1) {
+				e.preventDefault();
+				e.stopPropagation();
+				closeTab(tab.browserTabId);
+			}
+		},
+		[tab.browserTabId, closeTab],
+	);
+
 	const dragData: DragDataTab = useMemo(
 		() => ({
 			type: "tab",
@@ -77,6 +92,7 @@ export function DraggableTab({
 			className="relative"
 			data-tab-id={tab.browserTabId}
 			data-selected={isSelected}
+			onAuxClick={handleAuxClick}
 		>
 			<TabCard
 				tab={tab}

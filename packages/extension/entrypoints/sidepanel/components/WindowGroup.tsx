@@ -10,7 +10,6 @@ import { Plus, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type * as schema from "@/schema/src/schema";
 import { cn } from "../lib/cn";
-import { useDevTools } from "../lib/devtools";
 import { isDropData } from "../lib/dnd/dnd-types";
 import { buildTabTree, flattenTree } from "../lib/tree";
 import { useTabActions } from "../store/useTabActions";
@@ -69,7 +68,6 @@ export const WindowGroup = ({
 	const windowCollection = useCollection("windowTable");
 	const { active } = useDndContext();
 	const isDragging = active !== null;
-	const { recordUserEvent } = useDevTools();
 	const [isEditingTitle, setIsEditingTitle] = useState(false);
 	const [editTitleValue, setEditTitleValue] = useState("");
 	const windowInputRef = useRef<HTMLInputElement>(null);
@@ -129,20 +127,10 @@ export const WindowGroup = ({
 						newSelected.add(items[i].tabId);
 					}
 					setSelectedTabIds(newSelected);
-					recordUserEvent({
-						type: "user.selectionChange",
-						data: {
-							tabId,
-							windowId: win.browserWindowId,
-							action: "range",
-							selectedTabIds: Array.from(newSelected),
-						},
-					});
 				}
 			} else if (options.ctrlKey) {
 				// Toggle selection (ctrl+click)
 				const newSet = new Set(selectedTabIds);
-				const action = newSet.has(tabId) ? "remove" : "add";
 				if (newSet.has(tabId)) {
 					newSet.delete(tabId);
 				} else {
@@ -150,15 +138,6 @@ export const WindowGroup = ({
 				}
 				setSelectedTabIds(newSet);
 				setLastSelectedTabId(tabId);
-				recordUserEvent({
-					type: "user.selectionChange",
-					data: {
-						tabId,
-						windowId: win.browserWindowId,
-						action,
-						selectedTabIds: Array.from(newSet),
-					},
-				});
 			} else {
 				// Single selection (normal click)
 				const item = items.find((i) => i.tabId === tabId);
@@ -168,15 +147,6 @@ export const WindowGroup = ({
 				}
 				setSelectedTabIds(new Set([tabId]));
 				setLastSelectedTabId(tabId);
-				recordUserEvent({
-					type: "user.selectionChange",
-					data: {
-						tabId,
-						windowId: win.browserWindowId,
-						action: "set",
-						selectedTabIds: [tabId],
-					},
-				});
 			}
 		},
 		[
@@ -185,8 +155,6 @@ export const WindowGroup = ({
 			lastSelectedTabId,
 			setSelectedTabIds,
 			setLastSelectedTabId,
-			recordUserEvent,
-			win.browserWindowId,
 		],
 	);
 
@@ -281,18 +249,21 @@ export const WindowGroup = ({
 		return null;
 	}, [activeDropData, win.browserWindowId, items]);
 
-	const handleWindowClick = useCallback(
+	// Middle click (auxclick) closes the window
+	const handleWindowAuxClick = useCallback(
 		(e: React.MouseEvent) => {
-			// Middle click closes the window
 			if (e.button === 1) {
+				e.preventDefault();
 				e.stopPropagation();
 				closeWindow(win.browserWindowId);
-				return;
 			}
-			browser.windows.update(win.browserWindowId, { focused: true });
 		},
 		[win.browserWindowId, closeWindow],
 	);
+
+	const handleWindowClick = useCallback(() => {
+		browser.windows.update(win.browserWindowId, { focused: true });
+	}, [win.browserWindowId]);
 
 	const handleToggleWindowCollapse = useCallback(() => {
 		console.log(
@@ -303,14 +274,6 @@ export const WindowGroup = ({
 			"window.id:",
 			win.id,
 		);
-
-		// Record user event for DevTools
-		recordUserEvent({
-			type: "user.toggleWindowCollapse",
-			data: {
-				windowId: win.browserWindowId,
-			},
-		});
 
 		// Update the window's collapsed state in the database
 		// The IDB proxy will automatically broadcast this change to all connected clients
@@ -325,7 +288,7 @@ export const WindowGroup = ({
 		});
 
 		console.log("[WindowGroup] windowCollection.update() called");
-	}, [win, windowCollection, recordUserEvent]);
+	}, [win, windowCollection]);
 
 	const handleCloseWindow = useCallback(
 		(e: React.MouseEvent) => {
@@ -394,6 +357,7 @@ export const WindowGroup = ({
 								isCurrentWindow && "text-blue-600 dark:text-blue-400",
 							)}
 							onClick={isEditingTitle ? undefined : handleWindowClick}
+							onAuxClick={isEditingTitle ? undefined : handleWindowAuxClick}
 							onMouseDown={isEditingTitle ? undefined : handleWindowClick}
 							onKeyDown={
 								isEditingTitle
@@ -401,7 +365,7 @@ export const WindowGroup = ({
 									: (e) => {
 											if (e.key === "Enter" || e.key === " ") {
 												e.preventDefault();
-												handleWindowClick(e as unknown as React.MouseEvent);
+												handleWindowClick();
 											}
 										}
 							}
