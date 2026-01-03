@@ -20,6 +20,7 @@ import {
 	useManagedWindowMove,
 	useResetDatabase,
 	useSendMoveIntent,
+	useSendPendingChildIntent,
 	useTestActions,
 } from "../App";
 import { cn } from "../lib/cn";
@@ -55,6 +56,7 @@ export const TabManagerContent = () => {
 	const tabCollection = useCollection("tabTable");
 	const resetDatabase = useResetDatabase();
 	const sendMoveIntent = useSendMoveIntent();
+	const sendPendingChildIntent = useSendPendingChildIntent();
 	const managedWindowMove = useManagedWindowMove();
 	const testActions = useTestActions();
 	const [isResetting, setIsResetting] = useState(false);
@@ -71,8 +73,19 @@ export const TabManagerContent = () => {
 
 	// Provide collections to Zustand store
 	useEffect(() => {
-		setCollections(tabCollection, windowCollection);
-	}, [tabCollection, windowCollection, setCollections]);
+		setCollections(
+			tabCollection,
+			windowCollection,
+			sendMoveIntent,
+			sendPendingChildIntent,
+		);
+	}, [
+		tabCollection,
+		windowCollection,
+		sendMoveIntent,
+		sendPendingChildIntent,
+		setCollections,
+	]);
 
 	// Expose current tree state to Playwright tests (updates when state changes)
 	useEffect(() => {

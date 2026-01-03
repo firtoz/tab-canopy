@@ -151,8 +151,10 @@ test.describe("Context Menus", () => {
 		await tabElement.click({ button: "right" });
 		await sidepanel.locator('text="Rename Tab"').click();
 		const input2 = sidepanel.locator('input[type="text"]').first();
-		await input2.fill(""); // Empty clears the override
-		await input2.press("Enter");
+		await expect(input2).toBeVisible();
+		// Clear and submit in one atomic sequence
+		await input2.fill("");
+		await input2.press("Enter", { delay: 50 });
 		await sidepanel.waitForTimeout(300);
 
 		// ✏️ indicator should be gone
@@ -170,18 +172,49 @@ test.describe("Context Menus", () => {
 		const parentTab = await createTab(context, "about:blank?parent", sidepanel);
 		const parentInfo = await treeHelpers.waitForTab("about:blank?parent");
 
+		// Get initial tab count
+		const helpersBefore = await treeHelpers.getHelpers();
+		const tabCountBefore = helpersBefore.getAllTabs().length;
+
 		// Right-click and select "New Tab"
 		const tabElement = treeHelpers.getTabElement(parentInfo.browserTabId);
 		await tabElement.click({ button: "right" });
 		await sidepanel.locator('text="New Tab"').first().click();
 
-		// Wait for new tab to be created and synced
-		await sidepanel.waitForTimeout(1000);
+		// Wait for a new tab to appear (poll for up to 5 seconds)
+		const start = Date.now();
+		let newTabId: number | null = null;
+		while (Date.now() - start < 5000) {
+			const helpers = await treeHelpers.getHelpers();
+			const allTabs = helpers.getAllTabs();
+			if (allTabs.length > tabCountBefore) {
+				// Find the new tab (it should be the one not in the before list)
+				const beforeIds = new Set(
+					helpersBefore.getAllTabs().map((t) => t.browserTabId),
+				);
+				const newTab = allTabs.find((t) => !beforeIds.has(t.browserTabId));
+				if (newTab) {
+					newTabId = newTab.browserTabId;
+					break;
+				}
+			}
+			await sidepanel.waitForTimeout(100);
+		}
 
-		// Verify a new tab was created as a child of the parent
-		const helpers = await treeHelpers.getHelpers();
-		const children = helpers.getChildren(parentInfo.browserTabId);
+		expect(newTabId).not.toBeNull();
+
+		// Wait for the new tab to have the parent set correctly
+		await treeHelpers.waitForTabParent(
+			newTabId!,
+			parentInfo.browserTabId,
+			5000,
+		);
+
+		// Verify the parent-child relationship
+		const helpersAfter = await treeHelpers.getHelpers();
+		const children = helpersAfter.getChildren(parentInfo.browserTabId);
 		expect(children.length).toBeGreaterThan(0);
+		expect(children.some((c) => c.browserTabId === newTabId)).toBe(true);
 
 		await parentTab.close();
 	});

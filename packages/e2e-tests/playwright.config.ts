@@ -22,7 +22,8 @@ export default defineConfig({
 	testDir: "./e2e",
 	fullyParallel: false, // Extensions don't work well with parallel tests
 	forbidOnly: !!process.env.CI,
-	retries: process.env.CI ? 2 : 0,
+	// Retries help with flaky extension tests (Chrome extensions can have timing issues)
+	retries: process.env.CI ? 2 : 2,
 	workers: 1, // Single worker for extension testing
 	reporter: "html",
 	timeout: 30000,

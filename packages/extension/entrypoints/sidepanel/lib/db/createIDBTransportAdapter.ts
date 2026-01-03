@@ -9,9 +9,13 @@ import {
 	type ClientMessage,
 	createExtensionClientTransport,
 	IDB_PORT_NAME,
+	type PendingChildTabData,
 	type ServerMessage,
 	type UiMoveIntentData,
 } from "@/src/idb-transport";
+
+export type { PendingChildTabData, UiMoveIntentData };
+
 import { log } from "../../../background/constants";
 
 // ============================================================================
@@ -64,6 +68,7 @@ export function createIDBTransportAdapter(options?: {
 	transport: IDBProxyClientTransport;
 	resetDatabase: () => Promise<void>;
 	sendMoveIntent: (moves: UiMoveIntentData[]) => Promise<void>;
+	sendPendingChildIntent: (data: PendingChildTabData) => void;
 	startManagedWindowMove: (tabIds: number[]) => Promise<void>;
 	endManagedWindowMove: () => void;
 	enableTestMode: () => void;
@@ -237,10 +242,16 @@ export function createIDBTransportAdapter(options?: {
 		extensionTransport.send({ type: "endManagedWindowMove" });
 	};
 
+	const sendPendingChildIntent = (data: PendingChildTabData): void => {
+		log("[Sidepanel] Sending pending child intent:", data);
+		extensionTransport.send({ type: "pendingChildTab", data });
+	};
+
 	return {
 		transport,
 		resetDatabase,
 		sendMoveIntent,
+		sendPendingChildIntent,
 		startManagedWindowMove,
 		endManagedWindowMove,
 		enableTestMode,

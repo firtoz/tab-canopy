@@ -21,11 +21,15 @@ const DB_NAME = "tabcanopy.db";
 // Background API Context - consolidated context for background communication
 // ============================================================================
 
-import type { UiMoveIntentData } from "@/src/idb-transport";
+import type {
+	PendingChildTabData,
+	UiMoveIntentData,
+} from "@/src/idb-transport";
 
 interface BackgroundApi {
 	resetDatabase: () => Promise<void>;
 	sendMoveIntent: (moves: UiMoveIntentData[]) => Promise<void>;
+	sendPendingChildIntent: (data: PendingChildTabData) => void;
 	managedWindowMove: {
 		start: (tabIds: number[]) => Promise<void>;
 		end: () => void;
@@ -48,6 +52,14 @@ export const useSendMoveIntent = () => {
 		throw new Error("useSendMoveIntent must be used within App");
 	}
 	return ctx.sendMoveIntent;
+};
+
+export const useSendPendingChildIntent = () => {
+	const ctx = useContext(BackgroundApiContext);
+	if (!ctx) {
+		throw new Error("useSendPendingChildIntent must be used within App");
+	}
+	return ctx.sendPendingChildIntent;
 };
 
 export const useManagedWindowMove = () => {
@@ -101,6 +113,7 @@ function App() {
 		handleSyncReady,
 		resetDatabase,
 		sendMoveIntent,
+		sendPendingChildIntent,
 		startManagedWindowMove,
 		endManagedWindowMove,
 		enableTestMode,
@@ -151,6 +164,7 @@ function App() {
 			},
 			resetDatabase: adapter.resetDatabase,
 			sendMoveIntent: adapter.sendMoveIntent,
+			sendPendingChildIntent: adapter.sendPendingChildIntent,
 			startManagedWindowMove: adapter.startManagedWindowMove,
 			endManagedWindowMove: adapter.endManagedWindowMove,
 			enableTestMode: adapter.enableTestMode,
@@ -164,6 +178,7 @@ function App() {
 		() => ({
 			resetDatabase,
 			sendMoveIntent,
+			sendPendingChildIntent,
 			managedWindowMove: {
 				start: startManagedWindowMove,
 				end: endManagedWindowMove,
@@ -172,6 +187,7 @@ function App() {
 		[
 			resetDatabase,
 			sendMoveIntent,
+			sendPendingChildIntent,
 			startManagedWindowMove,
 			endManagedWindowMove,
 		],

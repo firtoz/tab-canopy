@@ -303,6 +303,17 @@ export type InjectBrowserEvent =
 	| { eventType: "windows.onFocusChanged"; eventData: number };
 
 /**
+ * Pending child tab intent - used before creating a tab to tell background
+ * what the intended parent should be (since Chrome doesn't propagate openerTabId)
+ */
+export interface PendingChildTabData {
+	windowId: number;
+	expectedIndex: number;
+	parentTabId: number;
+	treeOrder: string;
+}
+
+/**
  * Messages sent from client to server
  */
 export type ClientMessage =
@@ -310,6 +321,7 @@ export type ClientMessage =
 	| { type: "broadcast"; channel: string; data: unknown }
 	| { type: "resetDatabase" }
 	| { type: "uiMoveIntent"; requestId: string; moves: UiMoveIntentData[] }
+	| { type: "pendingChildTab"; data: PendingChildTabData }
 	| { type: "startManagedWindowMove"; tabIds: number[] }
 	| { type: "endManagedWindowMove" }
 	| { type: "getTabCreatedEvents" }

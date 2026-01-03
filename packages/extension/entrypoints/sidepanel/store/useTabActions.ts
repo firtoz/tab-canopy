@@ -2,9 +2,15 @@ import type { InferCollectionFromTable } from "@firtoz/drizzle-utils";
 import { generateKeyBetween } from "fractional-indexing";
 import { create } from "zustand";
 import type * as schema from "@/schema/src/schema";
+import type {
+	PendingChildTabData,
+	UiMoveIntentData,
+} from "../lib/db/createIDBTransportAdapter";
 
 type TabCollection = InferCollectionFromTable<typeof schema.tabTable>;
 type WindowCollection = InferCollectionFromTable<typeof schema.windowTable>;
+type SendMoveIntent = (moves: UiMoveIntentData[]) => Promise<void>;
+type SendPendingChildIntent = (data: PendingChildTabData) => void;
 
 // Helper to find item by predicate from collection
 function findInCollection<T extends object>(
@@ -28,9 +34,13 @@ interface TabActionsStore {
 	// Collections (set by the component that has access to them)
 	tabCollection: TabCollection | null;
 	windowCollection: WindowCollection | null;
+	sendMoveIntent: SendMoveIntent | null;
+	sendPendingChildIntent: SendPendingChildIntent | null;
 	setCollections: (
 		tabCollection: TabCollection,
 		windowCollection: WindowCollection,
+		sendMoveIntent: SendMoveIntent,
+		sendPendingChildIntent: SendPendingChildIntent,
 	) => void;
 
 	// Tab actions
@@ -50,8 +60,20 @@ export const useTabActions = create<TabActionsStore>((set, get) => ({
 	// Collections
 	tabCollection: null,
 	windowCollection: null,
-	setCollections: (tabCollection, windowCollection) =>
-		set({ tabCollection, windowCollection }),
+	sendMoveIntent: null,
+	sendPendingChildIntent: null,
+	setCollections: (
+		tabCollection,
+		windowCollection,
+		sendMoveIntent,
+		sendPendingChildIntent,
+	) =>
+		set({
+			tabCollection,
+			windowCollection,
+			sendMoveIntent,
+			sendPendingChildIntent,
+		}),
 
 	// Tab actions
 	toggleCollapse: async (tabId: number) => {
@@ -112,24 +134,57 @@ export const useTabActions = create<TabActionsStore>((set, get) => ({
 	},
 
 	newTabAsChild: async (parentTabId: number) => {
-		const { tabCollection } = get();
+		const { tabCollection, sendMoveIntent, sendPendingChildIntent } = get();
 		if (!tabCollection) return;
 
 		const tabs = getAllFromCollection(tabCollection);
 		const parentTab = tabs.find((t) => t.browserTabId === parentTabId);
 		if (!parentTab) return;
 
+		// Get the current browser index for the parent tab
+		// (collection's tabIndex might be stale if there were recent tab operations)
+		const currentParentBrowserTab = await browser.tabs.get(parentTabId);
+		const parentIndex = currentParentBrowserTab?.index ?? parentTab.tabIndex;
+
 		// Calculate the insertion index: right after the parent's last descendant
 		// If parent has no descendants, insert right after the parent
-		const insertIndex = parentTab.tabIndex + 1;
+		const insertIndex = parentIndex + 1;
+
+		// Pre-calculate treeOrder before creating the tab
+		// Since we're inserting at parentIndex + 1 (right after the parent),
+		// the new tab should appear FIRST among children in the tree view
+		// This respects the native browser position
+		const existingSiblings = tabs
+			.filter((t) => t.parentTabId === parentTabId)
+			.sort((a, b) => (a.treeOrder < b.treeOrder ? -1 : 1));
+		const firstSibling = existingSiblings[0];
+		const treeOrder = generateKeyBetween(null, firstSibling?.treeOrder ?? null);
 
 		console.log("new tab as child", {
 			windowId: parentTab.browserWindowId,
 			openerTabId: parentTabId,
 			index: insertIndex,
+			treeOrder,
 		});
 
+		// Register pending child intent BEFORE creating the tab
+		// This tells the background what parent to use when it handles onCreated,
+		// since Chrome doesn't propagate openerTabId from browser.tabs.create()
+		if (sendPendingChildIntent) {
+			sendPendingChildIntent({
+				windowId: parentTab.browserWindowId,
+				expectedIndex: insertIndex,
+				parentTabId,
+				treeOrder,
+			});
+			// Delay to ensure the message is delivered and processed by the background
+			// before we create the tab. This is necessary because port.postMessage is async.
+			await new Promise((resolve) => setTimeout(resolve, 100));
+		}
+
 		// Create the new tab with openerTabId set to the parent and correct position
+		// Note: Chrome doesn't actually set openerTabId on the tab object when using
+		// browser.tabs.create(), so the pending intent above handles the parent relationship
 		const newTab = await browser.tabs.create({
 			windowId: parentTab.browserWindowId,
 			openerTabId: parentTabId,
@@ -137,66 +192,48 @@ export const useTabActions = create<TabActionsStore>((set, get) => ({
 			active: true,
 		});
 
-		// After a short delay, directly update the tab to ensure parent-child relationship
-		// This acts as a safeguard in case the background handler didn't catch it
-		if (newTab.id) {
-			const newTabBrowserId = newTab.id;
+		if (!newTab.id) return;
+		const newTabBrowserId = newTab.id;
 
-			let newTabRecord = findInCollection(
+		// Wait for the tab to appear in collection
+		let newTabRecord = findInCollection(
+			tabCollection,
+			(t) => t.browserTabId === newTabBrowserId,
+		);
+
+		let attempts = 0;
+		const maxAttempts = 50; // 500ms total
+
+		while (!newTabRecord) {
+			await new Promise((resolve) => setTimeout(resolve, 10));
+			newTabRecord = findInCollection(
 				tabCollection,
 				(t) => t.browserTabId === newTabBrowserId,
 			);
-
-			let attempts = 0;
-			const maxAttempts = 20;
-
-			while (!newTabRecord) {
-				await new Promise((resolve) => setTimeout(resolve, 10));
-				newTabRecord = findInCollection(
-					tabCollection,
-					(t) => t.browserTabId === newTabBrowserId,
+			attempts++;
+			if (attempts >= maxAttempts) {
+				console.log(
+					"new tab not found in collection after max attempts",
+					newTabBrowserId,
 				);
-				attempts++;
-				if (attempts >= maxAttempts) {
-					console.log(
-						"new tab not found in collection after max attempts",
-						newTabBrowserId,
-					);
-					return;
-				}
-			}
-
-			if (!newTabRecord) {
-				console.log("new tab not found in collection yet", newTabBrowserId);
 				return;
 			}
-
-			// Get current children of parent to calculate treeOrder
-			const currentTabs = getAllFromCollection(tabCollection);
-			const siblings = currentTabs
-				.filter(
-					(t) =>
-						t.parentTabId === parentTabId && t.browserTabId !== newTabBrowserId,
-				)
-				.sort((a, b) => (a.treeOrder < b.treeOrder ? -1 : 1));
-			const lastSibling = siblings[siblings.length - 1];
-			const treeOrder = generateKeyBetween(
-				lastSibling?.treeOrder ?? null,
-				null,
-			);
-
-			console.log("directly updating new child tab", {
-				tabId: newTabBrowserId,
-				parentTabId,
-				treeOrder,
-			});
-
-			// Directly update the tab record
-			tabCollection.update(newTabRecord.id, (draft) => {
-				draft.parentTabId = parentTabId;
-				draft.treeOrder = treeOrder;
-			});
 		}
+
+		// Register UI move intent with background to ensure subsequent events use correct parent
+		// This is a second line of defense after the pending intent
+		if (sendMoveIntent) {
+			await sendMoveIntent([
+				{ tabId: newTabBrowserId, parentTabId, treeOrder },
+			]);
+		}
+
+		// Always update the parent to ensure it's correct
+		// The background might have set a different parent due to timing issues
+		tabCollection.update(newTabRecord.id, (draft) => {
+			draft.parentTabId = parentTabId;
+			draft.treeOrder = treeOrder;
+		});
 	},
 
 	// Window actions

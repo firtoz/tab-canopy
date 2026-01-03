@@ -132,21 +132,18 @@ export function calculateTreePositionFromBrowserMove(
 		};
 	}
 
-	// Have a copy of the tab list, but with the moved tab removed
-	const tempTabs = inputTabs.map((t) => {
-		if (t.browserTabId === movedTabId) {
-			return null;
-		}
-		return t;
-	});
-
 	// Check if the moved tab has any descendants
 	const descendants = getAllDescendants(inputTabs, movedTabId);
 
-	tempTabs.splice(newBrowserIndex, 0, {
-		...movedTab,
-	});
-	const newAllTabs = tempTabs.filter((t) => t !== null);
+	// Simulate the browser tab move:
+	// 1. Remove the tab from its original position
+	// 2. Insert at the new position
+	// This correctly models how Chrome handles tab moves
+	const tabsWithoutMoved = inputTabs.filter(
+		(t) => t.browserTabId !== movedTabId,
+	);
+	const newAllTabs = [...tabsWithoutMoved];
+	newAllTabs.splice(newBrowserIndex, 0, movedTab);
 
 	// Remove the moved tab (and its descendants) from flat list to see what's at each position
 	const withoutMovedAndDescendants = newAllTabs.filter(

@@ -24,13 +24,76 @@ export interface UiMoveIntent {
 	parentTabId: number | null;
 	treeOrder: string;
 	timestamp: number;
+	/** TTL for this specific intent (creation intents have shorter TTL) */
+	ttl: number;
 }
 
 // Map of tabId -> intended tree position from UI
 const uiMoveIntents = new Map<number, UiMoveIntent>();
 
-// Clean up stale intents after 5 seconds
+// Clean up stale intents after 5 seconds (for explicit UI moves)
 const UI_MOVE_INTENT_TTL = 5000;
+
+/**
+ * Pending child tab intent - registered BEFORE the tab is created
+ * Keyed by "windowId:expectedIndex" since we don't have tabId yet
+ */
+export interface PendingChildIntent {
+	parentTabId: number;
+	treeOrder: string;
+	timestamp: number;
+}
+
+// Map of "windowId:index" -> pending child intent
+const pendingChildIntents = new Map<string, PendingChildIntent>();
+
+// Clean up pending intents after 2 seconds (shorter than move intents)
+const PENDING_CHILD_INTENT_TTL = 2000;
+
+export function registerPendingChildIntent(
+	windowId: number,
+	expectedIndex: number,
+	parentTabId: number,
+	treeOrder: string,
+): void {
+	const key = `${windowId}:${expectedIndex}`;
+	log("[Background] Registering pending child intent:", key, {
+		parentTabId,
+		treeOrder,
+	});
+	pendingChildIntents.set(key, {
+		parentTabId,
+		treeOrder,
+		timestamp: Date.now(),
+	});
+
+	// Auto-cleanup after TTL
+	setTimeout(() => {
+		const intent = pendingChildIntents.get(key);
+		if (intent && Date.now() - intent.timestamp >= PENDING_CHILD_INTENT_TTL) {
+			pendingChildIntents.delete(key);
+			log("[Background] Cleaned up stale pending child intent:", key);
+		}
+	}, PENDING_CHILD_INTENT_TTL);
+}
+
+function consumePendingChildIntent(
+	windowId: number,
+	tabIndex: number,
+): PendingChildIntent | undefined {
+	const key = `${windowId}:${tabIndex}`;
+	const intent = pendingChildIntents.get(key);
+	if (intent) {
+		pendingChildIntents.delete(key);
+		// Check if intent is still fresh
+		if (Date.now() - intent.timestamp < PENDING_CHILD_INTENT_TTL) {
+			log("[Background] Consuming pending child intent:", key, intent);
+			return intent;
+		}
+		log("[Background] Pending child intent expired:", key);
+	}
+	return undefined;
+}
 
 /**
  * Event tracking for tests - stores tab creation events with their decisions
@@ -88,37 +151,46 @@ export function clearTabCreatedEvents(): void {
 	tabCreatedEvents.length = 0;
 }
 
+// Short TTL for creation-time intents (to handle Chrome's onMoved-after-onCreated race)
+const CREATION_INTENT_TTL = 500;
+
 export function registerUiMoveIntent(
 	tabId: number,
 	parentTabId: number | null,
 	treeOrder: string,
+	/** Use shorter TTL for creation-time intents to avoid interfering with user-initiated moves */
+	isCreationIntent = false,
 ): void {
+	const ttl = isCreationIntent ? CREATION_INTENT_TTL : UI_MOVE_INTENT_TTL;
 	log("[Background] Registering UI move intent for tab:", tabId, {
 		parentTabId,
 		treeOrder,
+		isCreationIntent,
+		ttl,
 	});
 	uiMoveIntents.set(tabId, {
 		parentTabId,
 		treeOrder,
 		timestamp: Date.now(),
+		ttl,
 	});
 
 	// Auto-cleanup after TTL
 	setTimeout(() => {
 		const intent = uiMoveIntents.get(tabId);
-		if (intent && Date.now() - intent.timestamp >= UI_MOVE_INTENT_TTL) {
+		if (intent && Date.now() - intent.timestamp >= intent.ttl) {
 			uiMoveIntents.delete(tabId);
 			log("[Background] Cleaned up stale UI move intent for tab:", tabId);
 		}
-	}, UI_MOVE_INTENT_TTL);
+	}, ttl);
 }
 
 function consumeUiMoveIntent(tabId: number): UiMoveIntent | undefined {
 	const intent = uiMoveIntents.get(tabId);
 	if (intent) {
 		uiMoveIntents.delete(tabId);
-		// Check if intent is still fresh
-		if (Date.now() - intent.timestamp < UI_MOVE_INTENT_TTL) {
+		// Check if intent is still fresh using its specific TTL
+		if (Date.now() - intent.timestamp < intent.ttl) {
 			log("[Background] Consuming UI move intent for tab:", tabId, intent);
 			return intent;
 		}
@@ -237,6 +309,66 @@ export const setupTabListeners = (
 		);
 		if (!hasTabIds(tab)) return;
 
+		// Check for pending child intent FIRST - this was registered by the UI
+		// before creating the tab (since Chrome doesn't propagate openerTabId)
+		const pendingIntent = consumePendingChildIntent(tab.windowId, tab.index);
+		if (pendingIntent) {
+			log("[Background] Using pending child intent for new tab:", {
+				tabId: tab.id,
+				parentTabId: pendingIntent.parentTabId,
+				treeOrder: pendingIntent.treeOrder,
+			});
+
+			// Register as a regular UI move intent for subsequent handlers
+			registerUiMoveIntent(
+				tab.id,
+				pendingIntent.parentTabId,
+				pendingIntent.treeOrder,
+			);
+
+			trackTabCreatedEvent({
+				tabId: tab.id,
+				openerTabId: (tab as { openerTabId?: number }).openerTabId,
+				tabIndex: tab.index,
+				decidedParentId: pendingIntent.parentTabId,
+				treeOrder: pendingIntent.treeOrder,
+				reason: `Pending child intent: child of ${pendingIntent.parentTabId}`,
+			});
+
+			// Create the new tab record with the intended parent
+			const newTabRecord = tabToRecord(tab, {
+				parentTabId: pendingIntent.parentTabId,
+				treeOrder: pendingIntent.treeOrder,
+			});
+			await putItems("tab", [newTabRecord]);
+
+			// Update other tabs in window since indices shifted
+			const existingTabs = await getAll<Tab>("tab");
+			const existingMap = new Map<number, Tab>();
+			for (const t of existingTabs) {
+				existingMap.set(t.browserTabId, t);
+			}
+
+			const browserTabs = await browser.tabs.query({ windowId: tab.windowId });
+			const otherRecords: TabRecord[] = [];
+			for (const t of browserTabs.filter(hasTabIds)) {
+				if (t.id === tab.id) continue; // Skip the new tab
+				const existing = existingMap.get(t.id);
+				otherRecords.push(
+					tabToRecord(t, {
+						parentTabId: existing?.parentTabId ?? null,
+						treeOrder: existing?.treeOrder ?? DEFAULT_TREE_ORDER,
+					}),
+				);
+			}
+			if (otherRecords.length > 0) {
+				await putItems("tab", otherRecords);
+			}
+
+			return; // Early return - we've handled everything
+		}
+
+		// No pending intent - proceed with normal position-based logic
 		// Get existing tabs to determine tree position
 		const existingTabs = await getAll<Tab>("tab");
 		const windowTabs = existingTabs.filter(
@@ -392,7 +524,8 @@ export const setupTabListeners = (
 		// Register a UI move intent BEFORE saving to protect our calculated treeOrder
 		// This prevents handleTabMoved from recalculating if Chrome fires onMoved
 		// after onCreated (which happens when creating a tab with a specific index)
-		registerUiMoveIntent(tab.id, parentTabId, treeOrder);
+		// Use short TTL so it doesn't interfere with user-initiated moves later
+		registerUiMoveIntent(tab.id, parentTabId, treeOrder, true);
 
 		// Create the new tab record
 		const newTabRecord = tabToRecord(tab, { parentTabId, treeOrder });
@@ -430,7 +563,8 @@ export const setupTabListeners = (
 				);
 
 				// Register a move intent so the onMoved handler doesn't recalculate tree position
-				registerUiMoveIntent(tab.id, parentTabId, treeOrder);
+				// Use short TTL since this is during tab creation, not explicit UI move
+				registerUiMoveIntent(tab.id, parentTabId, treeOrder, true);
 
 				// Move the tab
 				await browser.tabs.move(tab.id, { index: targetIndex }).catch((err) => {

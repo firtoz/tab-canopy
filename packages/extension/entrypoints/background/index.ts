@@ -24,6 +24,7 @@ import {
 	enableTestMode,
 	getTabCreatedEvents,
 	isTestModeEnabled,
+	registerPendingChildIntent,
 	registerUiMoveIntent,
 	setupTabListeners,
 } from "./tab-handlers";
@@ -130,6 +131,26 @@ export default defineBackground(() => {
 						type: "uiMoveIntentAck",
 						requestId: message.requestId,
 					});
+					break;
+				}
+				case "pendingChildTab": {
+					// Register pending child intent BEFORE tab is created
+					// This allows us to set the correct parent when the tab is created,
+					// since Chrome doesn't propagate openerTabId from browser.tabs.create()
+					const { windowId, expectedIndex, parentTabId, treeOrder } =
+						message.data;
+					log("[Background] Received pending child tab intent:", {
+						windowId,
+						expectedIndex,
+						parentTabId,
+						treeOrder,
+					});
+					registerPendingChildIntent(
+						windowId,
+						expectedIndex,
+						parentTabId,
+						treeOrder,
+					);
 					break;
 				}
 				case "startManagedWindowMove": {
