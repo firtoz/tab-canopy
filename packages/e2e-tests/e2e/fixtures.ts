@@ -873,13 +873,20 @@ export const test = base.extend<ExtensionFixtures>({
 					throw new Error("Sidepanel was closed before drag operation");
 				}
 
-				// Get current window ID before the move
+				// Get current window ID and all descendants before the move
 				const helpersBefore = await getTestHelpers();
 				const tabBefore = helpersBefore.getTabById(sourceTabId);
 				if (!tabBefore) {
 					throw new Error(`Source tab ${sourceTabId} not found`);
 				}
 				const originalWindowId = tabBefore.browserWindowId;
+
+				// Get all descendants that should move with the parent
+				const descendants = helpersBefore.getDescendants(sourceTabId);
+				const allTabsToMove = [
+					sourceTabId,
+					...descendants.map((d) => d.browserTabId),
+				];
 
 				const sourceElement = sidepanel.locator(
 					`[data-tab-id="${sourceTabId}"]`,
@@ -933,20 +940,43 @@ export const test = base.extend<ExtensionFixtures>({
 					await sidepanel.waitForTimeout(100);
 					await sidepanel.mouse.up();
 
-					// Wait for the tab to actually move to a different window
+					// Wait for ALL tabs (parent + descendants) to move to the new window
 					const start = Date.now();
-					const timeout = 10000;
+					const timeout = 15000;
 					while (Date.now() - start < timeout) {
 						const helpersAfter = await getTestHelpers();
-						const tabAfter = helpersAfter.getTabById(sourceTabId);
-						if (tabAfter && tabAfter.browserWindowId !== originalWindowId) {
-							return tabAfter.browserWindowId; // Successfully moved to new window, return new window ID
+						const movedTabs = allTabsToMove.map((id) =>
+							helpersAfter.getTabById(id),
+						);
+
+						// Check if all tabs exist and are in a new window (same window, different from original)
+						if (movedTabs.every((t) => t !== null)) {
+							const newWindowIds = movedTabs.map((t) => t?.browserWindowId);
+							const allInSameWindow = newWindowIds.every(
+								(w) => w === newWindowIds[0],
+							);
+							const inDifferentWindow = newWindowIds[0] !== originalWindowId;
+
+							if (allInSameWindow && inDifferentWindow) {
+								return newWindowIds[0]!; // Successfully moved all tabs to new window
+							}
 						}
+
 						await sidepanel.waitForTimeout(100);
 					}
 
+					// Provide detailed error message
+					const helpersAfter = await getTestHelpers();
+					const tabStates = allTabsToMove.map((id) => {
+						const tab = helpersAfter.getTabById(id);
+						return `  Tab ${id}: windowId=${tab?.browserWindowId ?? "null"}`;
+					});
+
 					throw new Error(
-						`Tab ${sourceTabId} did not move to new window within ${timeout}ms`,
+						`Not all tabs moved to new window within ${timeout}ms.\n` +
+							`Original window: ${originalWindowId}\n` +
+							`Expected to move: ${allTabsToMove.join(", ")}\n` +
+							`Current state:\n${tabStates.join("\n")}`,
 					);
 				} catch (error) {
 					// If sidepanel was closed during operation, provide better error message

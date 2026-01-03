@@ -41,6 +41,7 @@ export interface TabCreatedEvent {
 	openerTabId: number | undefined;
 	tabIndex: number;
 	decidedParentId: number | null;
+	treeOrder: string;
 	reason: string;
 	timestamp: number;
 }
@@ -256,26 +257,119 @@ export const setupTabListeners = (
 			tab.id,
 		);
 
+		log("[Background] calculateTreePositionForNewTab result:", {
+			parentTabId,
+			treeOrder,
+			newTabIndex: tab.index,
+			windowTabsCount: windowTabs.length,
+			browserTabsCount: browserTabsWithIds.length,
+			windowTabIds: windowTabs.map((t) => ({
+				id: t.browserTabId,
+				parent: t.parentTabId,
+				idx: t.tabIndex,
+			})),
+			browserTabIndices: browserTabsWithIds.map((t) => ({
+				id: t.id,
+				idx: t.index,
+			})),
+		});
+
 		const openerTabId = (tab as { openerTabId?: number }).openerTabId;
 		let reason = "";
+		let needsRepositioning = false;
 
 		// If position-based didn't place it in a tree, but there's an opener, make it a child of opener
 		if (parentTabId === null && openerTabId !== undefined) {
 			const openerTab = windowTabs.find((t) => t.browserTabId === openerTabId);
 			if (openerTab) {
 				parentTabId = openerTabId;
-				// Calculate treeOrder among opener's existing children
-				const openerChildren = windowTabs
-					.filter((t) => t.parentTabId === openerTabId)
-					.sort((a, b) => (a.treeOrder < b.treeOrder ? -1 : 1));
-				const lastChild = openerChildren[openerChildren.length - 1];
-				treeOrder = generateKeyBetween(lastChild?.treeOrder ?? null, null);
-				reason = `Opener-based: made child of opener tab ${openerTabId}`;
+
+				// Get opener's children
+				const openerChildren = windowTabs.filter(
+					(t) => t.parentTabId === openerTabId,
+				);
+
+				// Build a map from tab ID to CURRENT browser index (browserTabs has current indices)
+				const currentIndexMap = new Map<number, number>();
+				for (const bt of browserTabsWithIds) {
+					currentIndexMap.set(bt.id, bt.index);
+				}
+
+				// Get opener's current browser index
+				const openerCurrentIndex =
+					currentIndexMap.get(openerTab.browserTabId) ?? openerTab.tabIndex;
+
+				// Check if the new tab is right after the opener (context menu case)
+				// In this case, tab.index == openerIndex + 1
+				const isRightAfterOpener = tab.index === openerCurrentIndex + 1;
+
+				if (isRightAfterOpener) {
+					// Tab was explicitly created right after opener (context menu behavior)
+					// It should be FIRST among children in tree order
+					if (openerChildren.length === 0) {
+						treeOrder = generateKeyBetween(null, null);
+						reason = `Opener-based: first child of opener tab ${openerTabId} (right after opener)`;
+					} else {
+						// Find the child with the smallest treeOrder
+						const childrenByTreeOrder = [...openerChildren].sort((a, b) =>
+							a.treeOrder < b.treeOrder ? -1 : 1,
+						);
+						const firstChild = childrenByTreeOrder[0];
+						treeOrder = generateKeyBetween(null, firstChild.treeOrder);
+						reason = `Opener-based: first child of opener tab ${openerTabId} (right after opener, before ${firstChild.browserTabId})`;
+					}
+					needsRepositioning = false; // Already at correct position
+				} else {
+					// Tab is not right after opener - need to reposition to after last child
+					needsRepositioning = true;
+
+					if (openerChildren.length === 0) {
+						treeOrder = generateKeyBetween(null, null);
+						reason = `Opener-based: made first child of opener tab ${openerTabId}`;
+					} else {
+						// Position after last child in tree order
+						const childrenByTreeOrder = [...openerChildren].sort((a, b) =>
+							a.treeOrder < b.treeOrder ? -1 : 1,
+						);
+						const lastChild =
+							childrenByTreeOrder[childrenByTreeOrder.length - 1];
+						treeOrder = generateKeyBetween(lastChild.treeOrder, null);
+						reason = `Opener-based: made child of opener tab ${openerTabId} (after last sibling)`;
+					}
+				}
 			} else {
 				reason = "Position-based: inserted at root level (opener not in DB)";
 			}
 		} else if (parentTabId !== null) {
 			reason = `Position-based: inserted within tree of parent ${parentTabId}`;
+
+			// Even if position-based logic placed it correctly, check if the tab has an opener
+			// and is far from its siblings. If so, reposition it to be adjacent.
+			if (openerTabId !== undefined && openerTabId === parentTabId) {
+				// The tab has an opener and position-based logic agreed
+				// Check if the tab is adjacent to its parent or siblings
+				const parent = windowTabs.find((t) => t.browserTabId === parentTabId);
+				if (parent) {
+					const siblings = windowTabs.filter(
+						(t) => t.parentTabId === parentTabId && t.browserTabId !== tab.id,
+					);
+
+					// If there are siblings, check if the new tab is adjacent to them
+					if (siblings.length > 0) {
+						// Find the expected range where children should be
+						const siblingIndices = siblings.map((s) => s.tabIndex);
+						const maxSiblingIndex = Math.max(...siblingIndices);
+
+						// If the new tab is beyond the sibling range + reasonable gap,
+						// it might benefit from repositioning
+						const expectedMaxIndex = maxSiblingIndex + 2; // Allow small gap
+						if (tab.index > expectedMaxIndex) {
+							needsRepositioning = true;
+							reason += " (repositioning to be adjacent to siblings)";
+						}
+					}
+				}
+			}
 		} else {
 			reason = "Position-based: inserted at root level";
 		}
@@ -285,6 +379,7 @@ export const setupTabListeners = (
 			openerTabId,
 			tabIndex: tab.index,
 			decidedParentId: parentTabId,
+			treeOrder,
 			reason,
 		});
 
@@ -294,9 +389,55 @@ export const setupTabListeners = (
 			reason,
 		});
 
+		// Register a UI move intent BEFORE saving to protect our calculated treeOrder
+		// This prevents handleTabMoved from recalculating if Chrome fires onMoved
+		// after onCreated (which happens when creating a tab with a specific index)
+		registerUiMoveIntent(tab.id, parentTabId, treeOrder);
+
 		// Create the new tab record
 		const newTabRecord = tabToRecord(tab, { parentTabId, treeOrder });
 		await putItems("tab", [newTabRecord]);
+
+		// If the tab needs repositioning (opener-based placement where browser placed it far away),
+		// move it to be adjacent to its siblings
+		if (needsRepositioning && parentTabId !== null) {
+			log("[Background] Tab needs repositioning to be adjacent to siblings");
+
+			// Find where the tab should be positioned in the browser
+			// It should be after the last child of the parent (or after the parent if no children exist yet)
+			const parent = windowTabs.find((t) => t.browserTabId === parentTabId);
+			if (parent) {
+				// Get all children of the parent (including the new tab we just created)
+				const allChildren = windowTabs
+					.filter((t) => t.parentTabId === parentTabId)
+					.sort(treeOrderSort);
+
+				// Find the browser index where the tab should be
+				// Start with the parent's index
+				let targetIndex = parent.tabIndex + 1;
+
+				// If there are other children, place after the last one
+				if (allChildren.length > 0) {
+					// Find the last child in browser order (highest tab index)
+					const lastChildInBrowser = allChildren.reduce((max, child) => {
+						return child.tabIndex > max.tabIndex ? child : max;
+					}, allChildren[0]);
+					targetIndex = lastChildInBrowser.tabIndex + 1;
+				}
+
+				log(
+					`[Background] Moving tab ${tab.id} to index ${targetIndex} to be adjacent to parent ${parentTabId}`,
+				);
+
+				// Register a move intent so the onMoved handler doesn't recalculate tree position
+				registerUiMoveIntent(tab.id, parentTabId, treeOrder);
+
+				// Move the tab
+				await browser.tabs.move(tab.id, { index: targetIndex }).catch((err) => {
+					log(`[Background] Failed to reposition tab ${tab.id}:`, err);
+				});
+			}
+		}
 
 		// Update other tabs in window since indices shifted
 		const existingMap = new Map<number, Tab>();
@@ -333,16 +474,27 @@ export const setupTabListeners = (
 		log("[Background] Tab updated:", tabId);
 		if (!hasTabIds(tab)) return;
 
+		// First check if there's a UI move intent - this takes precedence
+		// (Note: we don't consume it, just read it, as handleTabMoved may also need it)
+		const intent = uiMoveIntents.get(tabId);
+
 		// Preserve tree structure when updating
 		const existingTabs = await getAll<Tab>("tab");
 		const existing = existingTabs.find((t) => t.browserTabId === tabId);
 
-		// If tab doesn't exist yet, generate unique treeOrder by finding max in window
-		let treeOrder = DEFAULT_TREE_ORDER;
-		if (existing) {
+		// Priority: intent > existing > fallback
+		let treeOrder: string;
+		let parentTabId: number | null;
+
+		if (intent) {
+			// Use the intent from handleTabCreated
+			treeOrder = intent.treeOrder;
+			parentTabId = intent.parentTabId;
+		} else if (existing) {
 			treeOrder = existing.treeOrder;
+			parentTabId = existing.parentTabId;
 		} else {
-			// Tab doesn't exist in DB yet - generate unique treeOrder
+			// Tab doesn't exist in DB yet and no intent - generate unique treeOrder
 			const windowTabs = existingTabs
 				.filter(
 					(t) => t.browserWindowId === tab.windowId && t.parentTabId === null,
@@ -350,11 +502,12 @@ export const setupTabListeners = (
 				.sort(treeOrderSort);
 			const lastRoot = windowTabs[windowTabs.length - 1];
 			treeOrder = generateKeyBetween(lastRoot?.treeOrder || null, null);
+			parentTabId = null;
 		}
 
 		await putItems("tab", [
 			tabToRecord(tab, {
-				parentTabId: existing?.parentTabId ?? null,
+				parentTabId,
 				treeOrder,
 			}),
 		]);

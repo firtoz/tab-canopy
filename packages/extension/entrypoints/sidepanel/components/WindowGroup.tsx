@@ -496,6 +496,7 @@ export const WindowGroup = ({
 										id={item.id}
 										windowId={win.browserWindowId}
 										windowFocused={win.focused}
+										isCurrentWindow={isCurrentWindow}
 										tab={item.tab}
 										isSelected={isSelected}
 										isPartOfDrag={isPartOfDrag}

@@ -2,6 +2,21 @@
 
 This document outlines planned features and improvements for TabCanopy.
 
+## Known Issues
+
+- [x] ~~Closing a non-collapsed tab sometimes causes children to disappear when they shouldn't~~
+  - Verified: Browser-native close (Ctrl+W, page.close()) correctly promotes children to grandparent
+  - Note: UI close button intentionally closes all descendants (by design)
+- [ ] Dragging a tab or tree to create a new window sometimes causes them to disappear temporarily
+  - E2E test added: "Complex tree - drag subtree into sibling then to new window" passes consistently
+  - Test verifies: drag b into c, then drag b subtree to new window - all descendants move correctly
+  - Issue may still occur in manual usage - needs further investigation if reproducible
+- [ ] Window renaming does not persist
+- [x] ~~Sometimes when a new tab is opened, it'll not be next to the opener in the native view, but it'll appear as a child of it~~
+  - Fixed: Tabs with openerTabId are now automatically repositioned to be adjacent to their siblings in the browser
+- [x] ~~Clicking active tab of non-current window triggers rename instead of focusing window~~
+  - Fixed: Click-to-rename now only triggers when the tab is in the sidepanel's own window
+
 ## Core Features
 
 - [ ] **Keyboard Navigation**
@@ -66,8 +81,4 @@ This document outlines planned features and improvements for TabCanopy.
   - [ ] Virtualized rendering for large tab lists
   - [ ] Memory optimization for inactive tabs
 
-## Known Issues
 
-- [ ] Closing a non-collapsed tab sometimes causes children to disappear when they shouldn't
-- [ ] Dragging a tab or tree to create a new window sometimes causes them to disappear temporarily (they eventually return to original window)
-- [ ] Window renaming does not persist

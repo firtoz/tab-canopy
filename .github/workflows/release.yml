@@ -47,15 +47,24 @@ jobs:
           CHROME_PUBLISHER_ID: ${{ vars.CHROME_PUBLISHER_ID }}
 
       - name: Add Job Summary and Notice
-        if: steps.changesets.outputs.published == 'true' || steps.changesets.outputs.publishedPackages != '[]'
+        if: steps.changesets.outputs.hasChangesets == 'false'
         run: |
           # Add notice annotation for easy visibility
           echo "::notice title=Upload Successful::Extension uploaded as draft. Manually publish from: https://chrome.google.com/webstore/devconsole/${{ vars.CHROME_PUBLISHER_ID }}/${{ vars.CHROME_EXTENSION_ID }}/edit"
+          
+          # Get the version for the release link
+          VERSION=$(jq -r '.version' packages/extension/package.json)
           
           # Add detailed job summary
           echo "## ✅ Extension Published" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "The extension has been uploaded to Chrome Web Store as a **draft**." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🏷️ GitHub Release" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "👉 [View Release v${VERSION}](https://github.com/${{ github.repository }}/releases/tag/v${VERSION})" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "The release includes extension zip files for manual installation or distribution." >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### 📋 Next Step: Manual Review & Publish" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY

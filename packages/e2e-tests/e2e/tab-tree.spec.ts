@@ -914,8 +914,8 @@ test.describe("Tab Movement with Children", () => {
 			"about:blank?parent",
 			sidepanel,
 		);
-		const child1Tab = await createTab(context, "about:blank?child3", sidepanel);
-		const child2Tab = await createTab(context, "about:blank?child4", sidepanel);
+		await createTab(context, "about:blank?child3", sidepanel);
+		await createTab(context, "about:blank?child4", sidepanel);
 
 		// Wait for tabs to appear
 		const parentInfo = await treeHelpers.waitForTab("about:blank?parent");
@@ -974,6 +974,78 @@ test.describe("Tab Movement with Children", () => {
 		expect(child2AfterClose).toBeUndefined();
 
 		// No cleanup needed - all tabs were closed
+	});
+
+	test("browser-native close (not UI) promotes children to grandparent", async ({
+		context,
+		sidepanel,
+		treeHelpers,
+	}) => {
+		// Create parent and children tabs
+		const parentTab = await createTab(
+			context,
+			"about:blank?parent-native",
+			sidepanel,
+		);
+		await createTab(context, "about:blank?child1-native", sidepanel);
+		await createTab(context, "about:blank?child2-native", sidepanel);
+
+		// Wait for tabs to appear
+		const parentInfo = await treeHelpers.waitForTab(
+			"about:blank?parent-native",
+		);
+		const child1Info = await treeHelpers.waitForTab(
+			"about:blank?child1-native",
+		);
+		const child2Info = await treeHelpers.waitForTab(
+			"about:blank?child2-native",
+		);
+
+		// Drag children onto parent
+		await treeHelpers.dragTabToTab(
+			child1Info.browserTabId,
+			parentInfo.browserTabId,
+		);
+		await treeHelpers.dragTabToTab(
+			child2Info.browserTabId,
+			parentInfo.browserTabId,
+		);
+
+		// Verify parent-child relationships
+		const updatedChild1 = await treeHelpers.getTabByUrl(
+			"about:blank?child1-native",
+		);
+		const updatedChild2 = await treeHelpers.getTabByUrl(
+			"about:blank?child2-native",
+		);
+		expect(updatedChild1?.parentTabId).toBe(parentInfo.browserTabId);
+		expect(updatedChild2?.parentTabId).toBe(parentInfo.browserTabId);
+		expect(updatedChild1?.depth).toBe(1);
+		expect(updatedChild2?.depth).toBe(1);
+
+		// Close parent via browser API (simulates Ctrl+W or browser tab bar close)
+		// This should promote children, NOT close them
+		await parentTab.close();
+		await sidepanel.waitForTimeout(500);
+
+		// Verify parent is closed
+		const parentAfterClose = await treeHelpers.getTabByUrl(
+			"about:blank?parent-native",
+		);
+		expect(parentAfterClose).toBeUndefined();
+
+		// Verify children were PROMOTED (not closed) - they should now be at root level
+		const child1AfterClose = await treeHelpers.getTabByUrl(
+			"about:blank?child1-native",
+		);
+		const child2AfterClose = await treeHelpers.getTabByUrl(
+			"about:blank?child2-native",
+		);
+
+		expect(child1AfterClose).toBeDefined();
+		expect(child2AfterClose).toBeDefined();
+		expect(child1AfterClose?.parentTabId).toBeNull(); // Promoted to root
+		expect(child2AfterClose?.parentTabId).toBeNull(); // Promoted to root
 	});
 
 	test("closing collapsed parent tab should close all children", async ({
@@ -1129,6 +1201,167 @@ test.describe("Tree Structure Preservation Tests", () => {
 		expect(helpers.getChildren(aInfo.browserTabId).length).toBe(0);
 
 		await aPage.close();
+	});
+
+	test("Complex tree - drag subtree into sibling then to new window", async ({
+		context,
+		sidepanel: _,
+		treeHelpers,
+	}) => {
+		test.setTimeout(120000);
+
+		// Build complex tree:
+		// - a
+		//   - a.1
+		//     - a.1.1
+		//       - a.1.1.1
+		// - b
+		//   - b.1
+		//     - b.1.1
+		// - c
+
+		// Create all tabs
+		const aPage = await context.newPage();
+		await aPage.goto("about:blank?a");
+		const aInfo = await treeHelpers.waitForTab("about:blank?a");
+		const originalWindowId = aInfo.browserWindowId;
+
+		const a1Page = await context.newPage();
+		await a1Page.goto("about:blank?a1");
+		const a1Info = await treeHelpers.waitForTab("about:blank?a1");
+
+		const a11Page = await context.newPage();
+		await a11Page.goto("about:blank?a11");
+		const a11Info = await treeHelpers.waitForTab("about:blank?a11");
+
+		const a111Page = await context.newPage();
+		await a111Page.goto("about:blank?a111");
+		const a111Info = await treeHelpers.waitForTab("about:blank?a111");
+
+		const bPage = await context.newPage();
+		await bPage.goto("about:blank?b");
+		const bInfo = await treeHelpers.waitForTab("about:blank?b");
+
+		const b1Page = await context.newPage();
+		await b1Page.goto("about:blank?b1");
+		const b1Info = await treeHelpers.waitForTab("about:blank?b1");
+
+		const b11Page = await context.newPage();
+		await b11Page.goto("about:blank?b11");
+		const b11Info = await treeHelpers.waitForTab("about:blank?b11");
+
+		const cPage = await context.newPage();
+		await cPage.goto("about:blank?c");
+		const cInfo = await treeHelpers.waitForTab("about:blank?c");
+
+		// Build the tree structure
+		// a.1 -> a
+		await treeHelpers.dragTabToTab(a1Info.browserTabId, aInfo.browserTabId);
+		// a.1.1 -> a.1
+		await treeHelpers.dragTabToTab(a11Info.browserTabId, a1Info.browserTabId);
+		// a.1.1.1 -> a.1.1
+		await treeHelpers.dragTabToTab(a111Info.browserTabId, a11Info.browserTabId);
+		// b.1 -> b
+		await treeHelpers.dragTabToTab(b1Info.browserTabId, bInfo.browserTabId);
+		// b.1.1 -> b.1
+		await treeHelpers.dragTabToTab(b11Info.browserTabId, b1Info.browserTabId);
+
+		// Verify initial tree structure
+		let helpers = await treeHelpers.getHelpers();
+		console.log("Initial tree structure:");
+		console.log(
+			"  a children:",
+			helpers.getChildren(aInfo.browserTabId).length,
+		);
+		console.log(
+			"  a.1 children:",
+			helpers.getChildren(a1Info.browserTabId).length,
+		);
+		console.log(
+			"  a.1.1 children:",
+			helpers.getChildren(a11Info.browserTabId).length,
+		);
+		console.log(
+			"  b children:",
+			helpers.getChildren(bInfo.browserTabId).length,
+		);
+		console.log(
+			"  b.1 children:",
+			helpers.getChildren(b1Info.browserTabId).length,
+		);
+
+		expect(helpers.getChildren(aInfo.browserTabId).length).toBe(1); // a.1
+		expect(helpers.getChildren(a1Info.browserTabId).length).toBe(1); // a.1.1
+		expect(helpers.getChildren(a11Info.browserTabId).length).toBe(1); // a.1.1.1
+		expect(helpers.getChildren(bInfo.browserTabId).length).toBe(1); // b.1
+		expect(helpers.getChildren(b1Info.browserTabId).length).toBe(1); // b.1.1
+
+		// Step 1: Drag b into c (make b a child of c)
+		console.log("Dragging b into c...");
+		await treeHelpers.dragTabToTab(bInfo.browserTabId, cInfo.browserTabId);
+
+		// Verify b is now a child of c
+		helpers = await treeHelpers.getHelpers();
+		const bAfterFirstDrag = helpers
+			.getAllTabs()
+			.find((t) => t.url.includes("about:blank?b"));
+		console.log("After dragging b into c:");
+		console.log("  b.parentTabId:", bAfterFirstDrag?.parentTabId);
+		console.log("  c.browserTabId:", cInfo.browserTabId);
+		expect(bAfterFirstDrag?.parentTabId).toBe(cInfo.browserTabId);
+
+		// Step 2: Drag b (with its subtree) to new window
+		console.log("Dragging b to new window...");
+		const newWindowId = await treeHelpers.dragTabToNewWindow(
+			bInfo.browserTabId,
+		);
+
+		// Verify all b subtree tabs moved to new window and exist
+		helpers = await treeHelpers.getHelpers();
+		const allTabs = helpers.getAllTabs();
+
+		const bAfter = allTabs.find((t) => t.url.includes("about:blank?b"));
+		const b1After = allTabs.find((t) => t.url.includes("about:blank?b1"));
+		const b11After = allTabs.find((t) => t.url.includes("about:blank?b11"));
+
+		console.log("After dragging b to new window:");
+		console.log("  b:", bAfter);
+		console.log("  b.1:", b1After);
+		console.log("  b.1.1:", b11After);
+
+		// All b subtree tabs should exist
+		expect(bAfter).toBeDefined();
+		expect(b1After).toBeDefined();
+		expect(b11After).toBeDefined();
+
+		// All b subtree in new window
+		expect(bAfter?.browserWindowId).toBe(newWindowId);
+		expect(bAfter?.browserWindowId).not.toBe(originalWindowId);
+		expect(b1After?.browserWindowId).toBe(newWindowId);
+		expect(b11After?.browserWindowId).toBe(newWindowId);
+
+		// b should now be at root level (no longer child of c)
+		expect(bAfter?.parentTabId).toBeNull();
+
+		// b subtree structure preserved
+		expect(b1After?.parentTabId).toBe(bAfter?.browserTabId);
+		expect(b11After?.parentTabId).toBe(b1After?.browserTabId);
+
+		// Verify a subtree and c stayed in original window
+		const aAfter = allTabs.find((t) => t.url.includes("about:blank?a"));
+		const cAfter = allTabs.find((t) => t.url.includes("about:blank?c"));
+		expect(aAfter?.browserWindowId).toBe(originalWindowId);
+		expect(cAfter?.browserWindowId).toBe(originalWindowId);
+
+		// Cleanup
+		await aPage.close();
+		await a1Page.close();
+		await a11Page.close();
+		await a111Page.close();
+		await bPage.close();
+		await b1Page.close();
+		await b11Page.close();
+		await cPage.close();
 	});
 
 	test("Level 1: Parent with children (a, a.1, a.2, a.3) - move within same window", async ({
@@ -1540,6 +1773,409 @@ test.describe("Middle-Click Actions", () => {
 		const helpers = await treeHelpers.getHelpers();
 		const closedTab = helpers.getTabById(tabInfo.browserTabId);
 		expect(closedTab).toBeUndefined();
+	});
+});
+
+test.describe("Child Tab Ordering Issues", () => {
+	test("creating multiple children via window.open should maintain creation order", async ({
+		context,
+		sidepanel,
+		treeHelpers,
+	}) => {
+		// This test reproduces the issue where:
+		// 1. Create tab A
+		// 2. Create tab B as child of A
+		// 3. Create tab C as child of A
+		// Expected: C should appear before B (created first)
+		// Actual: C appears after B (wrong order)
+
+		// Clear any previous events
+		await treeHelpers.clearTabCreatedEvents();
+
+		// Create tab A
+		const tabA = await createTab(context, "about:blank?a", sidepanel);
+		const aInfo = await treeHelpers.waitForTab("about:blank?a");
+
+		// Create tab B from tab A using window.open (simulates clicking a link)
+		await tabA.bringToFront();
+		const [tabB] = await Promise.all([
+			context.waitForEvent("page"),
+			tabA.evaluate(() => {
+				window.open("about:blank?b", "_blank");
+			}),
+		]);
+		const bInfo = await treeHelpers.waitForTab("about:blank?b");
+
+		// Create tab C from tab A using window.open (simulates clicking a link again)
+		await tabA.bringToFront();
+		const [tabC] = await Promise.all([
+			context.waitForEvent("page"),
+			tabA.evaluate(() => {
+				window.open("about:blank?c", "_blank");
+			}),
+		]);
+		const cInfo = await treeHelpers.waitForTab("about:blank?c");
+
+		// Verify both B and C are children of A
+		expect(bInfo.parentTabId).toBe(aInfo.browserTabId);
+		expect(cInfo.parentTabId).toBe(aInfo.browserTabId);
+
+		// Get the children of A in tree order
+		const helpers = await treeHelpers.getHelpers();
+		const aChildren = helpers.getChildren(aInfo.browserTabId);
+
+		console.log("Children of A:", aChildren);
+		console.log("  Child 0:", aChildren[0]);
+		console.log("  Child 1:", aChildren[1]);
+
+		// The children should be in creation order: B (first), then C (second)
+		// But currently they might appear in wrong order
+		expect(aChildren.length).toBe(2);
+		expect(aChildren[0].browserTabId).toBe(bInfo.browserTabId);
+		expect(aChildren[1].browserTabId).toBe(cInfo.browserTabId);
+
+		await tabA.close();
+		await tabB.close();
+		await tabC.close();
+	});
+
+	test("tab with opener created far away should be moved to be adjacent to siblings", async ({
+		context,
+		sidepanel,
+		treeHelpers,
+	}) => {
+		// This test verifies that when a tab with openerTabId is created far from its opener
+		// (e.g., at the end of the tab bar), it gets moved to be adjacent to its siblings
+
+		await treeHelpers.clearTabCreatedEvents();
+
+		// Create tab A
+		const tabA = await createTab(context, "about:blank?a", sidepanel);
+		const aInfo = await treeHelpers.waitForTab("about:blank?a");
+
+		// Create child 1 normally (should be adjacent)
+		await tabA.bringToFront();
+		const [child1] = await Promise.all([
+			context.waitForEvent("page"),
+			tabA.evaluate(() => {
+				window.open("about:blank?child1", "_blank");
+			}),
+		]);
+		const child1Info = await treeHelpers.waitForTab("about:blank?child1");
+
+		// Create an unrelated tab B to push new tabs away from A
+		const tabB = await createTab(context, "about:blank?b", sidepanel);
+		const bInfo = await treeHelpers.waitForTab("about:blank?b");
+
+		// Create another unrelated tab C
+		const tabC = await createTab(context, "about:blank?c", sidepanel);
+		const cInfo = await treeHelpers.waitForTab("about:blank?c");
+
+		console.log("Setup complete:");
+		console.log("  A at index:", aInfo.tabIndex);
+		console.log("  Child1 at index:", child1Info.tabIndex);
+		console.log("  B at index:", bInfo.tabIndex);
+		console.log("  C at index:", cInfo.tabIndex);
+
+		// Now create child 2 from A - it will be created at the end (far from A)
+		// This should trigger opener-based placement AND repositioning
+		await tabA.bringToFront();
+		const [child2] = await Promise.all([
+			context.waitForEvent("page"),
+			tabA.evaluate(() => {
+				// Use createTabWithOpener to explicitly set openerTabId
+				// and create at the end of the tab bar
+				window.open("about:blank?child2-far", "_blank");
+			}),
+		]);
+
+		// Wait for child 2 to be created and potentially repositioned
+		await sidepanel.waitForTimeout(1000);
+
+		const child2Info = await treeHelpers.waitForTab("about:blank?child2-far");
+		console.log("Child 2 created at index:", child2Info.tabIndex);
+
+		// Get the creation event to see what logic was used
+		const events = await treeHelpers.getTabCreatedEvents();
+		const child2Event = events.find((e) => e.tabId === child2Info.browserTabId);
+		console.log("Child 2 creation event:", child2Event);
+
+		// Verify child 2 is a child of A
+		expect(child2Info.parentTabId).toBe(aInfo.browserTabId);
+
+		// Verify child 2 was moved to be adjacent to child 1
+		// It should be right after child 1 (or at least before B)
+		const helpers = await treeHelpers.getHelpers();
+		const allTabs = helpers.getAllTabs();
+
+		console.log("Final tab order:");
+		for (const tab of allTabs) {
+			const name = tab.url.includes("?a")
+				? "A"
+				: tab.url.includes("child1")
+					? "Child1"
+					: tab.url.includes("child2-far")
+						? "Child2"
+						: tab.url.includes("?b")
+							? "B"
+							: tab.url.includes("?c")
+								? "C"
+								: "Other";
+			console.log(
+				`  ${name}: index ${tab.tabIndex}, parent ${tab.parentTabId}`,
+			);
+		}
+
+		// Child 2 should be positioned near A and Child1, not after C
+		// Specifically, it should be before B and C
+		expect(child2Info.tabIndex).toBeLessThan(bInfo.tabIndex);
+
+		await tabA.close();
+		await child1.close();
+		await child2.close();
+		await tabB.close();
+		await tabC.close();
+	});
+
+	test("context menu 'New Tab' should respect native browser position in tree", async ({
+		context,
+		sidepanel,
+		treeHelpers,
+	}) => {
+		// This test verifies that when you create a tab via context menu,
+		// it appears in the tree at the same position as in the native browser
+		// (right after the parent), not at the end of the children list
+
+		await treeHelpers.clearTabCreatedEvents();
+
+		// Create tab A
+		const tabA = await createTab(context, "about:blank?a", sidepanel);
+		const aInfo = await treeHelpers.waitForTab("about:blank?a");
+
+		// Create child 1 from A
+		await tabA.bringToFront();
+		const [child1] = await Promise.all([
+			context.waitForEvent("page"),
+			tabA.evaluate(() => {
+				window.open("about:blank?child1", "_blank");
+			}),
+		]);
+		const child1Info = await treeHelpers.waitForTab("about:blank?child1");
+
+		// Create child 2 from A
+		await tabA.bringToFront();
+		const [child2] = await Promise.all([
+			context.waitForEvent("page"),
+			tabA.evaluate(() => {
+				window.open("about:blank?child2", "_blank");
+			}),
+		]);
+		const child2Info = await treeHelpers.waitForTab("about:blank?child2");
+
+		// Verify we have 2 children
+		let helpers = await treeHelpers.getHelpers();
+		let aChildren = helpers.getChildren(aInfo.browserTabId);
+		expect(aChildren.length).toBe(2);
+		console.log(
+			"Children after creating 2:",
+			aChildren.map((c) => ({
+				url: c.url,
+				tabIndex: c.tabIndex,
+				treeOrder: c.treeOrder,
+			})),
+		);
+
+		// Now use context menu on tab A to create a new tab
+		// This should create a tab right after A in the native browser
+		const aElement = treeHelpers.getTabElement(aInfo.browserTabId);
+		await aElement.click({ button: "right" });
+		await sidepanel.locator('text="New Tab"').first().click();
+
+		// Wait for the new tab to be created
+		await sidepanel.waitForTimeout(1000);
+
+		// Get the new tab - it should be a child of A
+		helpers = await treeHelpers.getHelpers();
+		aChildren = helpers.getChildren(aInfo.browserTabId);
+		expect(aChildren.length).toBe(3);
+
+		console.log(
+			"Children after context menu new tab:",
+			aChildren.map((c) => ({
+				url: c.url,
+				tabIndex: c.tabIndex,
+				treeOrder: c.treeOrder,
+			})),
+		);
+
+		// Find the new tab (it's the one that's not child1 or child2)
+		const newTab = aChildren.find(
+			(c) =>
+				c.browserTabId !== child1Info.browserTabId &&
+				c.browserTabId !== child2Info.browserTabId,
+		);
+
+		expect(newTab).toBeDefined();
+		console.log("New tab from context menu:", {
+			url: newTab?.url,
+			tabIndex: newTab?.tabIndex,
+			treeOrder: newTab?.treeOrder,
+		});
+
+		// Log the tab created events to see which code path was taken
+		const events = await treeHelpers.getTabCreatedEvents();
+		const newTabEvent = events.find((e) => e.tabId === newTab?.browserTabId);
+		console.log("New tab creation event:", newTabEvent);
+		console.log("Parent A info:", {
+			browserTabId: aInfo.browserTabId,
+			tabIndex: aInfo.tabIndex,
+		});
+
+		// The new tab should be positioned RIGHT AFTER A in the native browser
+		// So it should have a tabIndex right after A's index
+		// In the tree, it should appear FIRST among the children, not last
+		expect(newTab?.tabIndex).toBe(aInfo.tabIndex + 1);
+
+		// Sort children by tree order to see their display order in the tree
+		const childrenSortedByTreeOrder = [...aChildren].sort((a, b) =>
+			a.treeOrder < b.treeOrder ? -1 : 1,
+		);
+
+		console.log(
+			"Children sorted by tree order:",
+			childrenSortedByTreeOrder.map((c) => ({
+				url: c.url,
+				treeOrder: c.treeOrder,
+			})),
+		);
+
+		// The new tab should be FIRST in tree order (appears first in the tree view)
+		// because it's right after the parent in the native browser
+		expect(childrenSortedByTreeOrder[0].browserTabId).toBe(
+			newTab?.browserTabId,
+		);
+
+		await tabA.close();
+		await child1.close();
+		await child2.close();
+	});
+
+	test("new child should appear after last child even if intermediate child was moved", async ({
+		context,
+		sidepanel,
+		treeHelpers,
+	}) => {
+		// This test reproduces the more complex issue:
+		// 1. Create tab A
+		// 2. window.open from A → creates child 1 of A ✓
+		// 3. window.open from A → creates child 2 of A ✓
+		// 4. Move child 2 to be a sibling of A (not a child anymore)
+		// 5. window.open from A → creates child 3
+		// Expected: child 3 should appear after child 1 (last remaining child of A)
+		// Actual: child 3 might appear as a sibling instead of being repositioned
+
+		// Clear any previous events
+		await treeHelpers.clearTabCreatedEvents();
+
+		// Create tab A
+		const tabA = await createTab(context, "about:blank?a", sidepanel);
+		const aInfo = await treeHelpers.waitForTab("about:blank?a");
+
+		console.log("Tab A created:", aInfo);
+
+		// Create child 1 from tab A using window.open
+		await tabA.bringToFront();
+		const [child1] = await Promise.all([
+			context.waitForEvent("page"),
+			tabA.evaluate(() => {
+				window.open("about:blank?child1", "_blank");
+			}),
+		]);
+		const child1Info = await treeHelpers.waitForTab("about:blank?child1");
+		console.log("Child 1 created:", child1Info);
+
+		// Verify child 1 is a child of A
+		expect(child1Info.parentTabId).toBe(aInfo.browserTabId);
+
+		// Create child 2 from tab A using window.open
+		await tabA.bringToFront();
+		const [child2] = await Promise.all([
+			context.waitForEvent("page"),
+			tabA.evaluate(() => {
+				window.open("about:blank?child2", "_blank");
+			}),
+		]);
+
+		const child2Info = await treeHelpers.waitForTab("about:blank?child2");
+		console.log("Child 2 created:", child2Info);
+
+		// Verify child 2 is a child of A
+		expect(child2Info.parentTabId).toBe(aInfo.browserTabId);
+
+		// Verify both children exist
+		const helpers2 = await treeHelpers.getHelpers();
+		let aChildren = helpers2.getChildren(aInfo.browserTabId);
+		expect(aChildren.length).toBe(2);
+		console.log("Children before move:", aChildren);
+
+		// Move child 2 to be a sibling of A (drag it to be after A, not a child)
+		// We'll use dragTabAfterTab to make it a sibling
+		await treeHelpers.dragTabAfterTab(
+			child2Info.browserTabId,
+			aInfo.browserTabId,
+		);
+
+		// Verify child 2 is now a sibling of A (no longer a child)
+		const child2AfterMove = await treeHelpers.getTabByUrl("about:blank?child2");
+		console.log("Child 2 after move:", child2AfterMove);
+		expect(child2AfterMove?.parentTabId).toBeNull(); // Now a sibling of A
+
+		// Verify only child 1 remains as a child of A
+		const helpers3 = await treeHelpers.getHelpers();
+		aChildren = helpers3.getChildren(aInfo.browserTabId);
+		expect(aChildren.length).toBe(1);
+		expect(aChildren[0].browserTabId).toBe(child1Info.browserTabId);
+
+		// Create child 3 from tab A using window.open
+		await tabA.bringToFront();
+		const [child3] = await Promise.all([
+			context.waitForEvent("page"),
+			tabA.evaluate(() => {
+				window.open("about:blank?child3", "_blank");
+			}),
+		]);
+
+		const child3Info = await treeHelpers.waitForTab("about:blank?child3");
+		console.log("Child 3 created:", child3Info);
+
+		// Get tab created events to see what the background script decided
+		const events = await treeHelpers.getTabCreatedEvents();
+		const child3Event = events.find(
+			(e) => e.tabId === child3Info?.browserTabId,
+		);
+		console.log("Child 3 creation event:", child3Event);
+
+		// Verify child 3 is a child of A (not a sibling)
+		// The issue is that it might be created at the end of the tab bar,
+		// so position-based logic won't make it a child, and opener-based logic
+		// should make it a child but place it at the end (as a sibling) instead of
+		// repositioning it to be after child 1
+		const helpers4 = await treeHelpers.getHelpers();
+		aChildren = helpers4.getChildren(aInfo.browserTabId);
+
+		console.log("Final children of A:", aChildren);
+
+		// Expected: child 3 should be a child of A, positioned after child 1
+		// This test will currently fail if the bug exists
+		expect(child3Info?.parentTabId).toBe(aInfo.browserTabId);
+		expect(aChildren.length).toBe(2);
+		expect(aChildren[0].browserTabId).toBe(child1Info.browserTabId);
+		expect(aChildren[1].browserTabId).toBe(child3Info?.browserTabId);
+
+		await tabA.close();
+		await child1.close();
+		await child2.close();
+		await child3.close();
 	});
 });
 

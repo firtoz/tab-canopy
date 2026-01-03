@@ -18,6 +18,7 @@ import { TabContextMenu } from "./TabContextMenu";
 export const TabCard = ({
 	tab,
 	windowFocused,
+	isCurrentWindow,
 	isSelected,
 	onSelect,
 	onEditingChange,
@@ -31,6 +32,7 @@ export const TabCard = ({
 }: {
 	tab: schema.Tab;
 	windowFocused: boolean;
+	isCurrentWindow: boolean;
 	isSelected: boolean;
 	onSelect: (
 		tabId: number,
@@ -123,8 +125,11 @@ export const TabCard = ({
 		(e: React.MouseEvent) => {
 			e.preventDefault();
 
-			// Check for click-to-rename: only if window is focused, tab is active, and we didn't drag much
+			// Check for click-to-rename: only if this is the current window (sidepanel's window),
+			// the window is focused, tab is active, and we didn't drag much.
+			// This prevents triggering rename when clicking on the active tab of another window.
 			if (
+				isCurrentWindow &&
 				windowFocused &&
 				tab.active &&
 				mouseDownPos &&
@@ -151,6 +156,7 @@ export const TabCard = ({
 		[
 			tab.browserTabId,
 			tab.active,
+			isCurrentWindow,
 			windowFocused,
 			mouseDownPos,
 			onSelect,

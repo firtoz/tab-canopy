@@ -376,31 +376,39 @@ export function calculateTreePositionForNewTab(
 		.filter((t) => t.parentTabId === parentTabId)
 		.sort(treeOrderSort);
 
-	// Find where to insert among siblings based on browser position
-	// We want to be before the tab that's after us (if it's a sibling)
-	let insertBeforeSibling: Tab | null = null;
+	// Find insertion point: which siblings are before/after the new tab in browser order?
+	// Use the browserTabs array directly to get current indices
 	let insertAfterSibling: Tab | null = null;
+	let insertBeforeSibling: Tab | null = null;
 
-	if (tabAfterIndex >= 0) {
-		const tabAfterId = sortedBrowserTabs[tabAfterIndex].id;
-		const tabAfter = existingMap.get(tabAfterId);
-		if (tabAfter && tabAfter.parentTabId === parentTabId) {
-			insertBeforeSibling = tabAfter;
-			// Find the sibling before this one
-			const siblingIndex = siblings.findIndex(
-				(s) => s.browserTabId === tabAfterId,
-			);
-			if (siblingIndex > 0) {
-				insertAfterSibling = siblings[siblingIndex - 1];
+	// For each sibling, find their current browser index from browserTabs
+	for (const sibling of siblings) {
+		// Look up the sibling's current browser index
+		const browserTab = browserTabs.find((bt) => bt.id === sibling.browserTabId);
+		const currentIndex = browserTab?.index ?? sibling.tabIndex;
+
+		if (currentIndex < newTabIndex) {
+			// This sibling is before the new tab in browser order
+			// Keep updating - we want the LAST one before (highest treeOrder among those before)
+			if (
+				insertAfterSibling === null ||
+				sibling.treeOrder > insertAfterSibling.treeOrder
+			) {
+				insertAfterSibling = sibling;
+			}
+		} else {
+			// This sibling is at or after the new tab in browser order
+			// Keep the FIRST one after (lowest treeOrder among those after)
+			if (
+				insertBeforeSibling === null ||
+				sibling.treeOrder < insertBeforeSibling.treeOrder
+			) {
+				insertBeforeSibling = sibling;
 			}
 		}
 	}
 
-	// If we didn't find a sibling to insert before, we're at the end
-	if (!insertBeforeSibling && siblings.length > 0) {
-		insertAfterSibling = siblings[siblings.length - 1];
-	}
-
+	// Generate treeOrder to place new tab between the siblings
 	const treeOrder = generateKeyBetween(
 		insertAfterSibling?.treeOrder ?? null,
 		insertBeforeSibling?.treeOrder ?? null,

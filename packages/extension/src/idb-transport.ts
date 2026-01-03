@@ -261,6 +261,7 @@ export interface TabCreatedEvent {
 	openerTabId: number | undefined;
 	tabIndex: number;
 	decidedParentId: number | null;
+	treeOrder: string;
 	reason: string;
 	timestamp: number;
 }
