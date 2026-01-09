@@ -1,7 +1,16 @@
 import { useDndContext } from "@dnd-kit/core";
 import * as ContextMenu from "@radix-ui/react-context-menu";
 import { Info, Puzzle, Volume2, X } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import React, {
+	type ChangeEventHandler,
+	type KeyboardEventHandler,
+	type ReactEventHandler,
+	useCallback,
+	useEffect,
+	useEffectEvent,
+	useRef,
+	useState,
+} from "react";
 import type * as schema from "@/schema/src/schema";
 import { cn } from "../lib/cn";
 import { isDropData } from "../lib/dnd/dnd-types";
@@ -14,6 +23,8 @@ import { TreeEmpty } from "./icons/TreeEmpty";
 import { TreeEnd } from "./icons/TreeEnd";
 import { TreeVertical } from "./icons/TreeVertical";
 import { TabContextMenu } from "./TabContextMenu";
+import type { SearchStore } from "./useSearch";
+import { useSearch } from "./useSearch";
 
 export const TabCard = ({
 	tab,
@@ -188,22 +199,107 @@ export const TabCard = ({
 
 	const { over } = useDndContext();
 	const dropData = over?.data?.current;
-	const activeDropData = isDropData(dropData) ? dropData : null;
+	const activeDropData = useMemo(
+		() => (isDropData(dropData) ? dropData : null),
+		[dropData],
+	);
 
 	// Check if this tab is the drop target
-	const isDropTargetSibling =
-		activeDropData?.type === "sibling" &&
-		activeDropData.tabId === tab.browserTabId;
-	const isDropTargetChild =
-		activeDropData?.type === "child" &&
-		activeDropData.tabId === tab.browserTabId;
+	const isDropTargetSibling = useMemo(
+		() =>
+			activeDropData?.type === "sibling" &&
+			activeDropData.tabId === tab.browserTabId,
+		[activeDropData],
+	);
+	const isDropTargetChild = useMemo(
+		() =>
+			activeDropData?.type === "child" &&
+			activeDropData.tabId === tab.browserTabId,
+		[activeDropData],
+	);
 
 	// Check if URL is an extension URL (can't load favicon)
-	const isExtensionUrl = tab.url?.startsWith("chrome-extension://");
-	const isLoadableFavicon =
-		tab.favIconUrl && !tab.favIconUrl.startsWith("chrome-extension://");
+	const isExtensionUrl = useMemo(
+		() => tab.url?.startsWith("chrome-extension://"),
+		[tab.url],
+	);
+	const isLoadableFavicon = useMemo(
+		() => tab.favIconUrl && !tab.favIconUrl.startsWith("chrome-extension://"),
+		[tab.favIconUrl],
+	);
 
 	const displayTitle = tab.titleOverride || tab.title || "Untitled";
+
+	const tabHostName = useMemo(() => {
+		if (!tab.url) {
+			return null;
+		}
+
+		try {
+			return new URL(tab.url).hostname || tab.url;
+		} catch {
+			return tab.url;
+		}
+	}, [tab.url]);
+
+	const [shouldHide, setShouldHide] = useState(false);
+
+	const onSearchChange = useEffectEvent(
+		({ input: searchInput }: SearchStore) => {
+			if (!searchInput) {
+				setShouldHide(false);
+
+				return;
+			}
+
+			setShouldHide(
+				!displayTitle.toLowerCase().includes(searchInput) &&
+					Boolean(tab.url) &&
+					!tab.url?.includes(searchInput),
+			);
+		},
+	);
+
+	useEffect(() => {
+		return useSearch.subscribe(onSearchChange);
+	}, []);
+
+	const handleKeyDown = useCallback<KeyboardEventHandler<HTMLDivElement>>(
+		(e) => {
+			if (e.key === "Enter" || e.key === " ") {
+				e.preventDefault();
+				handleClick(e as unknown as React.MouseEvent);
+			}
+		},
+		[handleClick],
+	);
+
+	const onImageError = useCallback<ReactEventHandler<HTMLImageElement>>((e) => {
+		e.currentTarget.style.display = "none";
+	}, []);
+
+	const onEditChange = useCallback<ChangeEventHandler<HTMLInputElement>>(
+		(e) => setEditValue(e.target.value),
+		[],
+	);
+
+	const stopPropagation = useCallback(
+		(e: React.MouseEvent | React.PointerEvent) => e.stopPropagation(),
+		[],
+	);
+
+	const onToggleCollapse = useCallback(
+		() => toggleCollapse(tab.browserTabId),
+		[tab.browserTabId, toggleCollapse],
+	);
+	const onCloseTab = useCallback(
+		() => closeTab(tab.browserTabId),
+		[tab.browserTabId, closeTab],
+	);
+	const onNewTab = useCallback(
+		() => newTabAsChild(tab.browserTabId),
+		[tab.browserTabId, newTabAsChild],
+	);
 
 	return (
 		<ContextMenu.Root>
@@ -211,6 +307,7 @@ export const TabCard = ({
 				<div
 					className={cn("flex items-stretch", {
 						"cursor-grab active:cursor-grabbing": !isDragging,
+						hidden: shouldHide,
 					})}
 					data-testid="tab-card"
 				>
@@ -270,16 +367,7 @@ export const TabCard = ({
 							onClick={isEditing ? undefined : handleClick}
 							onAuxClick={isEditing ? undefined : handleAuxClick}
 							onMouseDown={isEditing ? undefined : handleMouseDown}
-							onKeyDown={
-								isEditing
-									? undefined
-									: (e) => {
-											if (e.key === "Enter" || e.key === " ") {
-												e.preventDefault();
-												handleClick(e as unknown as React.MouseEvent);
-											}
-										}
-							}
+							onKeyDown={isEditing ? undefined : handleKeyDown}
 							role="button"
 							tabIndex={0}
 							aria-label={`Switch to tab: ${tab.title || "Untitled"}`}
@@ -329,9 +417,7 @@ export const TabCard = ({
 											src={tab.favIconUrl ?? undefined}
 											alt=""
 											className="w-4 h-4 object-contain"
-											onError={(e) => {
-												e.currentTarget.style.display = "none";
-											}}
+											onError={onImageError}
 										/>
 									) : isExtensionUrl ? (
 										<Puzzle
@@ -347,13 +433,13 @@ export const TabCard = ({
 										ref={inputRef}
 										type="text"
 										value={editValue}
-										onChange={(e) => setEditValue(e.target.value)}
+										onChange={onEditChange}
 										onKeyDown={handleRenameKeyDown}
 										onBlur={handleSaveRename}
 										className="text-xs font-medium px-1 py-0.5 rounded border border-blue-400 dark:border-blue-500 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 outline-none focus:ring-1 focus:ring-blue-500 min-w-[100px] flex-1"
-										onClick={(e) => e.stopPropagation()}
-										onMouseDown={(e) => e.stopPropagation()}
-										onPointerDown={(e) => e.stopPropagation()}
+										onClick={stopPropagation}
+										onMouseDown={stopPropagation}
+										onPointerDown={stopPropagation}
 									/>
 								) : (
 									<div
@@ -389,15 +475,9 @@ export const TabCard = ({
 										📌
 									</span>
 								)}
-								{!isEditing && tab.url && (
+								{!isEditing && tabHostName && (
 									<div className="text-xs text-slate-400 dark:text-slate-500 whitespace-nowrap overflow-hidden text-ellipsis shrink-999">
-										{(() => {
-											try {
-												return new URL(tab.url).hostname || tab.url;
-											} catch {
-												return tab.url;
-											}
-										})()}
+										{tabHostName}
 									</div>
 								)}
 							</div>
@@ -439,9 +519,9 @@ export const TabCard = ({
 				hasChildren={hasChildren}
 				isCollapsed={tab.isCollapsed}
 				onRename={handleStartRename}
-				onToggleCollapse={() => toggleCollapse(tab.browserTabId)}
-				onClose={() => closeTab(tab.browserTabId)}
-				onNewTab={() => newTabAsChild(tab.browserTabId)}
+				onToggleCollapse={onToggleCollapse}
+				onClose={onCloseTab}
+				onNewTab={onNewTab}
 			/>
 		</ContextMenu.Root>
 	);

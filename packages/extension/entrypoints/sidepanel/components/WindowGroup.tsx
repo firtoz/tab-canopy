@@ -20,6 +20,7 @@ import { IconCollapsed } from "./icons/IconCollapsed";
 import { IconExpanded } from "./icons/IconExpanded";
 import { TreeBranch } from "./icons/TreeBranch";
 import { TreeEnd } from "./icons/TreeEnd";
+import { useSearch } from "./useSearch";
 import { WindowContextMenu } from "./WindowContextMenu";
 
 // ============================================================================
@@ -92,22 +93,26 @@ export const WindowGroup = ({
 
 	// Adjust depth for tabs (add 1 since window is at depth 0)
 	// Also prepend the window's continuation guide
-	const items: WindowItem[] = flatNodes.map((node, index) => ({
-		id: `tab-${win.browserWindowId}-${node.tab.browserTabId}`,
-		tabId: node.tab.browserTabId,
-		windowId: win.browserWindowId,
-		tab: node.tab,
-		depth: node.depth + 1, // +1 because window is parent
-		hasChildren: node.hasChildren,
-		isLastChild:
-			node.isLastChild && index === flatNodes.length - 1
-				? true
-				: node.isLastChild,
-		// Add window's guide: show vertical line if window is not last
-		indentGuides: [!isLastWindow, ...node.indentGuides],
-		// Pass through ancestorIds from the tree node
-		ancestorIds: node.ancestorIds,
-	}));
+	const items: WindowItem[] = useMemo(() => {
+		const visible = flatNodes;
+
+		return visible.map((node, index) => ({
+			id: `tab-${win.browserWindowId}-${node.tab.browserTabId}`,
+			tabId: node.tab.browserTabId,
+			windowId: win.browserWindowId,
+			tab: node.tab,
+			depth: node.depth + 1, // +1 because window is parent
+			hasChildren: node.hasChildren,
+			isLastChild:
+				node.isLastChild && index === flatNodes.length - 1
+					? true
+					: node.isLastChild,
+			// Add window's guide: show vertical line if window is not last
+			indentGuides: [!isLastWindow, ...node.indentGuides],
+			// Pass through ancestorIds from the tree node
+			ancestorIds: node.ancestorIds,
+		}));
+	}, [flatNodes, isLastWindow, win.browserWindowId]);
 
 	const selectedItems = items.filter((item) => selectedTabIds.has(item.tabId));
 

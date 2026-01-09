@@ -44,6 +44,7 @@ import { useTabActions } from "../store/useTabActions";
 import { cursorOffsetModifier } from "./dnd/cursorOffsetModifier";
 import { dropZoneCollision } from "./dnd/dropZoneCollision";
 import { NewWindowDropZone } from "./dnd/NewWindowDropZone";
+import { SearchHandling } from "./SearchHandling";
 import { TabItemOverlay } from "./TabItemOverlay";
 import { WindowGroup } from "./WindowGroup";
 
@@ -854,6 +855,7 @@ export const TabManagerContent = () => {
 			onDragEnd={handleDragEnd}
 			onDragCancel={handleDragCancel}
 		>
+			<SearchHandling />
 			<div
 				data-testid="tab-manager"
 				className={cn(
