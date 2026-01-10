@@ -16,14 +16,8 @@ import { Plus, RefreshCw, Settings } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { browser } from "wxt/browser";
 import type * as schema from "@/schema/src/schema";
-import {
-	useManagedWindowMove,
-	useResetDatabase,
-	useSendMoveIntent,
-	useSendPendingChildIntent,
-	useTestActions,
-} from "../App";
 import { cn } from "../lib/cn";
+import { useIdbAdapter } from "../lib/db";
 import { isDropData } from "../lib/dnd/dnd-types";
 import {
 	exposeBrowserTestActions,
@@ -55,11 +49,7 @@ export const TabManagerContent = () => {
 	const { useCollection } = useDrizzleIndexedDB<typeof schema>();
 	const windowCollection = useCollection("windowTable");
 	const tabCollection = useCollection("tabTable");
-	const resetDatabase = useResetDatabase();
-	const sendMoveIntent = useSendMoveIntent();
-	const sendPendingChildIntent = useSendPendingChildIntent();
-	const managedWindowMove = useManagedWindowMove();
-	const testActions = useTestActions();
+	const adapter = useIdbAdapter();
 	const [isResetting, setIsResetting] = useState(false);
 	const { setCollections } = useTabActions();
 
@@ -77,14 +67,14 @@ export const TabManagerContent = () => {
 		setCollections(
 			tabCollection,
 			windowCollection,
-			sendMoveIntent,
-			sendPendingChildIntent,
+			adapter.sendMoveIntent,
+			adapter.sendPendingChildIntent,
 		);
 	}, [
 		tabCollection,
 		windowCollection,
-		sendMoveIntent,
-		sendPendingChildIntent,
+		adapter.sendMoveIntent,
+		adapter.sendPendingChildIntent,
 		setCollections,
 	]);
 
@@ -154,11 +144,11 @@ export const TabManagerContent = () => {
 		if (isResetting) return;
 		setIsResetting(true);
 		try {
-			await resetDatabase();
+			await adapter.resetDatabase();
 		} finally {
 			setIsResetting(false);
 		}
-	}, [isResetting, resetDatabase]);
+	}, [isResetting, adapter]);
 
 	const handleDragStart = useCallback(
 		(event: DragStartEvent) => {
@@ -549,7 +539,7 @@ export const TabManagerContent = () => {
 				// Tell background script to ignore these tab detach/attach events
 				// Wait for acknowledgment to ensure the background has updated its managed set
 				// before tabs start attaching
-				await managedWindowMove.start(Array.from(tabsToMove));
+				await adapter.startManagedWindowMove(Array.from(tabsToMove));
 			}
 
 			// Flatten to get expected browser order
@@ -574,7 +564,7 @@ export const TabManagerContent = () => {
 					treeOrder: tabData?.treeOrder ?? DEFAULT_TREE_ORDER,
 				};
 			});
-			await sendMoveIntent(moveIntents);
+			await adapter.sendMoveIntent(moveIntents);
 
 			// Move each tab to its expected position sequentially
 			// Using sequential moves because browser.tabs.move with multiple tabs is unreliable
@@ -594,7 +584,7 @@ export const TabManagerContent = () => {
 
 			// Clear managed window move after all tabs are moved
 			if (isCrossWindowMove) {
-				managedWindowMove.end();
+				adapter.endManagedWindowMove();
 			}
 
 			// Close the blank tab if we created a new window
@@ -606,15 +596,7 @@ export const TabManagerContent = () => {
 				}
 			}
 		},
-		[
-			getAllItems,
-			selectedTabIds,
-			tabs,
-			tabCollection,
-			sendMoveIntent,
-			managedWindowMove.end, // Tell background script to ignore these tab detach/attach events
-			managedWindowMove.start,
-		],
+		[getAllItems, selectedTabIds, tabs, tabCollection, adapter],
 	);
 
 	// Store latest tabs in a ref to avoid stale closures
@@ -824,10 +806,10 @@ export const TabManagerContent = () => {
 
 	// Expose browser test actions once on mount with a stable wrapper
 	useEffect(() => {
-		exposeBrowserTestActions(testActions, (action) =>
+		exposeBrowserTestActions(adapter, (action) =>
 			handleUserActionRef.current(action),
 		);
-	}, [testActions]);
+	}, [adapter]);
 
 	// Find active item for drag overlay
 	const allItems = getAllItems();

@@ -69,7 +69,14 @@ export function buildTabTree(tabs: Tab[]): TabTreeNode[] {
 	// Group tabs by parent
 	const childrenMap = new Map<number | null, Tab[]>();
 	for (const tab of tabs) {
-		const parentId = tab.parentTabId;
+		let parentId = tab.parentTabId;
+		
+		// Handle orphaned tabs: if parent doesn't exist in the tab list,
+		// treat this tab as a root-level tab (parentId = null)
+		if (parentId !== null && !tabMap.has(parentId)) {
+			parentId = null;
+		}
+		
 		if (!childrenMap.has(parentId)) {
 			childrenMap.set(parentId, []);
 		}

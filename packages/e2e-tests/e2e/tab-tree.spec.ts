@@ -899,14 +899,14 @@ test.describe("Tab Movement with Children", () => {
 		await tab3.close();
 	});
 
-	test("closing expanded parent tab via UI also closes children", async ({
+	test("closing non-collapsed parent tab via UI promotes children", async ({
 		context,
 		sidepanel,
 		treeHelpers,
 	}) => {
-		// NOTE: Current implementation closes ALL children when closing a tab via UI,
-		// regardless of expanded/collapsed state. This is different from browser-native
-		// tab close which would promote children.
+		// UI close button should behave the same as browser-native close:
+		// - Non-collapsed parent: promote children to parent's parent
+		// - Collapsed parent: close all descendants (tested separately)
 
 		// Create parent and children tabs
 		const _parentTab = await createTab(
@@ -961,7 +961,7 @@ test.describe("Tab Movement with Children", () => {
 			await treeHelpers.getTabByUrl("about:blank?parent");
 		expect(parentAfterClose).toBeUndefined();
 
-		// Verify children are also closed (current UI behavior)
+		// Verify children were PROMOTED (not closed) - they should now be at root level
 		const child1AfterClose =
 			await treeHelpers.getTabByUrl("about:blank?child3");
 		const child2AfterClose =
@@ -970,10 +970,10 @@ test.describe("Tab Movement with Children", () => {
 		console.log("After closing parent - child1:", child1AfterClose);
 		console.log("After closing parent - child2:", child2AfterClose);
 
-		expect(child1AfterClose).toBeUndefined();
-		expect(child2AfterClose).toBeUndefined();
-
-		// No cleanup needed - all tabs were closed
+		expect(child1AfterClose).toBeDefined();
+		expect(child2AfterClose).toBeDefined();
+		expect(child1AfterClose?.parentTabId).toBeNull(); // Promoted to root
+		expect(child2AfterClose?.parentTabId).toBeNull(); // Promoted to root
 	});
 
 	test("browser-native close (not UI) promotes children to grandparent", async ({
@@ -1138,6 +1138,146 @@ test.describe("Tab Movement with Children", () => {
 		expect(child2AfterClose).toBeUndefined();
 
 		// Note: No cleanup needed as all tabs should be closed
+	});
+
+	test("closing non-collapsed parent with grandchildren only promotes direct children", async ({
+		context,
+		sidepanel,
+		treeHelpers,
+	}) => {
+		// Test structure:
+		// grandparent
+		//   → parent (level 1) <- we'll close this
+		//       → child (level 2)
+		//           → grandchild (level 3)
+		//               → great-grandchild (level 4)
+		//
+		// After closing parent:
+		// grandparent
+		//   → child (promoted to level 1, sibling of where parent was)
+		//       → grandchild (level 2, still child of child)
+		//           → great-grandchild (level 3, still child of grandchild)
+
+		// Create the tabs
+		const grandparentTab = await createTab(
+			context,
+			"about:blank?grandparent",
+			sidepanel,
+		);
+		const parentTab = await createTab(
+			context,
+			"about:blank?parent",
+			sidepanel,
+		);
+		const childTab = await createTab(context, "about:blank?child", sidepanel);
+		const grandchildTab = await createTab(
+			context,
+			"about:blank?grandchild",
+			sidepanel,
+		);
+		const greatGrandchildTab = await createTab(
+			context,
+			"about:blank?greatgrandchild",
+			sidepanel,
+		);
+
+		// Wait for tabs to appear
+		const grandparentInfo = await treeHelpers.waitForTab(
+			"about:blank?grandparent",
+		);
+		const parentInfo = await treeHelpers.waitForTab("about:blank?parent");
+		const childInfo = await treeHelpers.waitForTab("about:blank?child");
+		const grandchildInfo = await treeHelpers.waitForTab(
+			"about:blank?grandchild",
+		);
+		const greatGrandchildInfo = await treeHelpers.waitForTab(
+			"about:blank?greatgrandchild",
+		);
+
+		// Build tree structure programmatically (faster)
+		await treeHelpers.makeTabChild(
+			parentInfo.browserTabId,
+			grandparentInfo.browserTabId,
+		);
+		await treeHelpers.makeTabChild(
+			childInfo.browserTabId,
+			parentInfo.browserTabId,
+		);
+		await treeHelpers.makeTabChild(
+			grandchildInfo.browserTabId,
+			childInfo.browserTabId,
+		);
+		await treeHelpers.makeTabChild(
+			greatGrandchildInfo.browserTabId,
+			grandchildInfo.browserTabId,
+		);
+
+		// Verify initial structure
+		let helpers = await treeHelpers.getHelpers();
+		const parentBefore = helpers
+			.getAllTabs()
+			.find((t) => t.url.includes("about:blank?parent"));
+		const childBefore = helpers
+			.getAllTabs()
+			.find((t) => t.url.includes("about:blank?child"));
+		const grandchildBefore = helpers
+			.getAllTabs()
+			.find((t) => t.url.includes("about:blank?grandchild"));
+		const greatGrandchildBefore = helpers
+			.getAllTabs()
+			.find((t) => t.url.includes("about:blank?greatgrandchild"));
+
+		expect(parentBefore?.parentTabId).toBe(grandparentInfo.browserTabId);
+		expect(parentBefore?.depth).toBe(1);
+		expect(childBefore?.parentTabId).toBe(parentInfo.browserTabId);
+		expect(childBefore?.depth).toBe(2);
+		expect(grandchildBefore?.parentTabId).toBe(childInfo.browserTabId);
+		expect(grandchildBefore?.depth).toBe(3);
+		expect(greatGrandchildBefore?.parentTabId).toBe(
+			grandchildInfo.browserTabId,
+		);
+		expect(greatGrandchildBefore?.depth).toBe(4);
+
+		// Close the parent tab via browser API (not collapsed)
+		await parentTab.close();
+		await sidepanel.waitForTimeout(500);
+
+		// Verify parent is closed
+		const parentAfter = await treeHelpers.getTabByUrl("about:blank?parent");
+		expect(parentAfter).toBeUndefined();
+
+		// Get updated structure
+		helpers = await treeHelpers.getHelpers();
+		const childAfter = helpers
+			.getAllTabs()
+			.find((t) => t.url.includes("about:blank?child"));
+		const grandchildAfter = helpers
+			.getAllTabs()
+			.find((t) => t.url.includes("about:blank?grandchild"));
+		const greatGrandchildAfter = helpers
+			.getAllTabs()
+			.find((t) => t.url.includes("about:blank?greatgrandchild"));
+
+		// Direct child should be promoted to grandparent (moved up 1 level)
+		expect(childAfter).toBeDefined();
+		expect(childAfter?.parentTabId).toBe(grandparentInfo.browserTabId);
+		expect(childAfter?.depth).toBe(1); // Was 2, now 1
+
+		// Grandchild should still be child of child (parent pointer unchanged)
+		expect(grandchildAfter).toBeDefined();
+		expect(grandchildAfter?.parentTabId).toBe(childInfo.browserTabId);
+		expect(grandchildAfter?.depth).toBe(2); // Was 3, now 2
+
+		// Great-grandchild should still be child of grandchild (parent pointer unchanged)
+		expect(greatGrandchildAfter).toBeDefined();
+		expect(greatGrandchildAfter?.parentTabId).toBe(grandchildInfo.browserTabId);
+		expect(greatGrandchildAfter?.depth).toBe(3); // Was 4, now 3
+
+		// Cleanup
+		await grandparentTab.close();
+		await childTab.close();
+		await grandchildTab.close();
+		await greatGrandchildTab.close();
 	});
 });
 

@@ -658,7 +658,6 @@ export const setupTabListeners = (
 	) => {
 		log("[Background] Tab removed:", tabId, removeInfo);
 
-		// Before deleting, promote children to the removed tab's parent
 		const existingTabs = await getAll<Tab>("tab");
 		const removedTab = existingTabs.find((t) => t.browserTabId === tabId);
 
@@ -666,23 +665,55 @@ export const setupTabListeners = (
 			// Find children of the removed tab
 			const children = existingTabs.filter((t) => t.parentTabId === tabId);
 			if (children.length > 0) {
-				// Promote children to the removed tab's parent
-				const promotedRecords: TabRecord[] = [];
-				for (const child of children) {
-					const browserTab = await browser.tabs
-						.get(child.browserTabId)
-						.catch(() => null);
-					if (browserTab && hasTabIds(browserTab)) {
-						promotedRecords.push(
-							tabToRecord(browserTab, {
-								parentTabId: removedTab.parentTabId,
-								treeOrder: child.treeOrder,
-							}),
+				// Behavior depends on whether the tab was collapsed or not
+				if (removedTab.isCollapsed) {
+					// Collapsed: close all descendants recursively
+					log("[Background] Tab was collapsed, closing all descendants");
+					const descendantIds = new Set<number>();
+					const queue = [...children];
+					
+					while (queue.length > 0) {
+						const child = queue.shift();
+						if (!child) continue;
+						
+						descendantIds.add(child.browserTabId);
+						
+						// Find grandchildren and add to queue
+						const grandchildren = existingTabs.filter(
+							(t) => t.parentTabId === child.browserTabId,
 						);
+						queue.push(...grandchildren);
 					}
-				}
-				if (promotedRecords.length > 0) {
-					await putItems("tab", promotedRecords);
+
+					// Close all descendants
+					for (const descendantId of descendantIds) {
+						try {
+							await browser.tabs.remove(descendantId);
+							log("[Background] Closed descendant tab:", descendantId);
+						} catch (error) {
+							log("[Background] Failed to close descendant tab:", descendantId, error);
+						}
+					}
+				} else {
+					// Not collapsed: promote children to the removed tab's parent
+					log("[Background] Tab was not collapsed, promoting children");
+					const promotedRecords: TabRecord[] = [];
+					for (const child of children) {
+						const browserTab = await browser.tabs
+							.get(child.browserTabId)
+							.catch(() => null);
+						if (browserTab && hasTabIds(browserTab)) {
+							promotedRecords.push(
+								tabToRecord(browserTab, {
+									parentTabId: removedTab.parentTabId,
+									treeOrder: child.treeOrder,
+								}),
+							);
+						}
+					}
+					if (promotedRecords.length > 0) {
+						await putItems("tab", promotedRecords);
+					}
 				}
 			}
 		}

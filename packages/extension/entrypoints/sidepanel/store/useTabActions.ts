@@ -6,6 +6,7 @@ import type {
 	PendingChildTabData,
 	UiMoveIntentData,
 } from "../lib/db/createIDBTransportAdapter";
+import { getDescendantIds } from "../lib/tree";
 
 type TabCollection = InferCollectionFromTable<typeof schema.tabTable>;
 type WindowCollection = InferCollectionFromTable<typeof schema.windowTable>;
@@ -99,23 +100,23 @@ export const useTabActions = create<TabActionsStore>((set, get) => ({
 		const tab = tabs.find((t) => t.browserTabId === tabId);
 		if (!tab) return;
 
-		// Find all descendants
-		const descendants: schema.Tab[] = [];
-		const findDescendants = (parentId: number) => {
-			const children = tabs.filter((t) => t.parentTabId === parentId);
-			for (const child of children) {
-				descendants.push(child);
-				findDescendants(child.browserTabId);
-			}
-		};
-		findDescendants(tabId);
+		// Behavior depends on collapse state:
+		// - If collapsed: close all descendants recursively
+		// - If NOT collapsed: only close this tab, let background promote children
+		if (tab.isCollapsed) {
+			// Get all descendant IDs using utility function
+			const descendantIds = getDescendantIds(tabs, tabId);
 
-		// Close all tabs (descendants first, then parent)
-		const tabsToClose = [...descendants, tab];
-		const browserTabIds = tabsToClose.map((t) => t.browserTabId);
+			// Close all tabs (descendants first, then parent)
+			const browserTabIds = [...descendantIds, tabId];
 
-		// Close in browser
-		await browser.tabs.remove(browserTabIds);
+			// Close in browser
+			await browser.tabs.remove(browserTabIds);
+		} else {
+			// Not collapsed: only close this tab
+			// The background's handleTabRemoved will promote children to parent's parent
+			await browser.tabs.remove(tabId);
+		}
 	},
 
 	renameTab: async (tabId: number, newTitle: string | null) => {

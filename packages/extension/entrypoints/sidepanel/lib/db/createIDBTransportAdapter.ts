@@ -62,9 +62,24 @@ export type InjectBrowserEvent =
 	| { eventType: "windows.onRemoved"; eventData: number }
 	| { eventType: "windows.onFocusChanged"; eventData: number };
 
-export function createIDBTransportAdapter(options?: {
+export interface IDBTransportAdapterOptions {
+	/** Called when connection state changes */
+	onConnectionStateChange?: (
+		state: "connecting" | "connected" | "disconnected",
+	) => void;
+	/** Called when connection is lost (will auto-retry) */
 	onDisconnect?: () => void;
-}): {
+	/** Enable/disable the adapter. If false, will not connect and will disconnect if already connected */
+	enabled?: boolean;
+	/** Maximum retry attempts before giving up (-1 for infinite) */
+	maxRetries?: number;
+	/** Initial retry delay in ms (will exponentially backoff) */
+	retryDelay?: number;
+	/** Maximum retry delay in ms */
+	maxRetryDelay?: number;
+}
+
+export interface IDBTransportAdapter {
 	transport: IDBProxyClientTransport;
 	resetDatabase: () => Promise<void>;
 	sendMoveIntent: (moves: UiMoveIntentData[]) => Promise<void>;
@@ -76,7 +91,37 @@ export function createIDBTransportAdapter(options?: {
 	getTabCreatedEvents: () => Promise<TabCreatedEvent[]>;
 	clearTabCreatedEvents: () => void;
 	dispose: () => void;
-} {
+	/** Get current connection state */
+	getConnectionState: () => "connecting" | "connected" | "disconnected";
+	/** Check if adapter is ready to use */
+	isReady: () => boolean;
+	/** Manually trigger a reconnection attempt */
+	reconnect: () => void;
+}
+
+export function createIDBTransportAdapter(
+	options: IDBTransportAdapterOptions = {},
+): IDBTransportAdapter {
+	const {
+		enabled = true,
+		maxRetries = -1, // infinite by default
+		retryDelay = 100,
+		maxRetryDelay = 5000,
+		onConnectionStateChange,
+		onDisconnect,
+	} = options;
+
+	// Connection state management
+	let connectionState: "connecting" | "connected" | "disconnected" =
+		"disconnected";
+	let retryCount = 0;
+	let retryTimer: ReturnType<typeof setTimeout> | null = null;
+	let isDisposed = false;
+	let currentExtensionTransport: ReturnType<
+		typeof createExtensionClientTransport<ClientMessage, ServerMessage>
+	> | null = null;
+
+	// Pending operations
 	const pendingRequests = new Map<
 		string,
 		{
@@ -90,108 +135,213 @@ export function createIDBTransportAdapter(options?: {
 	let tabCreatedEventsResolve: ((events: TabCreatedEvent[]) => void) | null =
 		null;
 
-	const extensionTransport = createExtensionClientTransport<
-		ClientMessage,
-		ServerMessage
-	>({
-		portName: IDB_PORT_NAME,
-		onMessage: (message) => {
-			if (message.type === "idbResponse") {
-				const pending = pendingRequests.get(message.payload.id);
-				if (pending) {
-					// Transform dates in the response
-					pending.resolve(message.payload);
-					pendingRequests.delete(message.payload.id);
-				}
-			} else if (message.type === "idbSync") {
-				// Transform dates in the sync message
-				log(
-					"[Sidepanel] Received sync:",
-					message.payload.type,
-					message.payload.storeName,
-				);
-				syncHandler?.(message.payload);
-			} else if (message.type === "resetDatabaseComplete") {
-				console.log("[Sidepanel] Database reset complete");
-				if (resetResolve) {
-					resetResolve();
-					resetResolve = null;
-				}
-			} else if (message.type === "uiMoveIntentAck") {
-				log(
-					"[Sidepanel] Received move intent acknowledgment:",
-					message.requestId,
-				);
-				const resolve = pendingMoveIntents.get(message.requestId);
-				if (resolve) {
-					resolve();
-					pendingMoveIntents.delete(message.requestId);
-				}
-			} else if (message.type === "tabCreatedEvents") {
-				console.log("[Sidepanel] Received tab created events");
-				if (tabCreatedEventsResolve) {
-					tabCreatedEventsResolve(message.events);
-					tabCreatedEventsResolve = null;
-				}
-			} else if (message.type === "pong") {
-				// Pong received, connection is alive
-			}
-		},
-		onDisconnect: () => {
-			console.log("[Sidepanel] Disconnected from background");
-			for (const pending of pendingRequests.values()) {
-				pending.reject(new Error("Connection closed"));
-			}
-			pendingRequests.clear();
-			// Resolve all pending move intents so they don't hang
-			for (const resolve of pendingMoveIntents.values()) {
-				resolve();
-			}
-			pendingMoveIntents.clear();
-			// Notify App component to reconnect
-			options?.onDisconnect?.();
-		},
-	});
+	const setConnectionState = (newState: typeof connectionState) => {
+		if (connectionState !== newState) {
+			connectionState = newState;
+			log(`[Adapter] Connection state changed to: ${newState}`);
+			onConnectionStateChange?.(newState);
+		}
+	};
 
-	// Setup keepalive heartbeat to prevent service worker from going idle
-	// Send ping every 20 seconds (service worker timeout is ~30s)
-	const keepaliveInterval = setInterval(() => {
-		extensionTransport.send({ type: "ping" });
-	}, 20000);
+	const clearRetryTimer = () => {
+		if (retryTimer) {
+			clearTimeout(retryTimer);
+			retryTimer = null;
+		}
+	};
+
+	const scheduleReconnect = () => {
+		if (!enabled || isDisposed) {
+			return;
+		}
+
+		if (maxRetries >= 0 && retryCount >= maxRetries) {
+			log("[Adapter] Max retries reached, giving up");
+			setConnectionState("disconnected");
+			return;
+		}
+
+		clearRetryTimer();
+
+		// Exponential backoff with max delay
+		const delay = Math.min(retryDelay * 2 ** retryCount, maxRetryDelay);
+		retryCount++;
+
+		log(`[Adapter] Scheduling reconnect attempt ${retryCount} in ${delay}ms`);
+		retryTimer = setTimeout(() => {
+			if (enabled && !isDisposed) {
+				connect();
+			}
+		}, delay);
+	};
+
+	const handleMessageFromServer = (message: ServerMessage) => {
+		if (message.type === "idbResponse") {
+			const pending = pendingRequests.get(message.payload.id);
+			if (pending) {
+				// Transform dates in the response
+				pending.resolve(message.payload);
+				pendingRequests.delete(message.payload.id);
+			}
+		} else if (message.type === "idbSync") {
+			// Transform dates in the sync message
+			log(
+				"[Sidepanel] Received sync:",
+				message.payload.type,
+				message.payload.storeName,
+			);
+			syncHandler?.(message.payload);
+		} else if (message.type === "resetDatabaseComplete") {
+			console.log("[Sidepanel] Database reset complete");
+			if (resetResolve) {
+				resetResolve();
+				resetResolve = null;
+			}
+		} else if (message.type === "uiMoveIntentAck") {
+			log(
+				"[Sidepanel] Received move intent acknowledgment:",
+				message.requestId,
+			);
+			const resolve = pendingMoveIntents.get(message.requestId);
+			if (resolve) {
+				resolve();
+				pendingMoveIntents.delete(message.requestId);
+			}
+		} else if (message.type === "tabCreatedEvents") {
+			console.log("[Sidepanel] Received tab created events");
+			if (tabCreatedEventsResolve) {
+				tabCreatedEventsResolve(message.events);
+				tabCreatedEventsResolve = null;
+			}
+		} else if (message.type === "pong") {
+			// Pong received, connection is alive
+			if (connectionState === "connecting") {
+				setConnectionState("connected");
+				retryCount = 0; // Reset retry count on successful connection
+			}
+		}
+	};
+
+	const handleDisconnect = () => {
+		console.log("[Sidepanel] Disconnected from background");
+		setConnectionState("disconnected");
+
+		// Reject all pending requests
+		for (const pending of pendingRequests.values()) {
+			pending.reject(new Error("Connection closed"));
+		}
+		pendingRequests.clear();
+
+		// Resolve all pending move intents so they don't hang
+		for (const resolve of pendingMoveIntents.values()) {
+			resolve();
+		}
+		pendingMoveIntents.clear();
+
+		// Notify callback
+		onDisconnect?.();
+
+		// Schedule reconnection if enabled and not disposed
+		if (enabled && !isDisposed) {
+			scheduleReconnect();
+		}
+	};
+
+	let keepaliveInterval: ReturnType<typeof setInterval> | null = null;
+
+	const connect = () => {
+		if (isDisposed || !enabled) {
+			return;
+		}
+
+		// Clear any existing retry timer
+		clearRetryTimer();
+
+		// Dispose existing transport if any
+		if (currentExtensionTransport) {
+			try {
+				currentExtensionTransport.dispose();
+			} catch (e) {
+				console.warn("[Adapter] Error disposing existing transport:", e);
+			}
+		}
+
+		// Clear existing keepalive
+		if (keepaliveInterval) {
+			clearInterval(keepaliveInterval);
+			keepaliveInterval = null;
+		}
+
+		log("[Adapter] Connecting to background...");
+		setConnectionState("connecting");
+
+		try {
+			currentExtensionTransport = createExtensionClientTransport<
+				ClientMessage,
+				ServerMessage
+			>({
+				portName: IDB_PORT_NAME,
+				onMessage: handleMessageFromServer,
+				onDisconnect: handleDisconnect,
+			});
+
+			// Setup keepalive heartbeat to prevent service worker from going idle
+			// Send ping every 20 seconds (service worker timeout is ~30s)
+			keepaliveInterval = setInterval(() => {
+				currentExtensionTransport?.send({ type: "ping" });
+			}, 20000);
+
+			// Send initial ping to verify connection
+			currentExtensionTransport.send({ type: "ping" });
+		} catch (error) {
+			log("[Adapter] Connection failed:", error);
+			handleDisconnect();
+		}
+	};
 
 	const transport: IDBProxyClientTransport = {
 		sendRequest: async (
 			request: IDBProxyRequest,
 		): Promise<IDBProxyResponse> => {
+			if (!currentExtensionTransport || connectionState !== "connected") {
+				throw new Error("Transport not connected");
+			}
+			const transport = currentExtensionTransport;
 			return new Promise((resolve, reject) => {
 				pendingRequests.set(request.id, { resolve, reject });
-				extensionTransport.send({ type: "idbRequest", payload: request });
+				transport.send({ type: "idbRequest", payload: request });
 			});
 		},
 		onSync: (handler: (message: IDBProxySyncMessage) => void) => {
 			syncHandler = handler;
 		},
 		dispose: () => {
-			clearInterval(keepaliveInterval);
-			extensionTransport.dispose();
-			pendingRequests.clear();
+			// Dispose is handled by the adapter's dispose method
 		},
 	};
 
 	const resetDatabase = (): Promise<void> => {
+		if (!currentExtensionTransport) {
+			return Promise.reject(new Error("Transport not connected"));
+		}
+		const transport = currentExtensionTransport;
 		return new Promise((resolve) => {
 			resetResolve = resolve;
-			extensionTransport.send({ type: "resetDatabase" });
+			transport.send({ type: "resetDatabase" });
 		});
 	};
 
 	const sendMoveIntent = async (moves: UiMoveIntentData[]): Promise<void> => {
+		if (!currentExtensionTransport) {
+			return Promise.reject(new Error("Transport not connected"));
+		}
+		const transport = currentExtensionTransport;
 		log("[Sidepanel] Sending move intent for", moves.length, "tabs");
 		const requestId = `move-intent-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
 
 		return new Promise((resolve) => {
 			pendingMoveIntents.set(requestId, resolve);
-			extensionTransport.send({ type: "uiMoveIntent", requestId, moves });
+			transport.send({ type: "uiMoveIntent", requestId, moves });
 
 			// Timeout fallback in case ack is never received
 			setTimeout(() => {
@@ -206,28 +356,38 @@ export function createIDBTransportAdapter(options?: {
 	};
 
 	const enableTestMode = (): void => {
+		if (!currentExtensionTransport) return;
 		console.log("[Sidepanel] Enabling test mode");
-		extensionTransport.send({ type: "enableTestMode" });
+		currentExtensionTransport.send({ type: "enableTestMode" });
 	};
 
 	const getTabCreatedEvents = (): Promise<TabCreatedEvent[]> => {
+		if (!currentExtensionTransport) {
+			return Promise.reject(new Error("Transport not connected"));
+		}
+		const transport = currentExtensionTransport;
 		return new Promise((resolve) => {
 			tabCreatedEventsResolve = resolve;
-			extensionTransport.send({ type: "getTabCreatedEvents" });
+			transport.send({ type: "getTabCreatedEvents" });
 		});
 	};
 
 	const clearTabCreatedEvents = (): void => {
-		extensionTransport.send({ type: "clearTabCreatedEvents" });
+		if (!currentExtensionTransport) return;
+		currentExtensionTransport.send({ type: "clearTabCreatedEvents" });
 	};
 
 	const injectBrowserEvent = (event: InjectBrowserEvent): void => {
-		extensionTransport.send({ type: "injectBrowserEvent", event });
+		if (!currentExtensionTransport) return;
+		currentExtensionTransport.send({ type: "injectBrowserEvent", event });
 	};
 
 	const startManagedWindowMove = async (tabIds: number[]): Promise<void> => {
+		if (!currentExtensionTransport) {
+			return Promise.reject(new Error("Transport not connected"));
+		}
 		log("[Sidepanel] Starting managed window move for", tabIds.length, "tabs");
-		extensionTransport.send({
+		currentExtensionTransport.send({
 			type: "startManagedWindowMove",
 			tabIds,
 		});
@@ -238,14 +398,50 @@ export function createIDBTransportAdapter(options?: {
 	};
 
 	const endManagedWindowMove = (): void => {
+		if (!currentExtensionTransport) return;
 		log("[Sidepanel] Ending managed window move");
-		extensionTransport.send({ type: "endManagedWindowMove" });
+		currentExtensionTransport.send({ type: "endManagedWindowMove" });
 	};
 
 	const sendPendingChildIntent = (data: PendingChildTabData): void => {
+		if (!currentExtensionTransport) return;
 		log("[Sidepanel] Sending pending child intent:", data);
-		extensionTransport.send({ type: "pendingChildTab", data });
+		currentExtensionTransport.send({ type: "pendingChildTab", data });
 	};
+
+	const dispose = () => {
+		log("[Adapter] Disposing adapter");
+		isDisposed = true;
+		clearRetryTimer();
+
+		if (keepaliveInterval) {
+			clearInterval(keepaliveInterval);
+			keepaliveInterval = null;
+		}
+
+		if (currentExtensionTransport) {
+			currentExtensionTransport.dispose();
+			currentExtensionTransport = null;
+		}
+
+		pendingRequests.clear();
+		pendingMoveIntents.clear();
+		setConnectionState("disconnected");
+	};
+
+	const reconnect = () => {
+		log("[Adapter] Manual reconnect triggered");
+		retryCount = 0;
+		connect();
+	};
+
+	const getConnectionState = () => connectionState;
+	const isReady = () => connectionState === "connected";
+
+	// Initialize connection if enabled
+	if (enabled) {
+		connect();
+	}
 
 	return {
 		transport,
@@ -258,6 +454,9 @@ export function createIDBTransportAdapter(options?: {
 		injectBrowserEvent,
 		getTabCreatedEvents,
 		clearTabCreatedEvents,
-		dispose: () => transport.dispose?.(),
+		dispose,
+		getConnectionState,
+		isReady,
+		reconnect,
 	};
 }

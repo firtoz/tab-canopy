@@ -25,9 +25,9 @@ export const SearchInput = () => {
 	);
 
 	return (
-		<div className="absolute top-0 right-0 w-1/2 px-2 py-2 bg-slate-200 z-50">
+		<div className="absolute top-2 right-2 w-1/2 px-2 py-2 bg-slate-200 dark:bg-slate-700 z-50">
 			<input
-				className="bg-white w-full p-2"
+				className="bg-slate-50 dark:bg-slate-600 dark:text-amber-50 w-full p-2 dark:focus:outline-2"
 				ref={inputRef}
 				value={input}
 				onChange={onChange}

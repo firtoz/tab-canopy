@@ -553,3 +553,41 @@ describe("tree movement scenarios from user requirements", () => {
 		expect(result.treeOrder > dOrder).toBe(true); // after d
 	});
 });
+
+describe("buildTabTree - orphaned tabs", () => {
+	test("treats tabs with non-existent parent as root-level tabs", () => {
+		// Simulate what happens when a parent tab is deleted
+		// but its children still reference it
+		const tabs = [
+			createMockTab(1, null, "a0"), // root tab
+			createMockTab(2, 999, "a0"), // orphan - parent 999 doesn't exist
+			createMockTab(3, null, "b0"), // another root tab
+		];
+
+		const tree = buildTabTree(tabs);
+
+		// All three tabs should be visible as root-level tabs
+		expect(tree.length).toBe(3);
+		expect(tree[0].tab.browserTabId).toBe(1);
+		expect(tree[1].tab.browserTabId).toBe(2); // orphan should appear
+		expect(tree[2].tab.browserTabId).toBe(3);
+	});
+
+	test("deeply nested orphaned tabs are promoted to root", () => {
+		// Tab C was a grandchild of A, but both A and B are gone
+		const tabs = [
+			createMockTab(1, null, "a0"), // root tab
+			createMockTab(3, 999, "a0"), // orphan - parent 999 doesn't exist
+			createMockTab(4, 3, "a0"), // child of orphan should still work
+		];
+
+		const tree = buildTabTree(tabs);
+
+		// Should have 2 root nodes: tab 1 and orphan tab 3
+		expect(tree.length).toBe(2);
+		expect(tree[0].tab.browserTabId).toBe(1);
+		expect(tree[1].tab.browserTabId).toBe(3); // orphan as root
+		expect(tree[1].children.length).toBe(1); // orphan's child still works
+		expect(tree[1].children[0].tab.browserTabId).toBe(4);
+	});
+});
