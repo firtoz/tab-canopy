@@ -1,5 +1,61 @@
 # @tabcanopy/extension
 
+## 0.2.0
+
+### Minor Changes
+
+- [`6d96d48`](https://github.com/firtoz/tab-canopy/commit/6d96d48f8f1398152c2b49cfcbb4ac065f4ff8a6) Thanks [@firtoz](https://github.com/firtoz)! - Implement tree-aware fuzzy search with match highlighting and configurable threshold
+
+  - Replace simple substring matching with fuzzy search using fuzzysort library
+  - Search now handles typos and partial matches (e.g., "hewo" will match "hello world")
+  - Searches both tab title and URL with intelligent scoring
+  - Visual highlighting: matched characters in tab titles are highlighted in yellow
+  - Tree-aware filtering: parent tabs remain visible but grayed out when only their children match
+  - Maintains tree context during search, making it easier to understand tab relationships
+  - Configurable match quality threshold: adjust via slider in search options (gear icon)
+  - Threshold setting persists across sessions using localStorage
+  - Search score display in tab info panel for debugging match quality
+  - Pressing Ctrl+F when search is already open now focuses and selects the input text
+  - Improves user experience when searching through many tabs with imperfect recall
+
+### Patch Changes
+
+- [`6d96d48`](https://github.com/firtoz/tab-canopy/commit/6d96d48f8f1398152c2b49cfcbb4ac065f4ff8a6) Thanks [@firtoz](https://github.com/firtoz)! - Fix tabs created with openerTabId not becoming children of opener
+
+  - **Issue**: When ctrl-clicking a link or creating a tab via window.open(), the new tab has an openerTabId but was not always becoming a child of the opener tab in the tree structure. Position-based logic could incorrectly determine the parent, and the opener-based logic only ran if position-based logic returned null.
+  - **Fix**: Prioritize openerTabId over position-based logic in handleTabCreated(). When a tab has an openerTabId, always use it as the parent, regardless of where Chrome placed the tab in the tab bar.
+  - The tab creation logic now:
+    1. Checks for openerTabId FIRST and uses it as parent if present
+    2. Falls back to position-based logic only if no openerTabId
+  - **Impact**: Tabs created via ctrl+click, context menu "New Tab", and window.open() now correctly appear as children of the opener tab, maintaining proper tree hierarchy.
+  - Add comprehensive e2e test: "ctrl-clicking link creates child tab after existing children"
+
+- [`e0dbd38`](https://github.com/firtoz/tab-canopy/commit/e0dbd384f50dbfcb423bb45ab180c40f1f6c7630) Thanks [@firtoz](https://github.com/firtoz)! - Refactor IDB transport adapter with real connection state management
+
+  - Replace timer-based ready state with actual connection state tracking based on pong events
+  - Add automatic retry logic with exponential backoff for connection failures
+  - Remove unnecessary BackgroundApiContext and TestActionsContext layers
+  - Simplify App.tsx from 249 lines to 60 lines (76% reduction)
+  - Add useIdbAdapter() hook for direct access to all adapter methods
+  - Improve connection reliability and lifecycle management
+
+  Implement collapse-aware tab closing behavior
+
+  - **Non-collapsed parent tabs**: Children are promoted to become siblings when parent is closed
+  - **Collapsed parent tabs**: All descendants are closed recursively when parent is closed
+  - Fix critical bug: UI close button now respects collapse state (was always closing all descendants)
+  - Update handleTabRemoved() in background to check isCollapsed state
+  - Update closeTab() in UI store to check isCollapsed before closing descendants
+  - Add defensive orphaned tab handling in buildTabTree() as display layer safety net
+  - Add comprehensive test coverage: UI close, browser-native close, deep nesting scenarios
+
+  Fix promoted children positioning in tree
+
+  - **Issue**: When closing a non-collapsed parent, promoted children kept their old treeOrder (relative to siblings under parent), causing them to appear at wrong position (often before parent's previous sibling)
+  - **Fix**: Generate new treeOrders for promoted children based on parent's position among its siblings
+  - Children now appear exactly "where the parent was" in the tree, between parent's former siblings
+  - Preserves relative order among promoted children
+
 ## 0.1.6
 
 ### Patch Changes
