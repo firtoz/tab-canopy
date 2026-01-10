@@ -22,6 +22,7 @@ Research Project
 
 ✨ Key Features
 
+• Smart Search (Ctrl+F) - Fuzzy search that handles typos and maintains tree context
 • Drag & Drop Organization - Intuitive tree building with smooth drag-and-drop
 • Side Panel Interface - Clean, always-accessible panel that doesn't clutter your screen
 • Multi-Window Support - Manage tabs across all browser windows

@@ -25,7 +25,8 @@ Lost in a forest of browser tabs? Tab Canopy brings hierarchical organization to
 
 **Fast Navigation**
 - Click any tab to instantly switch to it
-- Search functionality to quickly find tabs
+- Smart search (Ctrl+F) with fuzzy matching that handles typos
+- Tree-aware search keeps parent tabs visible when children match
 - Visual tree structure makes tabs easy to locate
 
 **Privacy-First**

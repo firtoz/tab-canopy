@@ -5,9 +5,10 @@ import { useSearch } from "./useSearch";
 export const SearchHandling = () => {
 	const searchOn = useSearch(({ on }) => on);
 	const toggleSearch = useSearch(({ toggle }) => toggle);
+	const triggerFocus = useSearch(({ triggerFocus }) => triggerFocus);
 
 	const onKeyDown = useEffectEvent((event: DocumentEventMap["keydown"]) => {
-		console.log(event);
+		// console.log(event);
 		if (event.key === "Control") {
 			event.preventDefault();
 			event.stopPropagation();
@@ -16,9 +17,15 @@ export const SearchHandling = () => {
 		if (event.key.toLowerCase() === "f" && event.ctrlKey) {
 			event.preventDefault();
 			event.stopPropagation();
-			console.log("CTRL F!");
+			// console.log("CTRL F!");
 
-			toggleSearch(true);
+			if (searchOn) {
+				// If search is already open, just focus the input
+				triggerFocus();
+			} else {
+				// Otherwise, open the search
+				toggleSearch(true);
+			}
 		}
 
 		if (event.key === "Escape" && searchOn) {

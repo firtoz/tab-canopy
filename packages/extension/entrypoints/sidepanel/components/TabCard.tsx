@@ -6,8 +6,6 @@ import React, {
 	type KeyboardEventHandler,
 	type ReactEventHandler,
 	useCallback,
-	useEffect,
-	useEffectEvent,
 	useRef,
 	useState,
 } from "react";
@@ -23,8 +21,6 @@ import { TreeEmpty } from "./icons/TreeEmpty";
 import { TreeEnd } from "./icons/TreeEnd";
 import { TreeVertical } from "./icons/TreeVertical";
 import { TabContextMenu } from "./TabContextMenu";
-import type { SearchStore } from "./useSearch";
-import { useSearch } from "./useSearch";
 
 export const TabCard = ({
 	tab,
@@ -40,6 +36,8 @@ export const TabCard = ({
 	isLastChild = false,
 	indentGuides = [],
 	highlightedDepth,
+	searchState,
+	searchHighlight,
 }: {
 	tab: schema.Tab;
 	windowFocused: boolean;
@@ -57,6 +55,10 @@ export const TabCard = ({
 	isLastChild?: boolean;
 	indentGuides?: boolean[];
 	highlightedDepth?: number | null;
+	/** Search state: undefined (no search), 'match' (direct match), 'ancestor' (parent of match) */
+	searchState?: "match" | "ancestor";
+	/** Fuzzysort result for highlighting matched characters */
+	searchHighlight?: Fuzzysort.Result;
 }) => {
 	const [showInfo, setShowInfo] = useState(false);
 	const [isEditing, setIsEditing] = useState(false);
@@ -242,27 +244,7 @@ export const TabCard = ({
 		}
 	}, [tab.url]);
 
-	const [shouldHide, setShouldHide] = useState(false);
-
-	const onSearchChange = useEffectEvent(
-		({ input: searchInput }: SearchStore) => {
-			if (!searchInput) {
-				setShouldHide(false);
-
-				return;
-			}
-
-			setShouldHide(
-				!displayTitle.toLowerCase().includes(searchInput) &&
-					Boolean(tab.url) &&
-					!tab.url?.includes(searchInput),
-			);
-		},
-	);
-
-	useEffect(() => {
-		return useSearch.subscribe(onSearchChange);
-	}, []);
+	// searchState is now handled at WindowGroup level - no local search logic needed
 
 	const handleKeyDown = useCallback<KeyboardEventHandler<HTMLDivElement>>(
 		(e) => {
@@ -307,7 +289,7 @@ export const TabCard = ({
 				<div
 					className={cn("flex items-stretch", {
 						"cursor-grab active:cursor-grabbing": !isDragging,
-						hidden: shouldHide,
+						"opacity-40": searchState === "ancestor",
 					})}
 					data-testid="tab-card"
 				>
@@ -459,7 +441,16 @@ export const TabCard = ({
 										)}
 										title={displayTitle}
 									>
-										{displayTitle}
+										{searchHighlight
+											? searchHighlight.highlight((match, i) => (
+													<span
+														key={i}
+														className="font-bold text-yellow-600 bg-yellow-50/50 px-0.5 rounded-sm dark:text-yellow-400 dark:bg-yellow-900/30"
+													>
+														{match}
+													</span>
+												))
+											: displayTitle}
 										{tab.titleOverride && (
 											<span className="text-xs text-slate-400 dark:text-slate-500 ml-1">
 												✏️
@@ -506,10 +497,42 @@ export const TabCard = ({
 							)}
 						</div>
 						{showInfo && (
-							<div className="p-2 bg-slate-50 dark:bg-slate-900/50 border-t border-slate-200 dark:border-slate-700">
-								<pre className="text-xs text-slate-600 dark:text-slate-300 overflow-x-auto">
-									{JSON.stringify(tab, null, 2)}
-								</pre>
+							<div className="p-2 bg-slate-50 dark:bg-slate-900/50 border-t border-slate-200 dark:border-slate-700 space-y-2">
+								{searchHighlight && (
+									<div className="text-xs">
+										<div className="font-semibold text-slate-700 dark:text-slate-300 mb-1">
+											Search Match Score
+										</div>
+										<div className="space-y-0.5 text-slate-600 dark:text-slate-400">
+											<div>
+												<span className="font-medium">Raw Score:</span>{" "}
+												{searchHighlight.score.toFixed(3)}
+											</div>
+											<div>
+												<span className="font-medium">Quality:</span>{" "}
+												{searchHighlight.score >= 0.8
+													? "🟢 Excellent"
+													: searchHighlight.score >= 0.5
+														? "🟡 Good"
+														: searchHighlight.score >= 0
+															? "🟠 Fair"
+															: "🔴 Poor"}
+											</div>
+											<div>
+												<span className="font-medium">Indexes:</span>{" "}
+												{searchHighlight.indexes.join(", ")}
+											</div>
+										</div>
+									</div>
+								)}
+								<div>
+									<div className="font-semibold text-slate-700 dark:text-slate-300 mb-1 text-xs">
+										Tab Data
+									</div>
+									<pre className="text-xs text-slate-600 dark:text-slate-300 overflow-x-auto">
+										{JSON.stringify(tab, null, 2)}
+									</pre>
+								</div>
 							</div>
 						)}
 					</div>

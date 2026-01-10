@@ -27,6 +27,10 @@ export interface DraggableTabProps {
 	highlightedDepth: number | null;
 	/** Ancestor IDs from root to parent */
 	ancestorIds: number[];
+	/** Search state: undefined (no search), 'match' (direct match), 'ancestor' (parent of match) */
+	searchState?: "match" | "ancestor";
+	/** Fuzzysort result for highlighting matched characters */
+	searchHighlight?: Fuzzysort.Result;
 }
 
 export function DraggableTab({
@@ -45,6 +49,8 @@ export function DraggableTab({
 	indentGuides,
 	highlightedDepth,
 	ancestorIds,
+	searchState,
+	searchHighlight,
 }: DraggableTabProps) {
 	const [isEditingTitle, setIsEditingTitle] = useState(false);
 	const { closeTab } = useTabActions();
@@ -96,21 +102,23 @@ export function DraggableTab({
 			data-selected={isSelected}
 			onAuxClick={handleAuxClick}
 		>
-			<TabCard
-				tab={tab}
-				windowFocused={windowFocused}
-				isCurrentWindow={isCurrentWindow}
-				isSelected={isSelected}
-				onSelect={onSelect}
-				onEditingChange={setIsEditingTitle}
-				// activeDropData={activeDropData}
-				isDragging={isDragging}
-				depth={depth}
-				hasChildren={hasChildren}
-				isLastChild={isLastChild}
-				indentGuides={indentGuides}
-				highlightedDepth={highlightedDepth}
-			/>
+		<TabCard
+			tab={tab}
+			windowFocused={windowFocused}
+			isCurrentWindow={isCurrentWindow}
+			isSelected={isSelected}
+			onSelect={onSelect}
+			onEditingChange={setIsEditingTitle}
+			// activeDropData={activeDropData}
+			isDragging={isDragging}
+			depth={depth}
+			hasChildren={hasChildren}
+			isLastChild={isLastChild}
+			indentGuides={indentGuides}
+			highlightedDepth={highlightedDepth}
+			searchState={searchState}
+			searchHighlight={searchHighlight}
+		/>
 			<TabDropZones
 				windowId={windowId}
 				tabId={tab.browserTabId}

@@ -32,6 +32,7 @@
 		"@tanstack/react-db": "^0.1.60",
 		"@webext-core/messaging": "^2.3.0",
 		"clsx": "^2.1.1",
+		"fuzzysort": "^3.1.0",
 		"jotai": "^2.16.0",
 		"lucide-react": "^0.562.0",
 		"msgpackr": "^1.11.8",

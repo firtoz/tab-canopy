@@ -33,6 +33,7 @@ If you're interested in browser extension development, React, or database syncin
 ## Features
 
 - **Tree-based Tab Organization**: Organize tabs in a hierarchical tree structure with parent-child relationships
+- **Smart Search**: Fuzzy search (Ctrl+F) that handles typos and maintains tree context - parent tabs stay visible when children match
 - **Drag & Drop Interface**: Intuitive drag-and-drop reordering and nesting of tabs
 - **Side Panel UI**: Clean, accessible side panel interface built with React
 - **Persistent Storage**: IndexedDB-backed storage with Drizzle ORM for reliable data persistence
@@ -58,6 +59,7 @@ Once installed, using Tab Canopy is simple:
 
 ### Pro Tips
 
+- **Search tabs** - Press `Ctrl+F` to search through all tabs with fuzzy matching (handles typos!)
 - **Collapse/expand branches** - Click the arrow icon next to parent tabs
 - **Multi-level nesting** - Create deep hierarchies to organize complex research or projects
 - **Visual tree lines** - Lines show parent-child relationships at a glance

@@ -57,6 +57,44 @@ Do NOT create a changeset for:
 - Typo fixes in comments
 - Changes to CI/CD that don't affect the package
 
+## Testing
+
+### E2E Test Requirements
+
+**Most changes should include e2e tests.** When making changes to extension behavior:
+
+1. **Add e2e tests** in `packages/e2e-tests/e2e/tab-tree.spec.ts` (or relevant file)
+2. **Build before testing**: E2E tests require a production build
+   ```bash
+   bun run build
+   ```
+3. **Run specific tests** to verify your changes:
+   ```bash
+   cd packages/e2e-tests
+   bunx playwright test --grep "your test name"
+   ```
+4. **Run full test suite** to check for regressions:
+   ```bash
+   bun run test:e2e
+   ```
+
+### When to Add E2E Tests
+
+Add e2e tests for:
+- ✅ New tab creation behavior (window.open, ctrl+click, context menu)
+- ✅ Tab tree structure changes (parent-child relationships)
+- ✅ Tab movement and repositioning
+- ✅ Collapse/expand behavior
+- ✅ Tab closing behavior (single, with children, collapsed)
+- ✅ Cross-window operations
+- ✅ Any user-visible behavior changes
+
+Skip e2e tests only for:
+- ❌ Internal refactoring with no behavior changes
+- ❌ Type-only changes
+- ❌ Documentation updates
+- ❌ Pure UI styling changes (consider visual regression tests instead)
+
 ### Example Workflow
 
 **Scenario**: User makes changes to extension code and infrastructure

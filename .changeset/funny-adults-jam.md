@@ -20,3 +20,10 @@ Implement collapse-aware tab closing behavior
 - Update closeTab() in UI store to check isCollapsed before closing descendants
 - Add defensive orphaned tab handling in buildTabTree() as display layer safety net
 - Add comprehensive test coverage: UI close, browser-native close, deep nesting scenarios
+
+Fix promoted children positioning in tree
+
+- **Issue**: When closing a non-collapsed parent, promoted children kept their old treeOrder (relative to siblings under parent), causing them to appear at wrong position (often before parent's previous sibling)
+- **Fix**: Generate new treeOrders for promoted children based on parent's position among its siblings
+- Children now appear exactly "where the parent was" in the tree, between parent's former siblings
+- Preserves relative order among promoted children

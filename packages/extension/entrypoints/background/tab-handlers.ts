@@ -381,37 +381,15 @@ export const setupTabListeners = (
 			.filter(hasTabIds)
 			.map((t) => ({ id: t.id, index: t.index }));
 
-		// Calculate tree position based on where the tab was inserted
-		let { parentTabId, treeOrder } = calculateTreePositionForNewTab(
-			windowTabs,
-			browserTabsWithIds,
-			tab.index,
-			tab.id,
-		);
-
-		log("[Background] calculateTreePositionForNewTab result:", {
-			parentTabId,
-			treeOrder,
-			newTabIndex: tab.index,
-			windowTabsCount: windowTabs.length,
-			browserTabsCount: browserTabsWithIds.length,
-			windowTabIds: windowTabs.map((t) => ({
-				id: t.browserTabId,
-				parent: t.parentTabId,
-				idx: t.tabIndex,
-			})),
-			browserTabIndices: browserTabsWithIds.map((t) => ({
-				id: t.id,
-				idx: t.index,
-			})),
-		});
-
 		const openerTabId = (tab as { openerTabId?: number }).openerTabId;
+		let parentTabId: number | null;
+		let treeOrder: string;
 		let reason = "";
 		let needsRepositioning = false;
 
-		// If position-based didn't place it in a tree, but there's an opener, make it a child of opener
-		if (parentTabId === null && openerTabId !== undefined) {
+		// PRIORITY: If there's an openerTabId, always use it as parent (ctrl+click, context menu, etc.)
+		// This takes precedence over position-based logic
+		if (openerTabId !== undefined) {
 			const openerTab = windowTabs.find((t) => t.browserTabId === openerTabId);
 			if (openerTab) {
 				parentTabId = openerTabId;
@@ -470,53 +448,55 @@ export const setupTabListeners = (
 					}
 				}
 			} else {
+				// Opener not found in DB - fall back to position-based logic
+				const positionResult = calculateTreePositionForNewTab(
+					windowTabs,
+					browserTabsWithIds,
+					tab.index,
+					tab.id,
+				);
+				parentTabId = positionResult.parentTabId;
+				treeOrder = positionResult.treeOrder;
 				reason = "Position-based: inserted at root level (opener not in DB)";
 			}
-		} else if (parentTabId !== null) {
-			reason = `Position-based: inserted within tree of parent ${parentTabId}`;
-
-			// Even if position-based logic placed it correctly, check if the tab has an opener
-			// and is far from its siblings. If so, reposition it to be adjacent.
-			if (openerTabId !== undefined && openerTabId === parentTabId) {
-				// The tab has an opener and position-based logic agreed
-				// Check if the tab is adjacent to its parent or siblings
-				const parent = windowTabs.find((t) => t.browserTabId === parentTabId);
-				if (parent) {
-					const siblings = windowTabs.filter(
-						(t) => t.parentTabId === parentTabId && t.browserTabId !== tab.id,
-					);
-
-					// If there are siblings, check if the new tab is adjacent to them
-					if (siblings.length > 0) {
-						// Find the expected range where children should be
-						const siblingIndices = siblings.map((s) => s.tabIndex);
-						const maxSiblingIndex = Math.max(...siblingIndices);
-
-						// If the new tab is beyond the sibling range + reasonable gap,
-						// it might benefit from repositioning
-						const expectedMaxIndex = maxSiblingIndex + 2; // Allow small gap
-						if (tab.index > expectedMaxIndex) {
-							needsRepositioning = true;
-							reason += " (repositioning to be adjacent to siblings)";
-						}
-					}
-				}
-			}
 		} else {
-			reason = "Position-based: inserted at root level";
+			// No openerTabId - use position-based logic
+			const positionResult = calculateTreePositionForNewTab(
+				windowTabs,
+				browserTabsWithIds,
+				tab.index,
+				tab.id,
+			);
+			parentTabId = positionResult.parentTabId;
+			treeOrder = positionResult.treeOrder;
+
+			if (parentTabId !== null) {
+				reason = `Position-based: inserted within tree of parent ${parentTabId}`;
+			} else {
+				reason = "Position-based: inserted at root level";
+			}
 		}
+
+		log("[Background] Tab tree position calculated:", {
+			parentTabId,
+			treeOrder,
+			openerTabId,
+			reason,
+			newTabIndex: tab.index,
+		});
+
+		log("[Background] Tab tree position calculated:", {
+			parentTabId,
+			treeOrder,
+			openerTabId,
+			reason,
+		});
 
 		trackTabCreatedEvent({
 			tabId: tab.id,
 			openerTabId,
 			tabIndex: tab.index,
 			decidedParentId: parentTabId,
-			treeOrder,
-			reason,
-		});
-
-		log("[Background] Tab tree position calculated:", {
-			parentTabId,
 			treeOrder,
 			reason,
 		});
@@ -671,13 +651,13 @@ export const setupTabListeners = (
 					log("[Background] Tab was collapsed, closing all descendants");
 					const descendantIds = new Set<number>();
 					const queue = [...children];
-					
+
 					while (queue.length > 0) {
 						const child = queue.shift();
 						if (!child) continue;
-						
+
 						descendantIds.add(child.browserTabId);
-						
+
 						// Find grandchildren and add to queue
 						const grandchildren = existingTabs.filter(
 							(t) => t.parentTabId === child.browserTabId,
@@ -691,14 +671,61 @@ export const setupTabListeners = (
 							await browser.tabs.remove(descendantId);
 							log("[Background] Closed descendant tab:", descendantId);
 						} catch (error) {
-							log("[Background] Failed to close descendant tab:", descendantId, error);
+							log(
+								"[Background] Failed to close descendant tab:",
+								descendantId,
+								error,
+							);
 						}
 					}
 				} else {
 					// Not collapsed: promote children to the removed tab's parent
 					log("[Background] Tab was not collapsed, promoting children");
+
+					// Find siblings of the removed tab to calculate proper treeOrders for promoted children
+					const siblings = existingTabs
+						.filter(
+							(t) =>
+								t.parentTabId === removedTab.parentTabId &&
+								t.browserTabId !== tabId,
+						)
+						.sort(treeOrderSort);
+
+					// Find the previous and next sibling of the removed tab
+					let prevSibling: Tab | undefined;
+					let nextSibling: Tab | undefined;
+					for (let i = 0; i < siblings.length; i++) {
+						if (siblings[i].treeOrder < removedTab.treeOrder) {
+							prevSibling = siblings[i];
+						} else if (
+							siblings[i].treeOrder > removedTab.treeOrder &&
+							!nextSibling
+						) {
+							nextSibling = siblings[i];
+							break;
+						}
+					}
+
+					log("[Background] Promoting children between siblings:", {
+						prevSibling: prevSibling?.browserTabId,
+						nextSibling: nextSibling?.browserTabId,
+						removedTabTreeOrder: removedTab.treeOrder,
+						childCount: children.length,
+					});
+
+					// Sort children by their current treeOrder to preserve relative order
+					const sortedChildren = [...children].sort(treeOrderSort);
+
+					// Generate treeOrders for promoted children between prevSibling and nextSibling
+					const newTreeOrders = generateNKeysBetween(
+						prevSibling?.treeOrder || null,
+						nextSibling?.treeOrder || null,
+						sortedChildren.length,
+					);
+
 					const promotedRecords: TabRecord[] = [];
-					for (const child of children) {
+					for (let i = 0; i < sortedChildren.length; i++) {
+						const child = sortedChildren[i];
 						const browserTab = await browser.tabs
 							.get(child.browserTabId)
 							.catch(() => null);
@@ -706,7 +733,7 @@ export const setupTabListeners = (
 							promotedRecords.push(
 								tabToRecord(browserTab, {
 									parentTabId: removedTab.parentTabId,
-									treeOrder: child.treeOrder,
+									treeOrder: newTreeOrders[i],
 								}),
 							);
 						}

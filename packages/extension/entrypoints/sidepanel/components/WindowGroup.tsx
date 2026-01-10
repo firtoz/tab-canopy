@@ -6,6 +6,7 @@ import { useDndContext } from "@dnd-kit/core";
 // } from "@dnd-kit/sortable";
 import { useDrizzleIndexedDB } from "@firtoz/drizzle-indexeddb";
 import * as ContextMenu from "@radix-ui/react-context-menu";
+import fuzzysort from "fuzzysort";
 import { Plus, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type * as schema from "@/schema/src/schema";
@@ -91,10 +92,82 @@ export const WindowGroup = ({
 		return flattenTree(tree);
 	}, [tabs]);
 
+	// Get search input and threshold
+	const searchInput = useSearch(({ input }) => input);
+	const searchThreshold = useSearch(({ threshold }) => threshold);
+
+	// Compute search state and match highlights for each tab
+	type SearchState = "match" | "ancestor" | "hidden";
+	type SearchInfo = {
+		state: SearchState;
+		highlightResult?: Fuzzysort.Result; // Fuzzysort result for highlighting
+	};
+	const searchInfo = useMemo((): Map<number, SearchInfo> => {
+		const infoMap = new Map<number, SearchInfo>();
+
+		if (!searchInput) {
+			// No search active - all tabs visible as "match"
+			return infoMap;
+		}
+
+		// Find all tabs that match the search
+		const matchingTabIds = new Set<number>();
+		for (const tab of tabs) {
+			const displayTitle = tab.title || "Untitled";
+			const titleResult = fuzzysort.single(searchInput, displayTitle);
+			const urlResult = tab.url ? fuzzysort.single(searchInput, tab.url) : null;
+
+			const titleMatches = titleResult && titleResult.score > searchThreshold;
+			const urlMatches = urlResult && urlResult.score > searchThreshold;
+
+			if (titleMatches || urlMatches) {
+				matchingTabIds.add(tab.browserTabId);
+				// Store the result for highlighting if title matched
+				infoMap.set(tab.browserTabId, {
+					state: "match",
+					highlightResult: titleMatches ? titleResult : undefined,
+				});
+			}
+		}
+
+		// Find all ancestors of matching tabs
+		for (const matchingTabId of matchingTabIds) {
+			let currentTab = tabs.find((t) => t.browserTabId === matchingTabId);
+			while (currentTab?.parentTabId !== null) {
+				const parentTab = tabs.find(
+					(t) => t.browserTabId === currentTab?.parentTabId,
+				);
+				if (!parentTab) break;
+
+				// Only mark as ancestor if not already a direct match
+				if (!infoMap.has(parentTab.browserTabId)) {
+					infoMap.set(parentTab.browserTabId, { state: "ancestor" });
+				}
+
+				currentTab = parentTab;
+			}
+		}
+
+		// All other tabs are hidden
+		for (const tab of tabs) {
+			if (!infoMap.has(tab.browserTabId)) {
+				infoMap.set(tab.browserTabId, { state: "hidden" });
+			}
+		}
+
+		return infoMap;
+	}, [tabs, searchInput, searchThreshold]);
+
 	// Adjust depth for tabs (add 1 since window is at depth 0)
 	// Also prepend the window's continuation guide
 	const items: WindowItem[] = useMemo(() => {
-		const visible = flatNodes;
+		// Filter out hidden tabs when searching
+		const visible = searchInput
+			? flatNodes.filter((node) => {
+					const info = searchInfo.get(node.tab.browserTabId);
+					return info?.state === "match" || info?.state === "ancestor";
+				})
+			: flatNodes;
 
 		return visible.map((node, index) => ({
 			id: `tab-${win.browserWindowId}-${node.tab.browserTabId}`,
@@ -104,7 +177,7 @@ export const WindowGroup = ({
 			depth: node.depth + 1, // +1 because window is parent
 			hasChildren: node.hasChildren,
 			isLastChild:
-				node.isLastChild && index === flatNodes.length - 1
+				node.isLastChild && index === visible.length - 1
 					? true
 					: node.isLastChild,
 			// Add window's guide: show vertical line if window is not last
@@ -112,7 +185,7 @@ export const WindowGroup = ({
 			// Pass through ancestorIds from the tree node
 			ancestorIds: node.ancestorIds,
 		}));
-	}, [flatNodes, isLastWindow, win.browserWindowId]);
+	}, [flatNodes, isLastWindow, win.browserWindowId, searchInput, searchInfo]);
 
 	const selectedItems = items.filter((item) => selectedTabIds.has(item.tabId));
 
@@ -487,6 +560,9 @@ export const WindowGroup = ({
 							const indicatorColor =
 								indicator?.type === "child" ? "bg-blue-500" : "bg-emerald-500";
 
+							// Get search info for this tab
+							const tabSearchInfo = searchInfo.get(item.tabId);
+
 							return (
 								<div key={item.id} className="relative">
 									{showIndicatorBefore && (
@@ -513,6 +589,12 @@ export const WindowGroup = ({
 										indentGuides={item.indentGuides}
 										highlightedDepth={highlightedDepth}
 										ancestorIds={item.ancestorIds}
+										searchState={
+											tabSearchInfo?.state === "hidden"
+												? undefined
+												: tabSearchInfo?.state
+										}
+										searchHighlight={tabSearchInfo?.highlightResult}
 									/>
 								</div>
 							);
