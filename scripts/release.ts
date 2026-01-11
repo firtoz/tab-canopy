@@ -129,6 +129,32 @@ const enableFirefoxPublishing =
 	process.env.ENABLE_FIREFOX_PUBLISHING === "true";
 
 try {
+	// Step 0: Check if this version is already released
+	const version = getVersion();
+	const tag = `v${version}`;
+
+	console.log(`\n🔍 Checking if version ${version} is already released...`);
+	const releaseCheck = await $`gh release view ${tag}`
+		.cwd(rootDir)
+		.nothrow()
+		.quiet();
+
+	if (releaseCheck.exitCode === 0) {
+		console.log(`✅ Version ${version} is already released`);
+		console.log(
+			`   GitHub release: https://github.com/firtoz/tab-canopy/releases/tag/${tag}`,
+		);
+		console.log(`\n💡 No new version to publish - skipping upload`);
+		console.log(
+			`   To publish a new version, add a changeset and merge the Version Packages PR`,
+		);
+		process.exit(0);
+	}
+
+	console.log(
+		`📦 Version ${version} not yet released - proceeding with publish`,
+	);
+
 	// Step 0: Build & zip Firefox extension for GitHub release (even if publishing is skipped)
 	console.log("\n📦 Building Firefox extension for GitHub release...");
 	try {
@@ -184,7 +210,6 @@ try {
 	if (chromeSuccess) {
 		console.log("\n🏷️  Creating GitHub release...");
 		try {
-			const version = getVersion();
 			const changelog = getLatestChangelog(version);
 			const zipFiles = getZipFiles();
 
