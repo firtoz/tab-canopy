@@ -9,15 +9,15 @@ export const SearchHandling = () => {
 
 	const onKeyDown = useEffectEvent((event: DocumentEventMap["keydown"]) => {
 		// console.log(event);
-		if (event.key === "Control") {
+		if (event.key === "Control" || event.key === "Meta") {
 			event.preventDefault();
 			event.stopPropagation();
 		}
 
-		if (event.key.toLowerCase() === "f" && event.ctrlKey) {
+		if (event.key.toLowerCase() === "f" && (event.ctrlKey || event.metaKey)) {
 			event.preventDefault();
 			event.stopPropagation();
-			// console.log("CTRL F!");
+			// console.log("CTRL/CMD F!");
 
 			if (searchOn) {
 				// If search is already open, just focus the input
