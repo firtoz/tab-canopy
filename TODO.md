@@ -12,6 +12,9 @@ This document outlines planned features and improvements for TabCanopy.
   - Test verifies: drag b into c, then drag b subtree to new window - all descendants move correctly
   - Issue may still occur in manual usage - needs further investigation if reproducible
 - [ ] Window renaming does not persist
+- [ ] **Firefox**: Adding new empty tabs causes ordering issues and tabs cannot be closed
+  - When creating new empty tabs in Firefox, the extension shows ordering-related errors
+  - Additionally, newly created empty tabs cannot be closed through the extension
 - [x] ~~Sometimes when a new tab is opened, it'll not be next to the opener in the native view, but it'll appear as a child of it~~
   - Fixed: Tabs with openerTabId are now automatically repositioned to be adjacent to their siblings in the browser
 - [x] ~~Clicking active tab of non-current window triggers rename instead of focusing window~~
@@ -23,7 +26,7 @@ This document outlines planned features and improvements for TabCanopy.
   - [ ] Arrow keys for tree traversal
   - [ ] Common keyboard shortcuts (close, new tab, etc.)
   - [ ] Quick search/command palette (Cmd/Ctrl+K)
-  - [ ] Ctrl+F for searching/filtering tabs
+  - [x] ~~Ctrl+F for searching/filtering tabs~~
 
 - [ ] **Session Management**
   - [ ] Save and restore tab hierarchies using native Chrome Session API
@@ -60,9 +63,8 @@ This document outlines planned features and improvements for TabCanopy.
 ## Production Build
 
 - [ ] **Hide Debug Tools**
-  - [ ] Remove reset button
-  - [ ] Hide dev tools panel
-  - [ ] Remove tab debug info overlay
+  - [ ] Remove reset button (still present - refresh icon button)
+  - [ ] Remove tab debug info toggle (still present - "i" info button that shows tab IDs and search scores)
 
 ## Nice to Have
 

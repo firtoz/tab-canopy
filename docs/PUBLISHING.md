@@ -23,7 +23,7 @@ Before the workflows can run, you need to:
 
 #### A. Initial Manual Upload
 
-1. Build the extension: `bun run zip`
+1. Build and zip the extension: `bun run zip` (WXT automatically builds before zipping)
 2. Go to [Chrome Web Store Developer Dashboard](https://chrome.google.com/webstore/devconsole)
 3. Click "New Item" and upload `.output/chrome-mv3.zip`
 4. Fill in all required store listing information
@@ -175,7 +175,7 @@ git push origin v1.0.0
 
 ### Build Issues
 
-- **Missing .zip file**: Check that `bun build` and `bun zip` complete successfully
+- **Missing .zip file**: Check that `bun run zip` completes successfully (WXT builds automatically)
 - **Workflow not triggering**: Verify your changes affected files in `packages/extension/`
 
 ## Security Notes

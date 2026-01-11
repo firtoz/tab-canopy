@@ -4,6 +4,7 @@ import type {
 	IDBProxyResponse,
 	IDBProxySyncMessage,
 } from "@firtoz/drizzle-indexeddb";
+import { fail, type MaybeError, success } from "@firtoz/maybe-error";
 import type { Browser } from "wxt/browser";
 import {
 	type ClientMessage,
@@ -90,6 +91,7 @@ export interface IDBTransportAdapter {
 	injectBrowserEvent: (event: InjectBrowserEvent) => void;
 	getTabCreatedEvents: () => Promise<TabCreatedEvent[]>;
 	clearTabCreatedEvents: () => void;
+	fetchFavicon: (url: string, requestId: string) => Promise<MaybeError<string>>;
 	dispose: () => void;
 	/** Get current connection state */
 	getConnectionState: () => "connecting" | "connected" | "disconnected";
@@ -130,6 +132,10 @@ export function createIDBTransportAdapter(
 		}
 	>();
 	const pendingMoveIntents = new Map<string, () => void>();
+	const pendingFaviconRequests = new Map<
+		string,
+		(response: MaybeError<string>) => void
+	>();
 	let syncHandler: ((message: IDBProxySyncMessage) => void) | null = null;
 	let resetResolve: (() => void) | null = null;
 	let tabCreatedEventsResolve: ((events: TabCreatedEvent[]) => void) | null =
@@ -213,6 +219,16 @@ export function createIDBTransportAdapter(
 				tabCreatedEventsResolve(message.events);
 				tabCreatedEventsResolve = null;
 			}
+		} else if (message.type === "faviconResponse") {
+			const resolve = pendingFaviconRequests.get(message.requestId);
+			if (resolve) {
+				if (message.error || message.dataUrl === null) {
+					resolve(fail(message.error ?? "Failed to fetch favicon"));
+				} else {
+					resolve(success(message.dataUrl));
+				}
+				pendingFaviconRequests.delete(message.requestId);
+			}
 		} else if (message.type === "pong") {
 			// Pong received, connection is alive
 			if (connectionState === "connecting") {
@@ -237,6 +253,12 @@ export function createIDBTransportAdapter(
 			resolve();
 		}
 		pendingMoveIntents.clear();
+
+		// Resolve all pending favicon requests with error
+		for (const resolve of pendingFaviconRequests.values()) {
+			resolve(fail("Connection closed"));
+		}
+		pendingFaviconRequests.clear();
 
 		// Notify callback
 		onDisconnect?.();
@@ -426,6 +448,7 @@ export function createIDBTransportAdapter(
 
 		pendingRequests.clear();
 		pendingMoveIntents.clear();
+		pendingFaviconRequests.clear();
 		setConnectionState("disconnected");
 	};
 
@@ -433,6 +456,30 @@ export function createIDBTransportAdapter(
 		log("[Adapter] Manual reconnect triggered");
 		retryCount = 0;
 		connect();
+	};
+
+	const fetchFavicon = (
+		url: string,
+		requestId: string,
+	): Promise<MaybeError<string>> => {
+		if (!currentExtensionTransport) {
+			return Promise.resolve(fail("Not connected"));
+		}
+		const transport = currentExtensionTransport;
+
+		return new Promise((resolve) => {
+			pendingFaviconRequests.set(requestId, resolve);
+			transport.send({ type: "fetchFavicon", url, requestId });
+
+			// Timeout fallback in case response is never received
+			setTimeout(() => {
+				const pending = pendingFaviconRequests.get(requestId);
+				if (pending) {
+					pending(fail("Timeout"));
+					pendingFaviconRequests.delete(requestId);
+				}
+			}, 10000);
+		});
 	};
 
 	const getConnectionState = () => connectionState;
@@ -454,6 +501,7 @@ export function createIDBTransportAdapter(
 		injectBrowserEvent,
 		getTabCreatedEvents,
 		clearTabCreatedEvents,
+		fetchFavicon,
 		dispose,
 		getConnectionState,
 		isReady,

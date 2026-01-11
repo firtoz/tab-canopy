@@ -329,6 +329,7 @@ export type ClientMessage =
 	| { type: "enableTestMode" }
 	| { type: "disableTestMode" }
 	| { type: "injectBrowserEvent"; event: InjectBrowserEvent }
+	| { type: "fetchFavicon"; url: string; requestId: string }
 	| { type: "ping" };
 
 /**
@@ -346,6 +347,12 @@ export type ServerMessage =
 	| { type: "resetDatabaseComplete" }
 	| { type: "uiMoveIntentAck"; requestId: string }
 	| { type: "tabCreatedEvents"; events: TabCreatedEvent[] }
+	| {
+			type: "faviconResponse";
+			requestId: string;
+			dataUrl: string | null;
+			error?: string;
+	  }
 	| { type: "pong" };
 
 /** Port name for the transport */

@@ -32,7 +32,9 @@ import { setupWindowListeners } from "./window-handlers";
 
 export default defineBackground(() => {
 	browser.runtime.onInstalled.addListener(() => {
-		browser.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
+		// Chrome-only: Set side panel to open on action click
+		// Firefox uses sidebar_action which doesn't need this config
+		browser.sidePanel?.setPanelBehavior?.({ openPanelOnActionClick: true });
 	});
 
 	// Track the database instance for direct writes
@@ -272,6 +274,75 @@ export default defineBackground(() => {
 						log("[Background] Error injecting event:", error);
 					}
 					break;
+				case "fetchFavicon": {
+					// Fetch favicon through background script to avoid CORS/CSP issues
+					const { url, requestId } = message;
+
+					// Helper to convert blob to data URL
+					const blobToDataUrl = (blob: Blob): Promise<string> => {
+						return new Promise((resolve, reject) => {
+							const reader = new FileReader();
+							reader.onloadend = () => resolve(reader.result as string);
+							reader.onerror = reject;
+							reader.readAsDataURL(blob);
+						});
+					};
+
+					try {
+						// Skip internal browser URLs
+						if (
+							url.startsWith("chrome://") ||
+							url.startsWith("chrome-extension://") ||
+							url.startsWith("about:")
+						) {
+							serverTransport.send(client.clientId, {
+								type: "faviconResponse",
+								requestId,
+								dataUrl: null,
+							});
+							break;
+						}
+
+						let dataUrl: string | null = null;
+
+						// Try direct fetch first
+						try {
+							const response = await fetch(url);
+							if (response.ok) {
+								const blob = await response.blob();
+								dataUrl = await blobToDataUrl(blob);
+							}
+						} catch {
+							// Direct fetch failed (likely CORS), try CORS proxy fallback
+							try {
+								// Use corsproxy.io to bypass CORS restrictions
+								const fallbackUrl = `https://corsproxy.io/?url=${encodeURIComponent(url)}`;
+								const fallbackResponse = await fetch(fallbackUrl);
+								if (fallbackResponse.ok) {
+									const blob = await fallbackResponse.blob();
+									dataUrl = await blobToDataUrl(blob);
+								}
+							} catch {
+								// Both failed, will send null
+							}
+						}
+
+						serverTransport.send(client.clientId, {
+							type: "faviconResponse",
+							requestId,
+							dataUrl,
+							error: dataUrl ? undefined : "Failed to fetch favicon",
+						});
+					} catch (error) {
+						serverTransport.send(client.clientId, {
+							type: "faviconResponse",
+							requestId,
+							dataUrl: null,
+							error: error instanceof Error ? error.message : String(error),
+						});
+					}
+					break;
+				}
 				case "ping":
 					// Respond to ping to keep connection alive
 					serverTransport.send(client.clientId, { type: "pong" });

@@ -45,12 +45,16 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CHROME_EXTENSION_ID: ${{ vars.CHROME_EXTENSION_ID }}
           CHROME_PUBLISHER_ID: ${{ vars.CHROME_PUBLISHER_ID }}
+          FIREFOX_API_KEY: ${{ secrets.FIREFOX_API_KEY }}
+          FIREFOX_API_SECRET: ${{ secrets.FIREFOX_API_SECRET }}
+          FIREFOX_EXTENSION_ID: ${{ vars.FIREFOX_EXTENSION_ID }}
+          ENABLE_FIREFOX_PUBLISHING: ${{ vars.ENABLE_FIREFOX_PUBLISHING }}
 
       - name: Add Job Summary and Notice
         if: steps.changesets.outputs.hasChangesets == 'false'
         run: |
           # Add notice annotation for easy visibility
-          echo "::notice title=Upload Successful::Extension uploaded as draft. Manually publish from: https://chrome.google.com/webstore/devconsole/${{ vars.CHROME_PUBLISHER_ID }}/${{ vars.CHROME_EXTENSION_ID }}/edit"
+          echo "::notice title=Upload Successful::Extension uploaded to browser stores (see logs for details)"
           
           # Get the version for the release link
           VERSION=$(jq -r '.version' packages/extension/package.json)
@@ -58,18 +62,35 @@ jobs:
           # Add detailed job summary
           echo "## ✅ Extension Published" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "The extension has been uploaded to Chrome Web Store as a **draft**." >> $GITHUB_STEP_SUMMARY
+          echo "The extension has been uploaded to browser stores as a **draft**." >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### 🏷️ GitHub Release" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "👉 [View Release v${VERSION}](https://github.com/${{ github.repository }}/releases/tag/v${VERSION})" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "The release includes extension zip files for manual installation or distribution." >> $GITHUB_STEP_SUMMARY
+          echo "The release includes extension zip files for both **Chrome** and **Firefox**." >> $GITHUB_STEP_SUMMARY
+          echo "Users can download and manually install the Firefox version using 'Load Temporary Add-on'." >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 📋 Next Step: Manual Review & Publish" >> $GITHUB_STEP_SUMMARY
+          echo "### 📋 Next Steps: Manual Review & Publish" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
+          echo "#### Chrome Web Store" >> $GITHUB_STEP_SUMMARY
           echo "👉 [Open Chrome Web Store Dashboard](https://chrome.google.com/webstore/devconsole/${{ vars.CHROME_PUBLISHER_ID }}/${{ vars.CHROME_EXTENSION_ID }}/edit)" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "1. Review the uploaded changes" >> $GITHUB_STEP_SUMMARY
           echo "2. Click **'Submit for review'**" >> $GITHUB_STEP_SUMMARY
           echo "3. Wait for Google's approval (usually 1-3 days)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "#### Firefox Add-ons" >> $GITHUB_STEP_SUMMARY
+          echo "👉 [Open Firefox Developer Hub](https://addons.mozilla.org/developers/)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ vars.ENABLE_FIREFOX_PUBLISHING }}" = "true" ]; then
+            echo "**Status**: Published to Mozilla Add-ons for review" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "**Status**: Publishing disabled (\`ENABLE_FIREFOX_PUBLISHING\` not set to \`true\`)" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "The Firefox \`.zip\` is included in the GitHub release for manual installation." >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "To enable automated publishing:" >> $GITHUB_STEP_SUMMARY
+            echo "1. Wait for Mozilla to approve your first submission" >> $GITHUB_STEP_SUMMARY
+            echo "2. Set \`ENABLE_FIREFOX_PUBLISHING=true\` as a GitHub variable" >> $GITHUB_STEP_SUMMARY
+          fi

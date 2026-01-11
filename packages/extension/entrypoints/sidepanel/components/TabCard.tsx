@@ -12,6 +12,7 @@ import React, {
 import type * as schema from "@/schema/src/schema";
 import { cn } from "../lib/cn";
 import { isDropData } from "../lib/dnd/dnd-types";
+import { useFaviconProxy } from "../lib/useFaviconProxy";
 import { useTabActions } from "../store/useTabActions";
 import { IconCollapsed } from "./icons/IconCollapsed";
 import { IconExpanded } from "./icons/IconExpanded";
@@ -220,15 +221,26 @@ export const TabCard = ({
 		[activeDropData],
 	);
 
-	// Check if URL is an extension URL (can't load favicon)
-	const isExtensionUrl = useMemo(
-		() => tab.url?.startsWith("chrome-extension://"),
-		[tab.url],
-	);
-	const isLoadableFavicon = useMemo(
-		() => tab.favIconUrl && !tab.favIconUrl.startsWith("chrome-extension://"),
-		[tab.favIconUrl],
-	);
+	// Check if this is an internal browser page (extensions, settings, etc.)
+	const isInternalPage = useMemo(() => {
+		const relevantUrl = tab.favIconUrl || tab.url;
+		if (!relevantUrl) return false;
+		return (
+			relevantUrl.startsWith("chrome://") ||
+			relevantUrl.startsWith("chrome-extension://") ||
+			relevantUrl.startsWith("moz-extension://") ||
+			relevantUrl.startsWith("about:")
+		);
+	}, [tab.favIconUrl, tab.url]);
+
+	// Use favicon proxy to fetch favicons through background script
+	// This avoids CORS/CSP issues
+	// Skip proxying for internal browser URLs
+	const { dataUrl: proxiedFavicon, isLoading: faviconLoading } =
+		useFaviconProxy(isInternalPage ? null : tab.favIconUrl);
+	// Only use original URL if we're not actively loading (to avoid CORS errors)
+	const faviconToDisplay =
+		proxiedFavicon || (!faviconLoading ? tab.favIconUrl : null);
 
 	const displayTitle = tab.titleOverride || tab.title || "Untitled";
 
@@ -394,17 +406,17 @@ export const TabCard = ({
 											size={16}
 											className="text-emerald-500 dark:text-emerald-400 animate-pulse"
 										/>
-									) : isLoadableFavicon ? (
-										<img
-											src={tab.favIconUrl ?? undefined}
-											alt=""
-											className="w-4 h-4 object-contain"
-											onError={onImageError}
-										/>
-									) : isExtensionUrl ? (
+									) : isInternalPage ? (
 										<Puzzle
 											size={16}
 											className="text-indigo-400 dark:text-indigo-400"
+										/>
+									) : faviconToDisplay ? (
+										<img
+											src={faviconToDisplay}
+											alt={tab.favIconUrl || ""}
+											className="w-4 h-4 object-contain"
+											onError={onImageError}
 										/>
 									) : (
 										<div className="size-4 bg-slate-200 dark:bg-slate-700 rounded-sm" />

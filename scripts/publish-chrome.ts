@@ -32,13 +32,13 @@ type ChromeWebStoreUploadResponse =
 	  };
 
 export async function publishChrome(): Promise<void> {
-	console.log("📦 Building extension for Chrome...");
+	console.log("📦 Building and zipping extension for Chrome...");
 
-	// Build and zip the extension
+	// wxt zip automatically builds first (handled by WXT, not Turbo)
 	const buildProc = await $`bun run zip`.cwd(rootDir).nothrow();
 
 	if (buildProc.exitCode !== 0) {
-		throw new Error("Failed to build extension");
+		throw new Error("Failed to build Chrome extension");
 	}
 
 	console.log("\n🚀 Uploading to Chrome Web Store...");

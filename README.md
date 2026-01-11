@@ -4,7 +4,7 @@
   
   [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
   [![Chrome Web Store](https://img.shields.io/badge/Chrome-v0.1.1-brightgreen.svg)](https://chrome.google.com/webstore/detail/kghaoebcnfieahcepdmalkjhdnfnlodg)
-  [![Firefox](https://img.shields.io/badge/Firefox-planned-orange.svg)](https://github.com/firtoz/tab-canopy)
+  [![Firefox Add-ons](https://img.shields.io/badge/Firefox-in%20review-orange.svg)](https://github.com/firtoz/tab-canopy)
   [![Release Status](https://github.com/firtoz/tab-canopy/actions/workflows/release.yml/badge.svg)](https://github.com/firtoz/tab-canopy/actions)
   
   <p><strong>⚠️ Alpha / Experimental</strong></p>
@@ -129,7 +129,7 @@ bun build:firefox  # for Firefox
 **Firefox:**
 1. Open `about:debugging#/runtime/this-firefox`
 2. Click "Load Temporary Add-on"
-3. Select any file in `.output/firefox-mv3` directory
+3. Select any file in `.output/firefox-mv2` directory
 
 **Note:** Firefox temporary extensions are removed when the browser closes. You'll need to reload it each time.
 
@@ -167,7 +167,7 @@ bun install
 bun dev                # Chrome
 bun dev:firefox        # Firefox
 
-# Load from .output/chrome-mv3-dev or .output/firefox-mv3-dev
+# Load from .output/chrome-mv3-dev or .output/firefox-mv2-dev
 ```
 
 ### Prerequisites

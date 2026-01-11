@@ -5,111 +5,25 @@
 			"cache": false,
 			"persistent": true
 		},
-		"build": {
-			"dependsOn": ["db:generate"],
-			"outputs": ["packages/extension/.output/**"],
-			"inputs": [
-				".env",
-				"packages/extension/entrypoints/**",
-				"packages/extension/src/**",
-				"packages/extension/schema/**",
-				"packages/extension/wxt.config.ts",
-				"packages/extension/package.json"
-			]
-		},
-		"build:firefox": {
-			"dependsOn": ["db:generate"],
-			"outputs": ["packages/extension/.output/**"],
-			"inputs": [
-				".env",
-				"packages/extension/entrypoints/**",
-				"packages/extension/src/**",
-				"packages/extension/schema/**",
-				"packages/extension/wxt.config.ts",
-				"packages/extension/package.json"
-			]
-		},
-		"db:generate": {
-			"outputs": [
-				"packages/extension/schema/drizzle/**",
-				"packages/extension/schema/indexeddb-migrations/**"
-			],
-			"inputs": [
-				"packages/extension/schema/src/schema.ts",
-				"packages/extension/schema/drizzle.config.ts"
-			]
-		},
-		"test": {
-			"dependsOn": ["^build"],
-			"inputs": [
-				"packages/extension/entrypoints/**/*.test.ts",
-				"packages/extension/entrypoints/**/*.test.tsx",
-				"packages/e2e-tests/e2e/**",
-				"packages/e2e-tests/playwright.config.ts",
-				"packages/extension/.output/**"
-			],
-			"outputs": ["playwright-report/**", "test-results/**"]
-		},
-		"test:unit": {
-			"dependsOn": [],
-			"inputs": [
-				"packages/extension/entrypoints/**/*.test.ts",
-				"packages/extension/entrypoints/**/*.test.tsx"
-			]
-		},
-		"test:e2e": {
-			"dependsOn": ["^build"],
-			"inputs": [
-				"packages/e2e-tests/e2e/**",
-				"packages/e2e-tests/playwright.config.ts",
-				"packages/extension/.output/**"
-			]
-		},
-		"test:e2e:ui": {
-			"dependsOn": ["^build"],
+		"dev:firefox": {
 			"cache": false,
 			"persistent": true
 		},
-		"lint": {
-			"outputs": [],
-			"inputs": [
-				"packages/extension/**",
-				"packages/e2e-tests/**",
-				"*.{ts,tsx,js,jsx}",
-				"biome.json"
-			]
+		"build": {},
+		"build:firefox": {},
+		"db:generate": {},
+		"test": {},
+		"test:unit": {},
+		"test:e2e": {},
+		"test:e2e:ui": {
+			"cache": false,
+			"persistent": true
 		},
-		"lint:ci": {
-			"outputs": [],
-			"inputs": [
-				"packages/extension/**",
-				"packages/e2e-tests/**",
-				"*.{ts,tsx,js,jsx}",
-				"biome.json"
-			]
-		},
-		"format": {
-			"outputs": [],
-			"inputs": [
-				"packages/extension/**",
-				"packages/e2e-tests/**",
-				"*.{ts,tsx,js,jsx}",
-				"biome.json"
-			]
-		},
-		"typecheck": {
-			"outputs": [],
-			"inputs": [
-				"packages/extension/entrypoints/**",
-				"packages/extension/src/**",
-				"packages/extension/schema/**",
-				"packages/extension/tsconfig.json"
-			]
-		},
+		"lint": {},
+		"lint:ci": {},
+		"format": {},
+		"typecheck": {},
 		"zip": {},
-		"zip:firefox": {
-			"dependsOn": ["build:firefox"],
-			"outputs": ["*.zip"]
-		}
+		"zip:firefox": {}
 	}
 }

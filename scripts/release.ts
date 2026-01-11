@@ -124,8 +124,22 @@ async function createGitHubRelease(
 let chromeSuccess = false;
 let firefoxSuccess = false;
 let githubReleaseSuccess = false;
+const enableFirefoxPublishing =
+	process.env.ENABLE_FIREFOX_PUBLISHING === "true";
 
 try {
+	// Step 0: Build & zip Firefox extension for GitHub release (even if publishing is skipped)
+	console.log("\n📦 Building Firefox extension for GitHub release...");
+	try {
+		await $`bun run zip:firefox`.cwd(rootDir);
+		console.log("✓ Firefox extension built and zipped");
+	} catch (error) {
+		console.warn(
+			"⚠️  Firefox build failed (GitHub release will only include Chrome):",
+			error instanceof Error ? error.message : String(error),
+		);
+	}
+
 	// Step 1: Publish to Chrome Web Store
 	console.log("\n🚀 Publishing to Chrome Web Store...");
 	try {
@@ -138,18 +152,31 @@ try {
 		);
 	}
 
-	// Step 2: Publish to Firefox Add-ons (stub for now)
-	console.log("\n🦊 Publishing to Firefox Add-ons...");
-	try {
-		await publishFirefox();
-		firefoxSuccess = true;
-	} catch (error) {
-		console.error(
-			"\n⚠️  Firefox publishing failed (this is expected - not yet implemented):",
-			error instanceof Error ? error.message : String(error),
+	// Step 2: Publish to Firefox Add-ons
+	if (enableFirefoxPublishing) {
+		console.log("\n🦊 Publishing to Firefox Add-ons...");
+		try {
+			await publishFirefox();
+			firefoxSuccess = true;
+		} catch (error) {
+			console.error(
+				"\n⚠️  Firefox publishing failed:",
+				error instanceof Error ? error.message : String(error),
+			);
+			console.log(
+				"   Continuing with release (Firefox publishing is optional)",
+			);
+			firefoxSuccess = false;
+		}
+	} else {
+		console.log(
+			"\n🦊 Firefox Add-ons publishing: Disabled (ENABLE_FIREFOX_PUBLISHING=false)",
 		);
-		// Don't fail the release if only Firefox fails
-		firefoxSuccess = true;
+		console.log("   Firefox zip will still be included in GitHub release");
+		console.log(
+			"   Set ENABLE_FIREFOX_PUBLISHING=true after Mozilla approves first submission",
+		);
+		firefoxSuccess = true; // Don't block release
 	}
 
 	// Step 3: Create GitHub release (only if Chrome succeeded)
@@ -183,16 +210,26 @@ try {
 		}
 	}
 } finally {
-	if (chromeSuccess && firefoxSuccess) {
+	if (chromeSuccess) {
 		console.log("\n✅ Release complete!");
-		console.log("💡 Extension uploaded as draft to Chrome Web Store");
-		console.log("📝 Manually publish from the developer dashboard");
+		console.log("💡 Chrome: Uploaded as draft to Chrome Web Store");
+		if (enableFirefoxPublishing && firefoxSuccess) {
+			console.log("💡 Firefox: Uploaded to Mozilla Add-ons for review");
+		} else if (enableFirefoxPublishing) {
+			console.log("⚠️  Firefox: Publishing enabled but failed");
+		} else {
+			console.log("💡 Firefox: Publishing disabled");
+			console.log(
+				"   → Firefox zip included in GitHub release for manual testing",
+			);
+		}
+		console.log("📝 Manually publish from the respective developer dashboards");
 
 		if (githubReleaseSuccess) {
 			console.log("🏷️  GitHub release created with extension zips");
 		}
 	} else {
-		console.error("\n❌ Release failed!");
+		console.error("\n❌ Release failed - Chrome publishing is required!");
 		process.exit(1);
 	}
 }

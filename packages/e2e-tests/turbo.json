@@ -5,15 +5,23 @@
 		"test": {
 			"dependsOn": ["@tabcanopy/extension#build"],
 			"outputs": ["playwright-report/**", "test-results/**"],
-			"cache": false
+			"inputs": ["e2e/**", "playwright.config.ts", "../extension/.output/**"]
+		},
+		"test:unit": {
+			"inputs": [
+				"../extension/entrypoints/**/*.test.ts",
+				"../extension/entrypoints/**/*.test.tsx"
+			]
+		},
+		"test:e2e": {
+			"dependsOn": ["@tabcanopy/extension#build"],
+			"inputs": ["e2e/**", "playwright.config.ts", "../extension/.output/**"]
 		},
 		"test:ui": {
-			"dependsOn": ["@tabcanopy/extension#build"],
-			"cache": false
+			"dependsOn": ["@tabcanopy/extension#build"]
 		},
 		"test:headed": {
-			"dependsOn": ["@tabcanopy/extension#build"],
-			"cache": false
+			"dependsOn": ["@tabcanopy/extension#build"]
 		},
 		"lint": {
 			"inputs": ["e2e/**", "playwright.config.ts"]

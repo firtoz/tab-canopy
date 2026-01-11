@@ -3,6 +3,11 @@
 	"extends": ["//"],
 	"tasks": {
 		"zip": {
+			"dependsOn": [],
+			"outputs": [".output/*.zip"]
+		},
+		"zip:firefox": {
+			"dependsOn": [],
 			"outputs": [".output/*.zip"]
 		},
 		"build": {
@@ -28,6 +33,13 @@
 				"entrypoints/**/*"
 			],
 			"outputs": [".output/**"]
+		},
+		"db:generate": {
+			"outputs": [
+				"schema/drizzle/**",
+				"schema/drizzle/indexeddb-migrations/**"
+			],
+			"inputs": ["schema/src/schema.ts", "schema/drizzle.config.ts"]
 		},
 		"lint": {
 			"inputs": [
