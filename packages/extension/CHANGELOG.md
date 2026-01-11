@@ -1,5 +1,14 @@
 # @tabcanopy/extension
 
+## 0.2.2
+
+### Patch Changes
+
+- [`fe865ad`](https://github.com/firtoz/tab-canopy/commit/fe865addebe88a2a6d103df3ff159f3007f68794) Thanks [@firtoz](https://github.com/firtoz)! - Fix search keyboard shortcut on Mac
+
+  - Add support for Cmd+F (⌘F) to open search on macOS
+  - Keyboard shortcut now works with Ctrl+F on Windows/Linux and Cmd+F on Mac
+
 ## 0.2.1
 
 ### Patch Changes
