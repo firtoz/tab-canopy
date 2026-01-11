@@ -57,6 +57,7 @@ function getLatestChangelog(version: string): string {
 
 /**
  * Get all extension zip files from the output directory
+ * Excludes the sources zip which is only for Mozilla review
  */
 function getZipFiles(): string[] {
 	const outputDir = join(extensionDir, ".output");
@@ -64,7 +65,7 @@ function getZipFiles(): string[] {
 	try {
 		const files = readdirSync(outputDir);
 		return files
-			.filter((f) => f.endsWith(".zip"))
+			.filter((f) => f.endsWith(".zip") && !f.includes("sources"))
 			.map((f) => join(outputDir, f));
 	} catch {
 		console.warn("⚠️  No .output directory found");
