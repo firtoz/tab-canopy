@@ -1,5 +1,17 @@
 # @tabcanopy/extension
 
+## 0.2.1
+
+### Patch Changes
+
+- [`ac37d30`](https://github.com/firtoz/tab-canopy/commit/ac37d30bcc1247617ac0bd81e33ac26ec509ade9) Thanks [@firtoz](https://github.com/firtoz)! - Improve favicon display reliability and handle internal browser URLs
+
+  - Implement favicon proxy through background script to handle CORS-blocked favicons
+  - Add corsproxy.io as CORS proxy fallback service for inaccessible favicons
+  - Display puzzle icon for internal browser URLs (chrome://, about:, extension pages)
+  - Prevent CORS errors by not attempting to load favicons until proxy response received
+  - Cache favicon responses to reduce redundant fetches
+
 ## 0.2.0
 
 ### Minor Changes
