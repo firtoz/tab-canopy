@@ -134,16 +134,19 @@ export const performInitialSync = async (dbOps: DbOperations) => {
 	// Generate unique treeOrder keys for new tabs
 	const newTabKeys = generateNKeysBetween(null, null, newTabs.length);
 
-	// Map existing tabs with preserved tree structure
+	// Map existing tabs with preserved tree structure and active state
 	const existingTabRecords = existingTabs.map((tab) => {
 		const existing = existingTabMap.get(tab.id);
 		if (!existing) {
 			throw new Error(`Existing tab not found for tab ${tab.id}`);
 		}
-		return tabToRecord(tab, {
+		const record = tabToRecord(tab, {
 			parentTabId: existing.parentTabId,
 			treeOrder: existing.treeOrder,
 		});
+		// Preserve DB active state - only handleTabActivated should change active state
+		record.active = existing.active;
+		return record;
 	});
 
 	// Map new tabs with unique treeOrder values

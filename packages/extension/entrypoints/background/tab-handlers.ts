@@ -216,10 +216,15 @@ const updateTabIndicesInWindow = async (
 	const tabs = await browser.tabs.query({ windowId });
 	const tabRecords = tabs.filter(hasTabIds).map((tab) => {
 		const existing = existingMap.get(tab.id);
-		return tabToRecord(tab, {
+		const record = tabToRecord(tab, {
 			parentTabId: existing?.parentTabId ?? null,
 			treeOrder: existing?.treeOrder ?? DEFAULT_TREE_ORDER,
 		});
+		// Preserve DB active state for existing tabs - only handleTabActivated should change active state
+		if (existing) {
+			record.active = existing.active;
+		}
+		return record;
 	});
 
 	if (tabRecords.length > 0) {
@@ -354,12 +359,15 @@ export const setupTabListeners = (
 			for (const t of browserTabs.filter(hasTabIds)) {
 				if (t.id === tab.id) continue; // Skip the new tab
 				const existing = existingMap.get(t.id);
-				otherRecords.push(
-					tabToRecord(t, {
-						parentTabId: existing?.parentTabId ?? null,
-						treeOrder: existing?.treeOrder ?? DEFAULT_TREE_ORDER,
-					}),
-				);
+				const record = tabToRecord(t, {
+					parentTabId: existing?.parentTabId ?? null,
+					treeOrder: existing?.treeOrder ?? DEFAULT_TREE_ORDER,
+				});
+				// Preserve DB active state for existing tabs - only handleTabActivated should change active state
+				if (existing) {
+					record.active = existing.active;
+				}
+				otherRecords.push(record);
 			}
 			if (otherRecords.length > 0) {
 				await putItems("tab", otherRecords);
@@ -563,12 +571,15 @@ export const setupTabListeners = (
 		for (const t of browserTabs.filter(hasTabIds)) {
 			if (t.id === tab.id) continue; // Skip the new tab
 			const existing = existingMap.get(t.id);
-			otherRecords.push(
-				tabToRecord(t, {
-					parentTabId: existing?.parentTabId ?? null,
-					treeOrder: existing?.treeOrder ?? DEFAULT_TREE_ORDER,
-				}),
-			);
+			const record = tabToRecord(t, {
+				parentTabId: existing?.parentTabId ?? null,
+				treeOrder: existing?.treeOrder ?? DEFAULT_TREE_ORDER,
+			});
+			// Preserve DB active state for existing tabs - only handleTabActivated should change active state
+			if (existing) {
+				record.active = existing.active;
+			}
+			otherRecords.push(record);
 		}
 		if (otherRecords.length > 0) {
 			await putItems("tab", otherRecords);
@@ -619,12 +630,15 @@ export const setupTabListeners = (
 			parentTabId = null;
 		}
 
-		await putItems("tab", [
-			tabToRecord(tab, {
-				parentTabId,
-				treeOrder,
-			}),
-		]);
+		const record = tabToRecord(tab, {
+			parentTabId,
+			treeOrder,
+		});
+		// Preserve DB active state for existing tabs - only handleTabActivated should change active state
+		if (existing) {
+			record.active = existing.active;
+		}
+		await putItems("tab", [record]);
 	};
 
 	browser.tabs.onUpdated.addListener(
@@ -730,12 +744,13 @@ export const setupTabListeners = (
 							.get(child.browserTabId)
 							.catch(() => null);
 						if (browserTab && hasTabIds(browserTab)) {
-							promotedRecords.push(
-								tabToRecord(browserTab, {
-									parentTabId: removedTab.parentTabId,
-									treeOrder: newTreeOrders[i],
-								}),
-							);
+							const record = tabToRecord(browserTab, {
+								parentTabId: removedTab.parentTabId,
+								treeOrder: newTreeOrders[i],
+							});
+							// Preserve DB active state - only handleTabActivated should change active state
+							record.active = child.active;
+							promotedRecords.push(record);
 						}
 					}
 					if (promotedRecords.length > 0) {
@@ -788,22 +803,26 @@ export const setupTabListeners = (
 				"[Background] Using UI move intent, skipping tree recalculation for tab:",
 				tabId,
 			);
-			// Use the tree position that the UI already set
-			const browserTab = await browser.tabs.get(tabId);
-			if (browserTab && hasTabIds(browserTab)) {
-				await putItems("tab", [
-					tabToRecord(browserTab, {
-						parentTabId: uiIntent.parentTabId,
-						treeOrder: uiIntent.treeOrder,
-					}),
-				]);
-			}
-
 			// Still need to update other tabs' indices
 			const existingTabs = await getAll<Tab>("tab");
 			const existingMap = new Map<number, Tab>();
 			for (const tab of existingTabs) {
 				existingMap.set(tab.browserTabId, tab);
+			}
+
+			// Use the tree position that the UI already set
+			const browserTab = await browser.tabs.get(tabId);
+			if (browserTab && hasTabIds(browserTab)) {
+				const record = tabToRecord(browserTab, {
+					parentTabId: uiIntent.parentTabId,
+					treeOrder: uiIntent.treeOrder,
+				});
+				// Preserve DB active state - only handleTabActivated should change active state
+				const existingMovedTab = existingMap.get(tabId);
+				if (existingMovedTab) {
+					record.active = existingMovedTab.active;
+				}
+				await putItems("tab", [record]);
 			}
 
 			const allBrowserTabs = await browser.tabs.query({
@@ -832,16 +851,17 @@ export const setupTabListeners = (
 				if (!hasTabIds(bt)) continue;
 				const existing = existingMap.get(bt.id);
 				const otherIntent = uiMoveIntents.get(bt.id);
-				otherTabRecords.push(
-					tabToRecord(bt, {
-						parentTabId:
-							otherIntent?.parentTabId ?? existing?.parentTabId ?? null,
-						treeOrder:
-							otherIntent?.treeOrder ??
-							existing?.treeOrder ??
-							DEFAULT_TREE_ORDER,
-					}),
-				);
+				const record = tabToRecord(bt, {
+					parentTabId:
+						otherIntent?.parentTabId ?? existing?.parentTabId ?? null,
+					treeOrder:
+						otherIntent?.treeOrder ?? existing?.treeOrder ?? DEFAULT_TREE_ORDER,
+				});
+				// Preserve DB active state for existing tabs
+				if (existing) {
+					record.active = existing.active;
+				}
+				otherTabRecords.push(record);
 			}
 
 			// For tabs without existing data, generate unique treeOrders
@@ -939,12 +959,15 @@ export const setupTabListeners = (
 		// Update the moved tab with tree position AND new browser index
 		const browserTab = await browser.tabs.get(tabId);
 		if (browserTab && hasTabIds(browserTab)) {
-			await putItems("tab", [
-				tabToRecord(browserTab, {
-					parentTabId: newParentId,
-					treeOrder: newTreeOrder,
-				}),
-			]);
+			const record = tabToRecord(browserTab, {
+				parentTabId: newParentId,
+				treeOrder: newTreeOrder,
+			});
+			// Preserve DB active state - only handleTabActivated should change active state
+			if (existingTabInTargetWindow) {
+				record.active = existingTabInTargetWindow.active;
+			}
+			await putItems("tab", [record]);
 		}
 
 		testLog("About to check for descendants to flatten");
@@ -1034,12 +1057,18 @@ export const setupTabListeners = (
 								`Flattening child ${childId} with treeOrder=${childTreeOrder} and newParentId=${newParentId}`,
 							);
 
-							childRecords.push(
-								tabToRecord(childBrowserTab, {
-									parentTabId: newParentId,
-									treeOrder: childTreeOrder,
-								}),
+							const record = tabToRecord(childBrowserTab, {
+								parentTabId: newParentId,
+								treeOrder: childTreeOrder,
+							});
+							// Preserve DB active state for existing tabs
+							const existingChild = existingTabs.find(
+								(t) => t.browserTabId === childId,
 							);
+							if (existingChild) {
+								record.active = existingChild.active;
+							}
+							childRecords.push(record);
 
 							// Track that we flattened this descendant
 							flattenedDescendantIds.push(childId);
@@ -1135,12 +1164,15 @@ export const setupTabListeners = (
 				lastTreeOrderAtSameLevel = treeOrderToUse;
 			}
 
-			otherTabRecords.push(
-				tabToRecord(bt, {
-					parentTabId: parentIdToUse,
-					treeOrder: treeOrderToUse,
-				}),
-			);
+			const record = tabToRecord(bt, {
+				parentTabId: parentIdToUse,
+				treeOrder: treeOrderToUse,
+			});
+			// Preserve DB active state for existing tabs
+			if (existing) {
+				record.active = existing.active;
+			}
+			otherTabRecords.push(record);
 		}
 
 		if (otherTabRecords.length > 0) {
@@ -1203,16 +1235,19 @@ export const setupTabListeners = (
 		const tabRecords: TabRecord[] = [];
 
 		// Update tabs with existing records (preserve tree structure)
+		// IMPORTANT: Explicitly set active state based on activeInfo.tabId
+		// rather than relying on browser.tabs.query which may have race conditions
 		for (const tab of tabsWithRecords) {
 			if (!hasTabIds(tab)) continue;
 			const existing = existingMap.get(tab.id);
 			if (!existing) continue;
-			tabRecords.push(
-				tabToRecord(tab, {
-					parentTabId: existing.parentTabId,
-					treeOrder: existing.treeOrder,
-				}),
-			);
+			const record = tabToRecord(tab, {
+				parentTabId: existing.parentTabId,
+				treeOrder: existing.treeOrder,
+			});
+			// Explicitly set active state - only the activated tab should be active
+			record.active = tab.id === activeInfo.tabId;
+			tabRecords.push(record);
 		}
 
 		// For tabs without existing records, generate unique treeOrders
@@ -1221,12 +1256,13 @@ export const setupTabListeners = (
 			for (let i = 0; i < tabsWithoutRecords.length; i++) {
 				const tab = tabsWithoutRecords[i];
 				if (!hasTabIds(tab)) continue;
-				tabRecords.push(
-					tabToRecord(tab, {
-						parentTabId: null,
-						treeOrder: keys[i],
-					}),
-				);
+				const record = tabToRecord(tab, {
+					parentTabId: null,
+					treeOrder: keys[i],
+				});
+				// Explicitly set active state - only the activated tab should be active
+				record.active = tab.id === activeInfo.tabId;
+				tabRecords.push(record);
 			}
 		}
 
@@ -1274,12 +1310,13 @@ export const setupTabListeners = (
 						.get(child.browserTabId)
 						.catch(() => null);
 					if (browserTab && hasTabIds(browserTab)) {
-						promotedRecords.push(
-							tabToRecord(browserTab, {
-								parentTabId: detachedTab.parentTabId,
-								treeOrder: child.treeOrder,
-							}),
-						);
+						const record = tabToRecord(browserTab, {
+							parentTabId: detachedTab.parentTabId,
+							treeOrder: child.treeOrder,
+						});
+						// Preserve DB active state - only handleTabActivated should change active state
+						record.active = child.active;
+						promotedRecords.push(record);
 					}
 				}
 				if (promotedRecords.length > 0) {
@@ -1307,6 +1344,10 @@ export const setupTabListeners = (
 		const browserTab = await browser.tabs.get(tabId).catch(() => null);
 		if (!browserTab || !hasTabIds(browserTab)) return;
 
+		// Get existing tabs early to use for active state preservation
+		const existingTabs = await getAll<Tab>("tab");
+		const existingTab = existingTabs.find((t) => t.browserTabId === tabId);
+
 		// First, check if there's a UI move intent (sent before browser.tabs.move was called)
 		// This is the definitive source of truth for UI-initiated moves
 		const uiIntent = consumeUiMoveIntent(tabId);
@@ -1318,6 +1359,10 @@ export const setupTabListeners = (
 				parentTabId: uiIntent.parentTabId,
 				treeOrder: uiIntent.treeOrder,
 			});
+			// Preserve DB active state - only handleTabActivated should change active state
+			if (existingTab) {
+				tabRecord.active = existingTab.active;
+			}
 			await putItems("tab", [tabRecord]);
 			// IMPORTANT: Don't call updateTabIndicesInWindow here!
 			// During a UI-managed batch move, each tab has its own uiIntent with the correct
@@ -1334,9 +1379,6 @@ export const setupTabListeners = (
 			`[Background] Tab ${tabId} isUiManagedMove: ${isUiManagedMove}, managedSet size: ${managedMoveTabIds.size}`,
 		);
 
-		// Get existing tabs
-		const existingTabs = await getAll<Tab>("tab");
-		const existingTab = existingTabs.find((t) => t.browserTabId === tabId);
 		log(
 			`[Background] Tab ${tabId} existingTab:`,
 			existingTab
@@ -1367,6 +1409,8 @@ export const setupTabListeners = (
 				parentTabId: existingTab.parentTabId,
 				treeOrder: existingTab.treeOrder,
 			});
+			// Preserve DB active state - only handleTabActivated should change active state
+			tabRecord.active = existingTab.active;
 			await putItems("tab", [tabRecord]);
 
 			// IMPORTANT: Don't update other tabs here!
@@ -1428,6 +1472,10 @@ export const setupTabListeners = (
 				parentTabId,
 				treeOrder,
 			});
+			// Preserve DB active state for existing tabs
+			if (existingTab) {
+				tabRecord.active = existingTab.active;
+			}
 			await putItems("tab", [tabRecord]);
 
 			// For browser-native moves, update all tabs in the window
@@ -1460,12 +1508,13 @@ export const setupTabListeners = (
 				if (!hasTabIds(bt)) continue;
 				const existing = existingMap.get(bt.id);
 				if (!existing) continue;
-				otherTabRecords.push(
-					tabToRecord(bt, {
-						parentTabId: existing.parentTabId,
-						treeOrder: existing.treeOrder,
-					}),
-				);
+				const record = tabToRecord(bt, {
+					parentTabId: existing.parentTabId,
+					treeOrder: existing.treeOrder,
+				});
+				// Preserve DB active state - only handleTabActivated should change active state
+				record.active = existing.active;
+				otherTabRecords.push(record);
 			}
 
 			// For tabs without existing records, generate unique treeOrders

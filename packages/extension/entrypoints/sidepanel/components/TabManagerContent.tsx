@@ -17,7 +17,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { browser } from "wxt/browser";
 import type * as schema from "@/schema/src/schema";
 import { cn } from "../lib/cn";
-import { useIdbAdapter } from "../lib/db";
+import { useIdbAdapter } from "../lib/db/IdbTransportAdapterProvider";
 import { isDropData } from "../lib/dnd/dnd-types";
 import {
 	exposeBrowserTestActions,

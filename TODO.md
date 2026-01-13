@@ -2,11 +2,17 @@
 
 This document outlines planned features and improvements for TabCanopy.
 
+## Priority
+
+- [ ] **Quick Access Bookmarks** (Arc-style)
+  - [ ] Bookmark bar section at the top of sidepanel (only shown if bookmarks exist)
+  - [ ] Store bookmarks in browser's native bookmarks under a TabCanopy folder (syncs via browser sync)
+  - [ ] If bookmarked URL is open, show it as "active" style
+  - [ ] Clicking an active bookmark should focus that tab instead of opening new
+  - [ ] Currently focused bookmarked tab should have distinct "selected" styling
+
 ## Known Issues
 
-- [x] ~~Closing a non-collapsed tab sometimes causes children to disappear when they shouldn't~~
-  - Verified: Browser-native close (Ctrl+W, page.close()) correctly promotes children to grandparent
-  - Note: UI close button intentionally closes all descendants (by design)
 - [ ] Dragging a tab or tree to create a new window sometimes causes them to disappear temporarily
   - E2E test added: "Complex tree - drag subtree into sibling then to new window" passes consistently
   - Test verifies: drag b into c, then drag b subtree to new window - all descendants move correctly
@@ -15,10 +21,6 @@ This document outlines planned features and improvements for TabCanopy.
 - [ ] **Firefox**: Adding new empty tabs causes ordering issues and tabs cannot be closed
   - When creating new empty tabs in Firefox, the extension shows ordering-related errors
   - Additionally, newly created empty tabs cannot be closed through the extension
-- [x] ~~Sometimes when a new tab is opened, it'll not be next to the opener in the native view, but it'll appear as a child of it~~
-  - Fixed: Tabs with openerTabId are now automatically repositioned to be adjacent to their siblings in the browser
-- [x] ~~Clicking active tab of non-current window triggers rename instead of focusing window~~
-  - Fixed: Click-to-rename now only triggers when the tab is in the sidepanel's own window
 
 ## Core Features
 
@@ -26,7 +28,6 @@ This document outlines planned features and improvements for TabCanopy.
   - [ ] Arrow keys for tree traversal
   - [ ] Common keyboard shortcuts (close, new tab, etc.)
   - [ ] Quick search/command palette (Cmd/Ctrl+K)
-  - [x] ~~Ctrl+F for searching/filtering tabs~~
 
 - [ ] **Session Management**
   - [ ] Save and restore tab hierarchies using native Chrome Session API
@@ -82,5 +83,3 @@ This document outlines planned features and improvements for TabCanopy.
 - [ ] **Performance**
   - [ ] Virtualized rendering for large tab lists
   - [ ] Memory optimization for inactive tabs
-
-

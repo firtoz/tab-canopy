@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useIdbTransportAdapter } from "./db/useIdbTransportAdapter";
+import { useIdbAdapter } from "./db/IdbTransportAdapterProvider";
 
 /**
  * Cache for favicon data URLs to avoid repeated fetches
@@ -18,7 +18,7 @@ export function useFaviconProxy(url: string | null | undefined): {
 	const [dataUrl, setDataUrl] = useState<string | null>(null);
 	const [isLoading, setIsLoading] = useState(false);
 	const [error, setError] = useState<string | null>(null);
-	const { adapter } = useIdbTransportAdapter();
+	const adapter = useIdbAdapter();
 
 	useEffect(() => {
 		// Skip if no adapter or URL or if it's an internal browser URL

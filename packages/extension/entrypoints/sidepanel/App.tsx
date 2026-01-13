@@ -1,12 +1,16 @@
 import {
-	createProxyDbCreator,
+	createProxyIDbCreator,
 	DrizzleIndexedDBProvider,
 	type IDBProxySyncMessage,
 } from "@firtoz/drizzle-indexeddb";
 import { useMemo } from "react";
 import * as schema from "@/schema/src/schema";
 import { TabManagerContent } from "./components/TabManagerContent";
-import { IdbTransportAdapterProvider, useIdbAdapter } from "./lib/db";
+import {
+	IdbTransportAdapterProvider,
+	type UseIdbTransportAdapterOptions,
+	useIdbAdapter,
+} from "./lib/db/IdbTransportAdapterProvider";
 
 const DB_NAME = "tabcanopy.db";
 
@@ -19,7 +23,7 @@ function AppContent() {
 
 	// Create db creator and sync handler from adapter
 	const { dbCreator, handleSyncReady } = useMemo(() => {
-		const dbCreator = createProxyDbCreator(adapter.transport);
+		const dbCreator = createProxyIDbCreator(adapter.transport);
 
 		return {
 			dbCreator,
@@ -42,15 +46,17 @@ function AppContent() {
 }
 
 function App() {
+	const options: UseIdbTransportAdapterOptions = useMemo(() => {
+		return {
+			enabled: true,
+			maxRetries: -1, // Infinite retries
+			retryDelay: 100,
+			maxRetryDelay: 5000,
+		};
+	}, []);
+
 	return (
-		<IdbTransportAdapterProvider
-			options={{
-				enabled: true,
-				maxRetries: -1, // Infinite retries
-				retryDelay: 100,
-				maxRetryDelay: 5000,
-			}}
-		>
+		<IdbTransportAdapterProvider options={options}>
 			<AppContent />
 		</IdbTransportAdapterProvider>
 	);

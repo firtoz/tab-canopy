@@ -5,7 +5,7 @@ React context provider for managing the IDB transport adapter connection to the 
 ## Usage
 
 ```tsx
-import { IdbTransportAdapterProvider, useIdbAdapter } from "./lib/db";
+import { IdbTransportAdapterProvider, useIdbAdapter } from "./lib/db/IdbTransportAdapterProvider";
 
 function App() {
   return (
