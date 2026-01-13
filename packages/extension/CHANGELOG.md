@@ -1,5 +1,21 @@
 # @tabcanopy/extension
 
+## 0.2.3
+
+### Patch Changes
+
+- [`25a4d16`](https://github.com/firtoz/tab-canopy/commit/25a4d168c92879fc40ecc95a84c85576ed8835f0) Thanks [@firtoz](https://github.com/firtoz)! - Fix multiple tabs appearing active in the same window
+
+  - Fixed race condition where multiple tabs could appear as "active" in the same window
+  - `handleTabActivated` now explicitly sets active state based on `activeInfo.tabId` rather than relying on browser query results which could be stale
+  - All other event handlers now preserve the DB's active state for existing tabs instead of overwriting with potentially incorrect browser state
+  - Only `handleTabActivated` should change which tab is active
+
+  Fix infinite IndexedDB connections
+
+  - Fixed issue where infinite database connections were being created due to using adapter creator function instead of the context consumer
+  - Refactored `IdbTransportAdapterProvider` to properly manage connection lifecycle
+
 ## 0.2.2
 
 ### Patch Changes
