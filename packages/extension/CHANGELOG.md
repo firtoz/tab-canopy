@@ -1,5 +1,14 @@
 # @tabcanopy/extension
 
+## 0.2.5
+
+### Patch Changes
+
+- [`316ff25`](https://github.com/firtoz/tab-canopy/commit/316ff2593e3fc7fa94f3ac93040189e41a9f915c) Thanks [@firtoz](https://github.com/firtoz)! - Fix Firefox extension ID not being passed to build process
+
+  - Firefox extension ID now correctly passed to build process via shell environment variable syntax
+  - Added manifest verification step to confirm extension ID is properly set before submission
+
 ## 0.2.4
 
 ### Patch Changes
