@@ -39,3 +39,6 @@ test-results
 
 # Turbo
 .turbo
+
+# Auto-generated files
+store-metadata/firefox/amo-metadata.json

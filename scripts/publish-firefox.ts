@@ -14,6 +14,7 @@
 
 import { join } from "node:path";
 import { $ } from "bun";
+import { writeAmoMetadata } from "./generate-amo-metadata";
 
 const rootDir = join(import.meta.dir, "..");
 
@@ -57,6 +58,11 @@ export async function publishFirefox(): Promise<void> {
 		throw new Error("Failed to build Firefox extension");
 	}
 
+	// Generate AMO metadata from Chrome store descriptions (single source of truth)
+	console.log("\n📝 Generating AMO metadata...");
+	const amoMetadataPath = await writeAmoMetadata();
+	console.log(`   Generated: ${amoMetadataPath}`);
+
 	console.log("\n🦊 Uploading to Firefox Add-ons...");
 
 	// The build output directory
@@ -79,10 +85,13 @@ export async function publishFirefox(): Promise<void> {
 		"listed",
 		"--artifacts-dir",
 		join(rootDir, "packages/extension/.output"),
+		"--amo-metadata",
+		amoMetadataPath,
 	];
 
-	// Add extension ID for updating existing add-on
-	submitArgs.push("--id", extensionId);
+	// Extension ID is set in the manifest.json via browser_specific_settings.gecko.id
+	// during the build process (see wxt.config.ts) - no need to pass it here
+	// AMO metadata is generated from store-metadata/chrome/* for consistency
 
 	// Submit to Mozilla Add-ons
 	const submitProc = await $`${submitArgs}`.cwd(rootDir).nothrow();
