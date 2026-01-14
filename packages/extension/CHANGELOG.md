@@ -1,5 +1,16 @@
 # @tabcanopy/extension
 
+## 0.2.7
+
+### Patch Changes
+
+- [`2a936a0`](https://github.com/firtoz/tab-canopy/commit/2a936a0756b1ec67742cb8ae6a9a83f8b750e67a) Thanks [@firtoz](https://github.com/firtoz)! - Fix Firefox extension ID passing with proper Turbo cache configuration
+
+  - Configured Turbo to track `FIREFOX_EXTENSION_ID` env var for cache invalidation
+  - Changed to use `Bun.spawn()` with explicit environment for reliable env var passing
+  - Added detailed logging to debug environment variable state during build
+  - Turbo now automatically rebuilds when extension ID changes, uses cache when it matches
+
 ## 0.2.6
 
 ### Patch Changes
