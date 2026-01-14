@@ -50,16 +50,28 @@ export async function publishFirefox(): Promise<void> {
 	}
 
 	console.log("📦 Building extension for Firefox...");
-	console.log(`   Using extension ID: ${extensionId}`);
+	console.log(`   Extension ID to inject: ${extensionId}`);
+	console.log(
+		`   Current env FIREFOX_EXTENSION_ID: ${process.env.FIREFOX_EXTENSION_ID || "(not set)"}`,
+	);
 
 	// Build the extension (web-ext sign needs the source directory, not a zip)
 	// Use Bun.spawn with explicit env to ensure FIREFOX_EXTENSION_ID is passed
+	// Turbo will automatically invalidate cache when FIREFOX_EXTENSION_ID changes (see turbo.json)
+	const buildEnv = {
+		...process.env,
+		FIREFOX_EXTENSION_ID: extensionId,
+	};
+
+	console.log("   Building with environment:");
+	console.log(`     - FIREFOX_EXTENSION_ID: ${buildEnv.FIREFOX_EXTENSION_ID}`);
+	console.log(
+		`     - Turbo will use cache only if FIREFOX_EXTENSION_ID matches`,
+	);
+
 	const buildProc = Bun.spawn(["bun", "run", "build:firefox"], {
 		cwd: rootDir,
-		env: {
-			...process.env,
-			FIREFOX_EXTENSION_ID: extensionId,
-		},
+		env: buildEnv,
 		stdout: "inherit",
 		stderr: "inherit",
 	});
@@ -69,6 +81,8 @@ export async function publishFirefox(): Promise<void> {
 	if (buildExitCode !== 0) {
 		throw new Error("Failed to build Firefox extension");
 	}
+
+	console.log("✓ Build completed");
 
 	// The build output directory
 	const sourceDir = join(rootDir, "packages/extension/.output/firefox-mv2");

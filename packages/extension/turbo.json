@@ -22,18 +22,19 @@
 			],
 			"outputs": [".output/**"]
 		},
-		"build:firefox": {
-			"dependsOn": ["db:generate"],
-			"inputs": [
-				".env",
-				"src/**/*.ts",
-				"assets/**/*",
-				"public/**/*",
-				"schema/**/*",
-				"entrypoints/**/*"
-			],
-			"outputs": [".output/**"]
-		},
+	"build:firefox": {
+		"dependsOn": ["db:generate"],
+		"inputs": [
+			".env",
+			"src/**/*.ts",
+			"assets/**/*",
+			"public/**/*",
+			"schema/**/*",
+			"entrypoints/**/*"
+		],
+		"outputs": [".output/**"],
+		"env": ["FIREFOX_EXTENSION_ID"]
+	},
 		"db:generate": {
 			"outputs": [
 				"schema/drizzle/**",

@@ -163,6 +163,7 @@ try {
 		if (firefoxExtensionId) {
 			console.log(`   Using Firefox extension ID: ${firefoxExtensionId}`);
 			// Use Bun.spawn to ensure env var is passed to build
+			// Turbo will automatically invalidate cache when FIREFOX_EXTENSION_ID changes
 			const buildProc = Bun.spawn(["bun", "run", "build:firefox"], {
 				cwd: rootDir,
 				env: {
