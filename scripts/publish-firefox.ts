@@ -50,12 +50,44 @@ export async function publishFirefox(): Promise<void> {
 	}
 
 	console.log("📦 Building extension for Firefox...");
+	console.log(`   Using extension ID: ${extensionId}`);
 
 	// Build the extension (web-ext sign needs the source directory, not a zip)
-	const buildProc = await $`bun run build:firefox`.cwd(rootDir).nothrow();
+	// Pass FIREFOX_EXTENSION_ID directly in the command
+	const buildProc =
+		await $`FIREFOX_EXTENSION_ID=${extensionId} bun run build:firefox`
+			.cwd(rootDir)
+			.nothrow();
 
 	if (buildProc.exitCode !== 0) {
 		throw new Error("Failed to build Firefox extension");
+	}
+
+	// The build output directory
+	const sourceDir = join(rootDir, "packages/extension/.output/firefox-mv2");
+
+	// Verify the manifest has the extension ID
+	try {
+		const manifestPath = join(sourceDir, "manifest.json");
+		const manifestContent = await Bun.file(manifestPath).text();
+		const manifest = JSON.parse(manifestContent);
+
+		if (manifest.browser_specific_settings?.gecko?.id === extensionId) {
+			console.log(
+				`✓ Extension ID verified in manifest: ${manifest.browser_specific_settings.gecko.id}`,
+			);
+		} else {
+			console.warn(`⚠️  WARNING: Extension ID not found in manifest!`);
+			console.warn(`   Expected: ${extensionId}`);
+			console.warn(
+				`   Found: ${manifest.browser_specific_settings?.gecko?.id || "none"}`,
+			);
+		}
+	} catch (error) {
+		console.warn(
+			"⚠️  Could not verify manifest:",
+			error instanceof Error ? error.message : String(error),
+		);
 	}
 
 	// Generate AMO metadata from Chrome store descriptions (single source of truth)
@@ -64,9 +96,6 @@ export async function publishFirefox(): Promise<void> {
 	console.log(`   Generated: ${amoMetadataPath}`);
 
 	console.log("\n🦊 Uploading to Firefox Add-ons...");
-
-	// The build output directory
-	const sourceDir = join(rootDir, "packages/extension/.output/firefox-mv2");
 
 	console.log(`Using source directory: ${sourceDir}`);
 

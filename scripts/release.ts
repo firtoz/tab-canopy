@@ -158,6 +158,20 @@ try {
 	// Step 0: Build & zip Firefox extension for GitHub release (even if publishing is skipped)
 	console.log("\n📦 Building Firefox extension for GitHub release...");
 	try {
+		// Build first with extension ID, then zip
+		const firefoxExtensionId = process.env.FIREFOX_EXTENSION_ID;
+		if (firefoxExtensionId) {
+			console.log(`   Using Firefox extension ID: ${firefoxExtensionId}`);
+			// Pass extension ID directly in the command
+			await $`FIREFOX_EXTENSION_ID=${firefoxExtensionId} bun run build:firefox`.cwd(
+				rootDir,
+			);
+		} else {
+			console.log(
+				"   No FIREFOX_EXTENSION_ID set - building without fixed ID (will be auto-generated on first submission)",
+			);
+			await $`bun run build:firefox`.cwd(rootDir);
+		}
 		await $`bun run zip:firefox`.cwd(rootDir);
 		console.log("✓ Firefox extension built and zipped");
 	} catch (error) {
