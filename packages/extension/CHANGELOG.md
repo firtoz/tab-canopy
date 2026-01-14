@@ -1,5 +1,18 @@
 # @tabcanopy/extension
 
+## 0.2.4
+
+### Patch Changes
+
+- [`59e35c2`](https://github.com/firtoz/tab-canopy/commit/59e35c205b7991710ff33dea9c257191fe914d08) Thanks [@firtoz](https://github.com/firtoz)! - Fix Firefox Add-ons publishing and improve release automation
+
+  - Fixed Firefox Add-ons submission by removing invalid `--id` argument from web-ext sign command
+  - Extension ID is now properly set via manifest.json during build process
+  - Added auto-generated AMO metadata from Chrome store descriptions (single source of truth)
+  - Added required license field (MIT) to AMO metadata
+  - Created Firefox API utility script for managing addons (list, info, delete)
+  - All store descriptions now stay in sync automatically
+
 ## 0.2.3
 
 ### Patch Changes
