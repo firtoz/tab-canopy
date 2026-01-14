@@ -1,5 +1,15 @@
 # @tabcanopy/extension
 
+## 0.2.6
+
+### Patch Changes
+
+- [`cdbbcee`](https://github.com/firtoz/tab-canopy/commit/cdbbcee4ae19e2c7e920c7a72a4ffb1fe1c5d02b) Thanks [@firtoz](https://github.com/firtoz)! - Add manifest validation to prevent duplicate Firefox addon submissions
+
+  - Added validation check that verifies extension ID is in manifest before submission
+  - Script now fails early if extension ID is missing, preventing accidental duplicate addons
+  - Changed to use Bun.spawn() with explicit environment for reliable env var passing
+
 ## 0.2.5
 
 ### Patch Changes
