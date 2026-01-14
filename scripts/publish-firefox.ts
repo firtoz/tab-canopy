@@ -53,41 +53,59 @@ export async function publishFirefox(): Promise<void> {
 	console.log(`   Using extension ID: ${extensionId}`);
 
 	// Build the extension (web-ext sign needs the source directory, not a zip)
-	// Pass FIREFOX_EXTENSION_ID directly in the command
-	const buildProc =
-		await $`FIREFOX_EXTENSION_ID=${extensionId} bun run build:firefox`
-			.cwd(rootDir)
-			.nothrow();
+	// Use Bun.spawn with explicit env to ensure FIREFOX_EXTENSION_ID is passed
+	const buildProc = Bun.spawn(["bun", "run", "build:firefox"], {
+		cwd: rootDir,
+		env: {
+			...process.env,
+			FIREFOX_EXTENSION_ID: extensionId,
+		},
+		stdout: "inherit",
+		stderr: "inherit",
+	});
 
-	if (buildProc.exitCode !== 0) {
+	const buildExitCode = await buildProc.exited;
+
+	if (buildExitCode !== 0) {
 		throw new Error("Failed to build Firefox extension");
 	}
 
 	// The build output directory
 	const sourceDir = join(rootDir, "packages/extension/.output/firefox-mv2");
 
-	// Verify the manifest has the extension ID
+	// Verify the manifest has the extension ID (REQUIRED before submission)
+	console.log("\n🔍 Validating manifest...");
 	try {
 		const manifestPath = join(sourceDir, "manifest.json");
 		const manifestContent = await Bun.file(manifestPath).text();
 		const manifest = JSON.parse(manifestContent);
 
-		if (manifest.browser_specific_settings?.gecko?.id === extensionId) {
-			console.log(
-				`✓ Extension ID verified in manifest: ${manifest.browser_specific_settings.gecko.id}`,
-			);
+		const manifestId = manifest.browser_specific_settings?.gecko?.id;
+
+		if (manifestId === extensionId) {
+			console.log(`✓ Extension ID verified in manifest: ${manifestId}`);
 		} else {
-			console.warn(`⚠️  WARNING: Extension ID not found in manifest!`);
-			console.warn(`   Expected: ${extensionId}`);
-			console.warn(
-				`   Found: ${manifest.browser_specific_settings?.gecko?.id || "none"}`,
+			console.error("\n❌ VALIDATION FAILED: Extension ID not in manifest!");
+			console.error(`   Expected: ${extensionId}`);
+			console.error(`   Found: ${manifestId || "none"}`);
+			console.error("\n   This would create a duplicate addon with a new ID.");
+			console.error("   Aborting submission to prevent duplicate addons.");
+			throw new Error(
+				"Extension ID not found in manifest - build process failed to inject ID",
 			);
 		}
 	} catch (error) {
-		console.warn(
-			"⚠️  Could not verify manifest:",
+		if (
+			error instanceof Error &&
+			error.message.includes("not found in manifest")
+		) {
+			throw error; // Re-throw our validation error
+		}
+		console.error(
+			"❌ Could not verify manifest:",
 			error instanceof Error ? error.message : String(error),
 		);
+		throw new Error("Failed to validate manifest before submission");
 	}
 
 	// Generate AMO metadata from Chrome store descriptions (single source of truth)

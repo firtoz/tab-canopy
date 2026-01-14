@@ -162,10 +162,17 @@ try {
 		const firefoxExtensionId = process.env.FIREFOX_EXTENSION_ID;
 		if (firefoxExtensionId) {
 			console.log(`   Using Firefox extension ID: ${firefoxExtensionId}`);
-			// Pass extension ID directly in the command
-			await $`FIREFOX_EXTENSION_ID=${firefoxExtensionId} bun run build:firefox`.cwd(
-				rootDir,
-			);
+			// Use Bun.spawn to ensure env var is passed to build
+			const buildProc = Bun.spawn(["bun", "run", "build:firefox"], {
+				cwd: rootDir,
+				env: {
+					...process.env,
+					FIREFOX_EXTENSION_ID: firefoxExtensionId,
+				},
+				stdout: "inherit",
+				stderr: "inherit",
+			});
+			await buildProc.exited;
 		} else {
 			console.log(
 				"   No FIREFOX_EXTENSION_ID set - building without fixed ID (will be auto-generated on first submission)",
