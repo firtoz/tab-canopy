@@ -64,16 +64,13 @@ jobs:
           # Get the version for the release link
           VERSION=$(jq -r '.version' packages/extension/package.json)
           
-          # Check if this release was just created (within last 2 minutes)
-          RELEASE_DATE=$(gh release view "v${VERSION}" --json createdAt --jq '.createdAt' 2>/dev/null || echo "")
-          if [ -n "$RELEASE_DATE" ]; then
-            RELEASE_AGE=$(($(date +%s) - $(date -d "$RELEASE_DATE" +%s 2>/dev/null || date -j -f "%Y-%m-%dT%H:%M:%SZ" "$RELEASE_DATE" +%s 2>/dev/null || echo "0")))
-            if [ "$RELEASE_AGE" -lt 120 ]; then
-              WAS_PUBLISHED=true
-            else
-              WAS_PUBLISHED=false
-            fi
+          # Check if changesets actually published in this run
+          # The 'published' output is 'true' if packages were published
+          if [ "${{ steps.changesets.outputs.published }}" = "true" ]; then
+            # New release was created in this run
+            WAS_PUBLISHED=true
           else
+            # No publishing happened (version already released)
             WAS_PUBLISHED=false
           fi
           
