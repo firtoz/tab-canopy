@@ -13,6 +13,8 @@ This document outlines planned features and improvements for TabCanopy.
 
 ## Known Issues
 
+- [ ] tab/window renaming does not seem to be synchronised
+- [ ] sometimes there are ghost tabs - closed in native, but hanging around in the extension?
 - [ ] Dragging a tab or tree to create a new window sometimes causes them to disappear temporarily
   - E2E test added: "Complex tree - drag subtree into sibling then to new window" passes consistently
   - Test verifies: drag b into c, then drag b subtree to new window - all descendants move correctly
