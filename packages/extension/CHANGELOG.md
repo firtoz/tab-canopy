@@ -1,5 +1,15 @@
 # @tabcanopy/extension
 
+## 0.2.8
+
+### Patch Changes
+
+- [`cd8f61e`](https://github.com/firtoz/tab-canopy/commit/cd8f61e64a55f69143ea25d9c13affd137f4c2bf) Thanks [@firtoz](https://github.com/firtoz)! - Keep background service worker from going dormant when sidebar is closed
+
+  - Add chrome.alarms-based keepalive (1 min period) so the worker stays active for parent/child reconciliation
+  - Add "alarms" permission; keepalive alarm is scheduled on install and on each worker start
+  - Sidepanel ping keepalive remains as supplementary when sidebar is open
+
 ## 0.2.7
 
 ### Patch Changes
