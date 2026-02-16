@@ -307,7 +307,7 @@ export function createIDBTransportAdapter(
 				onDisconnect: handleDisconnect,
 			});
 
-			// Setup keepalive heartbeat to prevent service worker from going idle
+			// Supplementary keepalive while sidebar is open (background also uses chrome.alarms when sidebar is closed)
 			// Send ping every 20 seconds (service worker timeout is ~30s)
 			keepaliveInterval = setInterval(() => {
 				currentExtensionTransport?.send({ type: "ping" });

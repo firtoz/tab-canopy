@@ -30,11 +30,39 @@ import {
 } from "./tab-handlers";
 import { setupWindowListeners } from "./window-handlers";
 
+/** Alarm name for waking the service worker. Chrome MV3 allows min 1 minute period. */
+const KEEPALIVE_ALARM_NAME = "tabcanopy-keepalive";
+const KEEPALIVE_ALARM_PERIOD_MINUTES = 1;
+
+function scheduleKeepaliveAlarm() {
+	browser.alarms.get(KEEPALIVE_ALARM_NAME).then((existing) => {
+		if (!existing) {
+			browser.alarms.create(KEEPALIVE_ALARM_NAME, {
+				periodInMinutes: KEEPALIVE_ALARM_PERIOD_MINUTES,
+			});
+			log(
+				"[Background] Keepalive alarm scheduled (every",
+				KEEPALIVE_ALARM_PERIOD_MINUTES,
+				"min)",
+			);
+		}
+	});
+}
+
 export default defineBackground(() => {
 	browser.runtime.onInstalled.addListener(() => {
 		// Chrome-only: Set side panel to open on action click
 		// Firefox uses sidebar_action which doesn't need this config
 		browser.sidePanel?.setPanelBehavior?.({ openPanelOnActionClick: true });
+		scheduleKeepaliveAlarm();
+	});
+
+	// Keep service worker from going dormant when sidebar is closed (reconcile parent/child etc.)
+	scheduleKeepaliveAlarm();
+	browser.alarms.onAlarm.addListener((alarm) => {
+		if (alarm.name === KEEPALIVE_ALARM_NAME) {
+			// No-op: waking the worker is the only goal
+		}
 	});
 
 	// Track the database instance for direct writes

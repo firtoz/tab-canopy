@@ -4,6 +4,10 @@ This document outlines planned features and improvements for TabCanopy.
 
 ## Priority
 
+- [x] Need to make sure that the background script stays alive as much as possible
+  - Because it needs to reconcile parent/child relationships etc...
+  - Implemented: chrome.alarms keepalive (1 min) when sidebar is closed; sidepanel ping remains when open.
+
 - [ ] **Quick Access Bookmarks** (Arc-style)
   - [ ] Bookmark bar section at the top of sidepanel (only shown if bookmarks exist)
   - [ ] Store bookmarks in browser's native bookmarks under a TabCanopy folder (syncs via browser sync)

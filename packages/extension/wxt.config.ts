@@ -10,6 +10,7 @@ export default defineConfig({
 	manifest: ({ command, browser }) => ({
 		permissions: [
 			"tabs",
+			"alarms",
 			// Chrome requires explicit sidePanel permission
 			// Firefox doesn't recognize sidePanel, uses sidebar_action instead
 			...(browser === "chrome" ? ["sidePanel"] : []),
