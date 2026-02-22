@@ -1,9 +1,18 @@
-import { generateKeyBetween } from "fractional-indexing";
+import { generateKeyBetween, generateNKeysBetween } from "fractional-indexing";
 import {
 	DEFAULT_TREE_ORDER,
 	treeOrderSort,
 } from "@/entrypoints/sidepanel/lib/tree";
 import type { Tab } from "@/schema/src/schema";
+
+/** Tree-only update for a tab (parentTabId + treeOrder) */
+export type TreeUpdate = { parentTabId: number | null; treeOrder: string };
+
+/** Result of inferTreeFromBrowserMove: all tab updates and which IDs were flattened */
+export type InferTreeFromBrowserMoveResult = {
+	updates: Map<number, TreeUpdate>;
+	childrenToFlatten: number[];
+};
 
 /**
  * Tree structure for a tab node
@@ -83,9 +92,74 @@ export function getExpectedBrowserOrder(tabs: Tab[]): Map<number, number> {
 }
 
 /**
- * Get all descendants of a tab (recursive)
+ * Return tab IDs in depth-first tree order (order they should appear in the browser).
+ * Used when calling tabs.move so we pass the right index per tab.
  */
-function getAllDescendants(allTabs: Tab[], parentId: number): Set<number> {
+export function flattenTreeToBrowserOrder(tabs: Tab[]): number[] {
+	const tree = buildTree(tabs);
+	const flat = flattenTree(tree);
+	return flat.map((t) => t.browserTabId);
+}
+
+/**
+ * Given a removed tab, return tree updates for direct children only:
+ * they are promoted to the removed tab's parent with new treeOrder between siblings.
+ * Grandchildren and deeper descendants are unchanged (they stay under promoted children).
+ */
+export function promoteOnRemove(
+	tabs: Tab[],
+	removedTabId: number,
+): Map<number, TreeUpdate> {
+	const removedTab = tabs.find((t) => t.browserTabId === removedTabId);
+	if (!removedTab) return new Map();
+
+	const directChildren = tabs
+		.filter((t) => t.parentTabId === removedTabId)
+		.sort(treeOrderSort);
+	if (directChildren.length === 0) return new Map();
+
+	const siblings = tabs
+		.filter(
+			(t) =>
+				t.parentTabId === removedTab.parentTabId &&
+				t.browserTabId !== removedTabId,
+		)
+		.sort(treeOrderSort);
+
+	let prevSibling: Tab | undefined;
+	let nextSibling: Tab | undefined;
+	for (let i = 0; i < siblings.length; i++) {
+		if (siblings[i].treeOrder < removedTab.treeOrder) {
+			prevSibling = siblings[i];
+		} else if (siblings[i].treeOrder > removedTab.treeOrder && !nextSibling) {
+			nextSibling = siblings[i];
+			break;
+		}
+	}
+
+	const newTreeOrders = generateNKeysBetween(
+		prevSibling?.treeOrder ?? null,
+		nextSibling?.treeOrder ?? null,
+		directChildren.length,
+	);
+
+	const updates = new Map<number, TreeUpdate>();
+	for (let i = 0; i < directChildren.length; i++) {
+		updates.set(directChildren[i].browserTabId, {
+			parentTabId: removedTab.parentTabId,
+			treeOrder: newTreeOrders[i],
+		});
+	}
+	return updates;
+}
+
+/**
+ * Get all descendants of a tab (recursive). Exported for use in reconciler fallback.
+ */
+export function getAllDescendants(
+	allTabs: Tab[],
+	parentId: number,
+): Set<number> {
 	const descendants = new Set<number>();
 	const queue = [parentId];
 
@@ -103,14 +177,138 @@ function getAllDescendants(allTabs: Tab[], parentId: number): Set<number> {
 }
 
 /**
- * Determine the new tree position for a tab that was moved in the browser.
+ * Infer full tree updates for a browser-native tab move.
+ * Returns a map of tabId -> { parentTabId, treeOrder } for the moved tab and any
+ * descendants that end up before the parent (flattened to the same level as the moved tab).
  *
  * Rules:
- * - If the tab is placed between a parent P and its child C, it becomes a sibling of C (child of P)
- * - Otherwise, it becomes a sibling of the tab after it
- * - If at the end, it becomes root-level
- * - Special case: If a parent tab is moved and any of its descendants end up before it,
- *   those descendants should be flattened (become siblings at the same level as the parent)
+ * - New parent for moved tab = parent of the tab immediately after it in the new order (or root at end).
+ * - If a descendant ends up before the moved parent in the flat list, flatten it (same parent as moved tab).
+ */
+export function inferTreeFromBrowserMove(
+	inputTabs: Tab[],
+	movedTabId: number,
+	newBrowserIndex: number,
+): InferTreeFromBrowserMoveResult {
+	const updates = new Map<number, TreeUpdate>();
+	const childrenToFlatten: number[] = [];
+
+	const movedTab = inputTabs.find((t) => t.browserTabId === movedTabId);
+	if (!movedTab) {
+		return { updates, childrenToFlatten };
+	}
+
+	const descendants = getAllDescendants(inputTabs, movedTabId);
+
+	const tabsWithoutMoved = inputTabs.filter(
+		(t) => t.browserTabId !== movedTabId,
+	);
+	const newAllTabs = [...tabsWithoutMoved];
+	newAllTabs.splice(newBrowserIndex, 0, movedTab);
+
+	// Which descendants end up before the parent after the move
+	if (descendants.size > 0) {
+		for (const descendantId of descendants) {
+			const descendantIndex = newAllTabs.findIndex(
+				(t) => t.browserTabId === descendantId,
+			);
+			const movedTabIndex = newAllTabs.findIndex(
+				(t) => t.browserTabId === movedTabId,
+			);
+			if (descendantIndex < 0 || movedTabIndex < 0) continue;
+			if (newBrowserIndex >= descendantIndex) {
+				childrenToFlatten.push(descendantId);
+			}
+		}
+	}
+
+	// New parent = parent of the tab immediately after the moved tab (or root at end).
+	// If the next tab is a descendant of the moved tab, skip to the first non-descendant so we don't set moved tab's parent to itself.
+	let newParentId: number | null = null;
+	for (let i = newBrowserIndex + 1; i < newAllTabs.length; i++) {
+		const afterTab = newAllTabs[i];
+		if (!descendants.has(afterTab.browserTabId)) {
+			newParentId = afterTab.parentTabId;
+			break;
+		}
+	}
+
+	// Use immediate prev/next in browser order so "move parent between child and next" gets correct order (b, a, c).
+	// When prev/next have inconsistent treeOrders (e.g. moving under a parent), fall back to sibling-based logic.
+	const prevInOrder = newAllTabs[newBrowserIndex - 1] ?? null;
+	const nextInOrder = newAllTabs[newBrowserIndex + 1] ?? null;
+	const prevTreeOrder =
+		prevInOrder && !childrenToFlatten.includes(prevInOrder.browserTabId)
+			? prevInOrder.treeOrder
+			: null;
+	const nextTreeOrder = nextInOrder?.treeOrder ?? null;
+
+	let movedTreeOrder: string;
+	if (
+		prevTreeOrder != null &&
+		nextTreeOrder != null &&
+		prevTreeOrder >= nextTreeOrder
+	) {
+		// Invalid bounds (e.g. moving tab under a parent); use siblings at new parent
+		const siblings = newAllTabs.filter(
+			(t) =>
+				t.parentTabId === newParentId &&
+				t.browserTabId !== movedTabId &&
+				!childrenToFlatten.includes(t.browserTabId),
+		);
+		const withoutMovedAndDescendants = newAllTabs.filter(
+			(t) => t.browserTabId !== movedTabId && !descendants.has(t.browserTabId),
+		);
+		let insertIndex = 0;
+		for (let i = 0; i < siblings.length; i++) {
+			const idx = withoutMovedAndDescendants.findIndex(
+				(t) => t.browserTabId === siblings[i].browserTabId,
+			);
+			if (idx >= 0 && idx < newBrowserIndex) insertIndex = i + 1;
+		}
+		const prevSib = insertIndex > 0 ? siblings[insertIndex - 1] : null;
+		const nextSib =
+			insertIndex < siblings.length ? siblings[insertIndex] : null;
+		movedTreeOrder = generateKeyBetween(
+			prevSib?.treeOrder ?? null,
+			nextSib?.treeOrder ?? null,
+		);
+	} else {
+		movedTreeOrder = generateKeyBetween(
+			prevTreeOrder ?? null,
+			nextTreeOrder ?? null,
+		);
+	}
+
+	updates.set(movedTabId, {
+		parentTabId: newParentId,
+		treeOrder: movedTreeOrder,
+	});
+
+	// Flattened descendants: same parent as moved tab, treeOrder before the moved tab (in browser order)
+	const flattenedSorted = [...childrenToFlatten].sort((a, b) => {
+		const idxA = newAllTabs.findIndex((t) => t.browserTabId === a);
+		const idxB = newAllTabs.findIndex((t) => t.browserTabId === b);
+		return idxA - idxB;
+	});
+
+	let lastTreeOrder: string | null = prevTreeOrder;
+	for (let i = 0; i < flattenedSorted.length; i++) {
+		const childId = flattenedSorted[i];
+		const childTreeOrder = generateKeyBetween(lastTreeOrder, movedTreeOrder);
+		updates.set(childId, {
+			parentTabId: newParentId,
+			treeOrder: childTreeOrder,
+		});
+		lastTreeOrder = childTreeOrder;
+	}
+
+	return { updates, childrenToFlatten };
+}
+
+/**
+ * Legacy entry point: returns only the moved tab's position and childrenToFlatten.
+ * Prefer inferTreeFromBrowserMove in new code.
  */
 export function calculateTreePositionFromBrowserMove(
 	inputTabs: Tab[],
@@ -121,161 +319,15 @@ export function calculateTreePositionFromBrowserMove(
 	treeOrder: string;
 	childrenToFlatten: number[];
 } {
-	// Find the moved tab in the original list, if it's not here, it came from another window
-	const movedTab = inputTabs.find((t) => t.browserTabId === movedTabId);
-	if (!movedTab) {
-		// This should never happen, but if it does, we can't calculate the new tree position
-		return {
-			parentTabId: null,
-			treeOrder: DEFAULT_TREE_ORDER,
-			childrenToFlatten: [],
-		};
-	}
-
-	// Check if the moved tab has any descendants
-	const descendants = getAllDescendants(inputTabs, movedTabId);
-
-	// Simulate the browser tab move:
-	// 1. Remove the tab from its original position
-	// 2. Insert at the new position
-	// This correctly models how Chrome handles tab moves
-	const tabsWithoutMoved = inputTabs.filter(
-		(t) => t.browserTabId !== movedTabId,
+	const { updates, childrenToFlatten } = inferTreeFromBrowserMove(
+		inputTabs,
+		movedTabId,
+		newBrowserIndex,
 	);
-	const newAllTabs = [...tabsWithoutMoved];
-	newAllTabs.splice(newBrowserIndex, 0, movedTab);
-
-	// Remove the moved tab (and its descendants) from flat list to see what's at each position
-	const withoutMovedAndDescendants = newAllTabs.filter(
-		(t) => t.browserTabId !== movedTabId && !descendants.has(t.browserTabId),
-	);
-
-	// Check if any descendants would end up before the parent after the move
-	// If so, those descendants need to be flattened
-	// This happens when a parent tab is moved to a position that breaks the tree invariant:
-	// "a parent must always appear before its children in the flat browser tab list"
-	const childrenToFlatten: number[] = [];
-	if (descendants.size > 0) {
-		// Get the current browser index of each descendant in the flat list
-		for (const descendantId of descendants) {
-			const descendantTab = newAllTabs.find(
-				(t) => t.browserTabId === descendantId,
-			);
-			if (!descendantTab) continue;
-
-			// Find where the descendant appears in the current flat list (tree order)
-			const descendantIndex = newAllTabs.findIndex(
-				(t) => t.browserTabId === descendantId,
-			);
-
-			// Find where the moved tab appears in the current flat list
-			const movedTabIndex = newAllTabs.findIndex(
-				(t) => t.browserTabId === movedTabId,
-			);
-
-			if (descendantIndex < 0 || movedTabIndex < 0) continue;
-
-			// After the move, if the new browser index is >= the descendant's current position
-			// in the tree, the parent will end up at or after the descendant, breaking the tree structure
-			// We need to flatten this descendant
-			if (newBrowserIndex >= descendantIndex) {
-				childrenToFlatten.push(descendantId);
-			}
-		}
-	}
-
-	const nextTab = newAllTabs[newBrowserIndex + 1] ?? null;
-
-	// Determine new parent
-	let newParentId: number | null = null;
-	let siblings: Tab[] = [];
-
-	if (nextTab) {
-		newParentId = nextTab.parentTabId;
-	}
-
-	// Get siblings at the new parent level (excluding children that will be flattened)
-	siblings = newAllTabs.filter(
-		(t) =>
-			t.parentTabId === newParentId &&
-			t.browserTabId !== movedTabId &&
-			!childrenToFlatten.includes(t.browserTabId),
-	);
-	// .sort(treeOrderSort);
-
-	console.log(
-		JSON.stringify(
-			{
-				siblings: siblings.map((t) => ({
-					title: t.title,
-					browserTabId: t.browserTabId,
-					parentTabId: t.parentTabId,
-					treeOrder: t.treeOrder,
-					tabIndex: t.tabIndex,
-				})),
-				newParentId,
-			},
-			null,
-			2,
-		),
-	);
-
-	// Find where to insert among siblings based on browser order
-	// We want to maintain the same relative position as in the browser
-	let insertIndex = 0;
-	for (let i = 0; i < siblings.length; i++) {
-		const siblingBrowserIndex = withoutMovedAndDescendants.findIndex(
-			(t) => t.browserTabId === siblings[i].browserTabId,
-		);
-		if (siblingBrowserIndex < newBrowserIndex) {
-			insertIndex = i + 1;
-		}
-	}
-
-	// Generate treeOrder
-	const prevSibling = insertIndex > 0 ? siblings[insertIndex - 1] : null;
-	const nextSibling =
-		insertIndex < siblings.length ? siblings[insertIndex] : null;
-
-	const treeOrder = generateKeyBetween(
-		prevSibling?.treeOrder ?? null,
-		nextSibling?.treeOrder ?? null,
-	);
-
-	console.log(
-		JSON.stringify(
-			{
-				prevSibling: prevSibling
-					? {
-							title: prevSibling.title,
-							browserTabId: prevSibling.browserTabId,
-							parentTabId: prevSibling.parentTabId,
-							treeOrder: prevSibling.treeOrder,
-							tabIndex: prevSibling.tabIndex,
-						}
-					: null,
-				nextSibling: nextSibling
-					? {
-							title: nextSibling.title,
-							browserTabId: nextSibling.browserTabId,
-							parentTabId: nextSibling.parentTabId,
-							treeOrder: nextSibling.treeOrder,
-							tabIndex: nextSibling.tabIndex,
-						}
-					: null,
-				insertIndex,
-				newParentId,
-				newBrowserIndex,
-				treeOrder,
-			},
-			null,
-			2,
-		),
-	);
-
+	const moved = updates.get(movedTabId);
 	return {
-		parentTabId: newParentId,
-		treeOrder,
+		parentTabId: moved?.parentTabId ?? null,
+		treeOrder: moved?.treeOrder ?? DEFAULT_TREE_ORDER,
 		childrenToFlatten,
 	};
 }
@@ -415,4 +467,25 @@ export function calculateTreePositionForNewTab(
 		parentTabId,
 		treeOrder,
 	};
+}
+
+/**
+ * Infer tree position for a new tab inserted at newTabIndex in the window.
+ * When browserTabs is provided (current indices from browser), uses them; otherwise uses tabIndex from tabsInWindow.
+ */
+export function inferTreeFromBrowserCreate(
+	tabsInWindow: Tab[],
+	newTabIndex: number,
+	newTabId: number,
+	browserTabs?: Array<{ id: number; index: number }>,
+): { parentTabId: number | null; treeOrder: string } {
+	const indices =
+		browserTabs ??
+		tabsInWindow.map((t) => ({ id: t.browserTabId, index: t.tabIndex }));
+	return calculateTreePositionForNewTab(
+		tabsInWindow,
+		indices,
+		newTabIndex,
+		newTabId,
+	);
 }

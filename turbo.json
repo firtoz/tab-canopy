@@ -1,29 +1,30 @@
 {
-	"$schema": "./node_modules/turbo/schema.json",
-	"tasks": {
-		"dev": {
-			"cache": false,
-			"persistent": true
-		},
-		"dev:firefox": {
-			"cache": false,
-			"persistent": true
-		},
-		"build": {},
-		"build:firefox": {},
-		"db:generate": {},
-		"test": {},
-		"test:unit": {},
-		"test:e2e": {},
-		"test:e2e:ui": {
-			"cache": false,
-			"persistent": true
-		},
-		"lint": {},
-		"lint:ci": {},
-		"format": {},
-		"typecheck": {},
-		"zip": {},
-		"zip:firefox": {}
-	}
+  "$schema": "./node_modules/turbo/schema.json",
+  "tasks": {
+    "build": {},
+    "build:firefox": {},
+    "db:generate": {},
+    "dev": {
+      "cache": false,
+      "persistent": true
+    },
+    "dev:firefox": {
+      "cache": false,
+      "persistent": true
+    },
+    "format": {},
+    "lint": {},
+    "lint:ci": {},
+    "test": {},
+    "test:e2e": {},
+    "test:e2e:db-sync": {},
+    "test:e2e:ui": {
+      "cache": false,
+      "persistent": true
+    },
+    "test:unit": {},
+    "typecheck": {},
+    "zip": {},
+    "zip:firefox": {}
+  }
 }

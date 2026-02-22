@@ -12,6 +12,7 @@ export type TabRecord = Omit<InsertTab, "id" | "createdAt" | "updatedAt"> &
 		parentTabId: number | null;
 		treeOrder: string;
 		isCollapsed: boolean;
+		titleOverride?: string | null;
 	};
 
 export const windowToRecord = (
@@ -64,5 +65,6 @@ export const tabToRecord = (
 		status: tab.status ?? null,
 		groupId: chromeTab.groupId ?? null,
 		deletedAt: null,
+		titleOverride: null,
 	};
 };

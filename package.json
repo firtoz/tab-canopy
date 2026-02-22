@@ -30,7 +30,8 @@
 		"changeset": "changeset",
 		"version": "changeset version && bun install --lockfile-only && git add bun.lock",
 		"release": "bun scripts/release.ts",
-		"source:zip": "bun scripts/create-source-submission.ts"
+		"source:zip": "bun scripts/create-source-submission.ts",
+		"test:e2e:db-sync": "turbo run test:e2e:db-sync"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "^2.3.12",

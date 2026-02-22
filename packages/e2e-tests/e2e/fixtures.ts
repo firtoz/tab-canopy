@@ -162,6 +162,25 @@ export interface TestTreeHelpers {
 	 * @param sourceTabId The tab to move
 	 */
 	moveTabToNewWindow: (sourceTabId: number) => Promise<void>;
+
+	/**
+	 * Programmatically drop a tab onto the window title (reorder at root)
+	 * @param sourceTabId The tab to move
+	 * @param slot Root slot (0 = first). Default 0.
+	 */
+	dragTabToWindowTitle: (sourceTabId: number, slot?: number) => Promise<void>;
+
+	/**
+	 * Wait until root-level tabs in a window match the expected order (by tree order).
+	 * @param windowId Window to check
+	 * @param expectedTabIds Expected root tab IDs in order
+	 * @param timeout Max wait ms
+	 */
+	waitForRootOrder: (
+		windowId: number,
+		expectedTabIds: number[],
+		timeout?: number,
+	) => Promise<void>;
 }
 
 // ES module equivalent of __dirname (Playwright runs in Node.js, not Bun)
@@ -299,6 +318,11 @@ export const test = base.extend<ExtensionFixtures>({
 			serviceWorker = await context.waitForEvent("serviceworker");
 		}
 
+		// Listen to console messages from the service worker
+		serviceWorker.on("console", (msg) => {
+			console.log(`[Background ${msg.type()}]`, msg.text());
+		});
+
 		// Extract extension ID from the service worker URL
 		const extensionId = serviceWorker.url().split("/")[2];
 		await use(extensionId);
@@ -324,6 +348,7 @@ export const test = base.extend<ExtensionFixtures>({
 				text.includes("[Test]") ||
 				text.includes("[test-helpers]") ||
 				text.includes("[TabManagerContent]") ||
+				text.includes("[Sidepanel]") ||
 				type === "error" ||
 				type === "warning"
 			) {
@@ -864,6 +889,73 @@ export const test = base.extend<ExtensionFixtures>({
 						`Original window: ${originalWindowId}\n` +
 						`Expected to move: ${allTabsToMove.join(", ")}\n` +
 						`Current state:\n${tabStates.join("\n")}`,
+				);
+			},
+
+			dragTabToWindowTitle: async (
+				sourceTabId: number,
+				slot = 0,
+			): Promise<void> => {
+				await sidepanel.evaluate(
+					({ sourceTabId, slot }) => {
+						// @ts-expect-error - window is available in browser context
+						const actions = window.__tabCanopyBrowserActions;
+						if (!actions) {
+							throw new Error("Browser test actions not exposed");
+						}
+						return actions.sendUserAction({
+							type: "dragTabToWindowTitle",
+							sourceTabId,
+							slot,
+						});
+					},
+					{ sourceTabId, slot },
+				);
+				await sidepanel.waitForTimeout(400);
+			},
+
+			waitForRootOrder: async (
+				windowId: number,
+				expectedTabIds: number[],
+				timeout = 5000,
+			): Promise<void> => {
+				const expectedSet = new Set(expectedTabIds);
+				const start = Date.now();
+				while (Date.now() - start < timeout) {
+					const helpers = await getTestHelpers();
+					const rootTabs = helpers.getRootTabs(windowId);
+					// Tree order is by treeOrder string, not tabIndex
+					const inTreeOrder = [...rootTabs].sort((a, b) =>
+						(a.treeOrder ?? "") < (b.treeOrder ?? "")
+							? -1
+							: (a.treeOrder ?? "") > (b.treeOrder ?? "")
+								? 1
+								: 0,
+					);
+					const actualIds = inTreeOrder.map((t) => t.browserTabId);
+					// Check that expected tab IDs appear in the right order (window may have other tabs)
+					const filtered = actualIds.filter((id) => expectedSet.has(id));
+					if (
+						filtered.length === expectedTabIds.length &&
+						filtered.every((id, i) => id === expectedTabIds[i])
+					) {
+						return;
+					}
+					await sidepanel.waitForTimeout(100);
+				}
+				const helpers = await getTestHelpers();
+				const rootTabs = helpers.getRootTabs(windowId);
+				const inTreeOrder = [...rootTabs].sort((a, b) =>
+					(a.treeOrder ?? "") < (b.treeOrder ?? "")
+						? -1
+						: (a.treeOrder ?? "") > (b.treeOrder ?? "")
+							? 1
+							: 0,
+				);
+				const actualIds = inTreeOrder.map((t) => t.browserTabId);
+				const filtered = actualIds.filter((id) => expectedSet.has(id));
+				throw new Error(
+					`Root order did not match within ${timeout}ms. Expected [${expectedTabIds.join(", ")}], got (filtered) [${filtered.join(", ")}], full root order [${actualIds.join(", ")}]`,
 				);
 			},
 

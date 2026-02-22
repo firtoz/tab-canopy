@@ -107,7 +107,8 @@ export function createExtensionServerTransport<TClientMsg, TServerMsg>(
 			port.sender?.documentId ??
 			`client-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
 
-		console.log(`[Server] Client connected: ${clientId}`);
+		if (import.meta.env?.DEV)
+			console.log(`[Server] Client connected: ${clientId}`);
 		connectedClients.set(clientId, port);
 
 		const clientInfo: ClientInfo = { clientId, port };
@@ -127,7 +128,8 @@ export function createExtensionServerTransport<TClientMsg, TServerMsg>(
 
 		// Clean up on disconnect
 		port.onDisconnect.addListener(() => {
-			console.log(`[Server] Client disconnected: ${clientId}`);
+			if (import.meta.env?.DEV)
+				console.log(`[Server] Client disconnected: ${clientId}`);
 			connectedClients.delete(clientId);
 			onDisconnect?.(clientId);
 		});
@@ -195,7 +197,7 @@ export function createExtensionClientTransport<TClientMsg, TServerMsg>(
 
 	// Handle disconnection
 	port.onDisconnect.addListener(() => {
-		console.log("[Client] Disconnected from server");
+		if (import.meta.env?.DEV) console.log("[Client] Disconnected from server");
 		isDisconnected = true;
 		onDisconnect?.();
 	});
@@ -203,7 +205,8 @@ export function createExtensionClientTransport<TClientMsg, TServerMsg>(
 	return {
 		send: (message: TClientMsg) => {
 			if (isDisconnected) {
-				console.warn("[Client] Attempted to send on disconnected port");
+				if (import.meta.env?.DEV)
+					console.warn("[Client] Attempted to send on disconnected port");
 				return;
 			}
 
@@ -216,7 +219,8 @@ export function createExtensionClientTransport<TClientMsg, TServerMsg>(
 				port.postMessage([...pack(portMessage)]);
 			} catch (e) {
 				if (e instanceof Error && e.message.includes("disconnected port")) {
-					console.warn("[Client] Port disconnected during send");
+					if (import.meta.env?.DEV)
+						console.warn("[Client] Port disconnected during send");
 					isDisconnected = true;
 				} else {
 					throw e;
@@ -225,12 +229,13 @@ export function createExtensionClientTransport<TClientMsg, TServerMsg>(
 		},
 		getPort: () => port,
 		dispose: () => {
-			console.log("[Client] Disposing transport");
+			if (import.meta.env?.DEV) console.log("[Client] Disposing transport");
 			if (!isDisconnected) {
 				try {
 					port.disconnect();
 				} catch (e) {
-					console.warn("[Client] Error disconnecting port:", e);
+					if (import.meta.env?.DEV)
+						console.warn("[Client] Error disconnecting port:", e);
 				}
 			}
 		},
@@ -238,14 +243,10 @@ export function createExtensionClientTransport<TClientMsg, TServerMsg>(
 }
 
 // ============================================================================
-// IDB Proxy specific types and helpers
+// Sync and message types
 // ============================================================================
 
-import type {
-	IDBProxyRequest,
-	IDBProxyResponse,
-	IDBProxySyncMessage,
-} from "@firtoz/drizzle-indexeddb";
+import type { SyncMessage } from "@firtoz/db-helpers";
 
 /**
  * UI move intent for preventing race conditions
@@ -317,7 +318,6 @@ export interface PendingChildTabData {
  * Messages sent from client to server
  */
 export type ClientMessage =
-	| { type: "idbRequest"; payload: IDBProxyRequest }
 	| { type: "broadcast"; channel: string; data: unknown }
 	| { type: "resetDatabase" }
 	| { type: "uiMoveIntent"; requestId: string; moves: UiMoveIntentData[] }
@@ -330,14 +330,19 @@ export type ClientMessage =
 	| { type: "disableTestMode" }
 	| { type: "injectBrowserEvent"; event: InjectBrowserEvent }
 	| { type: "fetchFavicon"; url: string; requestId: string }
-	| { type: "ping" };
+	| { type: "ping" }
+	| { type: "patchTab"; tabId: number; patch: { titleOverride: string | null } }
+	| {
+			type: "patchWindow";
+			windowId: number;
+			patch: { titleOverride: string | null };
+	  };
 
 /**
  * Messages sent from server to client
  */
 export type ServerMessage =
-	| { type: "idbResponse"; payload: IDBProxyResponse }
-	| { type: "idbSync"; payload: IDBProxySyncMessage }
+	| { type: "sync"; storeName: "tab" | "window"; messages: SyncMessage[] }
 	| {
 			type: "broadcast";
 			channel: string;

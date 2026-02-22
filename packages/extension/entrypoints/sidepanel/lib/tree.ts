@@ -229,13 +229,14 @@ export function getSiblings(tabs: Tab[], tab: Tab): Tab[] {
  */
 export function calculateTreeMove(
 	tabs: Tab[],
-	_movingTabId: number,
+	movingTabId: number,
 	dropPosition: TreeDropPosition,
 ): { parentTabId: number | null; treeOrder: string } {
 	const tabMap = new Map<number, Tab>();
 	for (const tab of tabs) {
 		tabMap.set(tab.browserTabId, tab);
 	}
+	const movingTab = tabMap.get(movingTabId);
 
 	switch (dropPosition.type) {
 		case "child": {
@@ -307,17 +308,21 @@ export function calculateTreeMove(
 		}
 
 		case "root": {
-			console.log("Moving to root level", dropPosition);
-			// Moving to root level
+			// Restrict to same window so "first" is the actual first root in that window (avoids flakiness when multiple windows)
+			const windowId = movingTab?.browserWindowId;
 			const rootTabs = tabs
-				.filter((t) => t.parentTabId === null)
+				.filter(
+					(t) =>
+						t.parentTabId === null &&
+						(windowId == null || t.browserWindowId === windowId),
+				)
 				.sort(treeOrderSort);
 
 			if (dropPosition.index <= 0) {
-				const first = rootTabs[0];
-				console.log("Moving to first position", first);
-				const newTreeOrder = generateKeyBetween(null, first?.treeOrder || null);
-				console.log("New tree order", newTreeOrder);
+				// Use the first root that is NOT the moving tab so we always insert before the current first
+				const first =
+					rootTabs.find((t) => t.browserTabId !== movingTabId) ?? rootTabs[0];
+				const newTreeOrder = generateKeyBetween(null, first?.treeOrder ?? null);
 				return {
 					parentTabId: null,
 					treeOrder: newTreeOrder,

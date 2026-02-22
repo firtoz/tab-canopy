@@ -1,16 +1,16 @@
 import { useDndContext } from "@dnd-kit/core";
-// import {
-// 	SortableContext,
-// 	useSortable,
-// 	verticalListSortingStrategy,
-// } from "@dnd-kit/sortable";
-import { useDrizzleIndexedDB } from "@firtoz/drizzle-indexeddb";
 import * as ContextMenu from "@radix-ui/react-context-menu";
 import fuzzysort from "fuzzysort";
 import { Plus, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type * as schema from "@/schema/src/schema";
 import { cn } from "../lib/cn";
+// import {
+// 	SortableContext,
+// 	useSortable,
+// 	verticalListSortingStrategy,
+// } from "@dnd-kit/sortable";
+import { useTabcanopyDB } from "../lib/db/MemoryCollectionProvider";
 import { isDropData } from "../lib/dnd/dnd-types";
 import { buildTabTree, flattenTree } from "../lib/tree";
 import { useTabActions } from "../store/useTabActions";
@@ -66,7 +66,7 @@ export const WindowGroup = ({
 	lastSelectedTabId: number | undefined;
 	setLastSelectedTabId: (id: number | undefined) => void;
 }) => {
-	const { useCollection } = useDrizzleIndexedDB<typeof schema>();
+	const { useCollection } = useTabcanopyDB();
 	const windowCollection = useCollection("windowTable");
 	const { active } = useDndContext();
 	const isDragging = active !== null;
@@ -266,6 +266,7 @@ export const WindowGroup = ({
 
 		if (activeDropData.type === "sibling") {
 			// Tabs Outliner style: sibling at specific ancestor level
+			// We insert BEFORE the target tab (strip left of tab = "before that tab")
 			const ancestorId = activeDropData.ancestorId;
 
 			// Calculate the visual depth for the indicator
@@ -280,20 +281,10 @@ export const WindowGroup = ({
 				targetDepth = ancestorItem ? ancestorItem.depth + 1 : 1;
 			}
 
-			// Find the insertion index: walk forward through items until we find one
-			// that's at or shallower than targetDepth
-			let insertIndex = itemIndex + 1;
-			while (insertIndex < items.length) {
-				const nextItem = items[insertIndex];
-				if (nextItem.depth <= targetDepth) {
-					break;
-				}
-				insertIndex++;
-			}
-
+			// Show line above the target tab (insert before = indicator at itemIndex)
 			return {
 				type: "sibling" as const,
-				index: insertIndex,
+				index: itemIndex,
 				depth: targetDepth,
 			};
 		}
@@ -344,28 +335,10 @@ export const WindowGroup = ({
 	}, [win.browserWindowId]);
 
 	const handleToggleWindowCollapse = useCallback(() => {
-		console.log(
-			"[WindowGroup] Toggling collapse for window:",
-			win.browserWindowId,
-			"current state:",
-			win.isCollapsed,
-			"window.id:",
-			win.id,
-		);
-
 		// Update the window's collapsed state in the database
-		// The IDB proxy will automatically broadcast this change to all connected clients
 		windowCollection.update(win.id, (draft) => {
-			console.log(
-				"[WindowGroup] Inside update draft, changing isCollapsed from",
-				draft.isCollapsed,
-				"to",
-				!win.isCollapsed,
-			);
 			draft.isCollapsed = !win.isCollapsed;
 		});
-
-		console.log("[WindowGroup] windowCollection.update() called");
 	}, [win, windowCollection]);
 
 	const handleCloseWindow = useCallback(

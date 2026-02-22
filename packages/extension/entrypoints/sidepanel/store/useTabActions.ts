@@ -12,6 +12,14 @@ type TabCollection = InferCollectionFromTable<typeof schema.tabTable>;
 type WindowCollection = InferCollectionFromTable<typeof schema.windowTable>;
 type SendMoveIntent = (moves: UiMoveIntentData[]) => Promise<void>;
 type SendPendingChildIntent = (data: PendingChildTabData) => void;
+type SendPatchTab = (
+	tabId: number,
+	patch: { titleOverride: string | null },
+) => void;
+type SendPatchWindow = (
+	windowId: number,
+	patch: { titleOverride: string | null },
+) => void;
 
 // Helper to find item by predicate from collection
 function findInCollection<T extends object>(
@@ -37,11 +45,15 @@ interface TabActionsStore {
 	windowCollection: WindowCollection | null;
 	sendMoveIntent: SendMoveIntent | null;
 	sendPendingChildIntent: SendPendingChildIntent | null;
+	sendPatchTab: SendPatchTab | null;
+	sendPatchWindow: SendPatchWindow | null;
 	setCollections: (
 		tabCollection: TabCollection,
 		windowCollection: WindowCollection,
 		sendMoveIntent: SendMoveIntent,
 		sendPendingChildIntent: SendPendingChildIntent,
+		sendPatchTab: SendPatchTab,
+		sendPatchWindow: SendPatchWindow,
 	) => void;
 
 	// Tab actions
@@ -63,17 +75,23 @@ export const useTabActions = create<TabActionsStore>((set, get) => ({
 	windowCollection: null,
 	sendMoveIntent: null,
 	sendPendingChildIntent: null,
+	sendPatchTab: null,
+	sendPatchWindow: null,
 	setCollections: (
 		tabCollection,
 		windowCollection,
 		sendMoveIntent,
 		sendPendingChildIntent,
+		sendPatchTab,
+		sendPatchWindow,
 	) =>
 		set({
 			tabCollection,
 			windowCollection,
 			sendMoveIntent,
 			sendPendingChildIntent,
+			sendPatchTab,
+			sendPatchWindow,
 		}),
 
 	// Tab actions
@@ -120,7 +138,7 @@ export const useTabActions = create<TabActionsStore>((set, get) => ({
 	},
 
 	renameTab: async (tabId: number, newTitle: string | null) => {
-		const { tabCollection } = get();
+		const { tabCollection, sendPatchTab } = get();
 		if (!tabCollection) return;
 
 		const tab = findInCollection(
@@ -132,6 +150,7 @@ export const useTabActions = create<TabActionsStore>((set, get) => ({
 		tabCollection.update(tab.id, (draft) => {
 			draft.titleOverride = newTitle;
 		});
+		sendPatchTab?.(tabId, { titleOverride: newTitle });
 	},
 
 	newTabAsChild: async (parentTabId: number) => {
@@ -160,13 +179,6 @@ export const useTabActions = create<TabActionsStore>((set, get) => ({
 			.sort((a, b) => (a.treeOrder < b.treeOrder ? -1 : 1));
 		const firstSibling = existingSiblings[0];
 		const treeOrder = generateKeyBetween(null, firstSibling?.treeOrder ?? null);
-
-		console.log("new tab as child", {
-			windowId: parentTab.browserWindowId,
-			openerTabId: parentTabId,
-			index: insertIndex,
-			treeOrder,
-		});
 
 		// Register pending child intent BEFORE creating the tab
 		// This tells the background what parent to use when it handles onCreated,
@@ -213,10 +225,6 @@ export const useTabActions = create<TabActionsStore>((set, get) => ({
 			);
 			attempts++;
 			if (attempts >= maxAttempts) {
-				console.log(
-					"new tab not found in collection after max attempts",
-					newTabBrowserId,
-				);
 				return;
 			}
 		}
@@ -244,7 +252,7 @@ export const useTabActions = create<TabActionsStore>((set, get) => ({
 	},
 
 	renameWindow: async (windowId: number, newTitle: string | null) => {
-		const { windowCollection } = get();
+		const { windowCollection, sendPatchWindow } = get();
 		if (!windowCollection) return;
 
 		const win = findInCollection(
@@ -256,6 +264,7 @@ export const useTabActions = create<TabActionsStore>((set, get) => ({
 		windowCollection.update(win.id, (draft) => {
 			draft.titleOverride = newTitle;
 		});
+		sendPatchWindow?.(windowId, { titleOverride: newTitle });
 	},
 
 	newTabInWindow: async (windowId: number) => {

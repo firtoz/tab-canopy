@@ -26,7 +26,8 @@ export default defineConfig({
 	retries: process.env.CI ? 2 : 2,
 	workers: 1, // Single worker for extension testing
 	reporter: "html",
-	timeout: 30000,
+	// Extension load + migrations + sync + render can be slow; fixture waits for tab-manager + tab-card
+	timeout: 120000,
 
 	use: {
 		trace: "on-first-retry",

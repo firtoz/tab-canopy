@@ -1,21 +1,16 @@
-import {
-	type IDBDatabaseLike,
-	type IDBProxyRequest,
-	type IDBProxyResponse,
-	IDBProxyServer,
-	type IDBProxySyncMessage,
-	migrateIndexedDBWithFunctions,
-} from "@firtoz/drizzle-indexeddb";
+import type { SyncMessage } from "@firtoz/db-helpers";
+import type { IDBDatabaseLike } from "@firtoz/drizzle-indexeddb";
+import { migrateIndexedDBWithFunctions } from "@firtoz/drizzle-indexeddb";
 import { exhaustiveGuard } from "@firtoz/maybe-error";
-import { pack } from "msgpackr";
 import migrations from "@/schema/drizzle/indexeddb-migrations";
+import type { Tab, Window } from "@/schema/src/schema";
 import {
 	type ClientMessage,
 	createExtensionServerTransport,
 	IDB_PORT_NAME,
 	type ServerMessage,
 } from "@/src/idb-transport";
-import { log } from "./constants";
+import { DB_NAME, log } from "./constants";
 import { type BroadcastSyncFn, createDbOperations } from "./db-operations";
 import { performFullReset, performInitialSync } from "./initial-sync";
 import {
@@ -67,6 +62,10 @@ export default defineBackground(() => {
 
 	// Track the database instance for direct writes
 	let db: IDBDatabaseLike | null = null;
+	let dbReadyResolve: () => void;
+	const dbReady = new Promise<void>((resolve) => {
+		dbReadyResolve = resolve;
+	});
 	let broadcastSync: BroadcastSyncFn = () => {};
 
 	// Track tabs that are part of a UI-managed window move (with children)
@@ -88,10 +87,6 @@ export default defineBackground(() => {
 		return await migrateIndexedDBWithFunctions(dbName, migrations, true);
 	};
 
-	let requestHandler:
-		| ((request: IDBProxyRequest) => Promise<IDBProxyResponse>)
-		| null = null;
-
 	// Track which client enabled test mode
 	let testModeClientId: string | null = null;
 
@@ -101,37 +96,45 @@ export default defineBackground(() => {
 		ServerMessage
 	>({
 		portName: IDB_PORT_NAME,
+		onConnect: async (client) => {
+			// New client: wait for DB then send full current state so sidepanel hydrates
+			await dbReady;
+			if (!db) return;
+			const windows = await dbOps.getAll<Window>("window");
+			const tabs = await dbOps.getAll<Tab>("tab");
+			const windowMessages: SyncMessage[] = windows.map((w) => ({
+				type: "insert",
+				value: w,
+			}));
+			const tabMessages: SyncMessage[] = tabs.map((t) => ({
+				type: "insert",
+				value: t,
+			}));
+			if (windowMessages.length > 0) {
+				serverTransport.send(client.clientId, {
+					type: "sync",
+					storeName: "window",
+					messages: windowMessages,
+				});
+			}
+			if (tabMessages.length > 0) {
+				serverTransport.send(client.clientId, {
+					type: "sync",
+					storeName: "tab",
+					messages: tabMessages,
+				});
+			}
+			log(
+				"[Background] Sent initial state to client:",
+				client.clientId,
+				windows.length,
+				"windows",
+				tabs.length,
+				"tabs",
+			);
+		},
 		onMessage: async (message, client, broadcast) => {
 			switch (message.type) {
-				case "idbRequest": {
-					if (!requestHandler) {
-						client.port.postMessage([
-							...pack({
-								direction: "toClient",
-								payload: {
-									type: "idbResponse",
-									payload: {
-										id: message.payload.id,
-										type: "error",
-										error: "Server not ready",
-									},
-								},
-							}),
-						]);
-						return;
-					}
-					const response = await requestHandler({
-						...message.payload,
-						clientId: client.clientId,
-					});
-					client.port.postMessage([
-						...pack({
-							direction: "toClient",
-							payload: { type: "idbResponse", payload: response },
-						}),
-					]);
-					break;
-				}
 				case "broadcast":
 					broadcast(
 						{
@@ -150,12 +153,42 @@ export default defineBackground(() => {
 					broadcast({ type: "resetDatabaseComplete" });
 					break;
 				case "uiMoveIntent": {
-					// Register UI move intents to prevent race conditions with onMoved handler
+					// Register intent synchronously so it's visible before any TabMoved runs.
 					const moves = message.moves;
 					log("[Background] Received UI move intent for", moves.length, "tabs");
 					for (const move of moves) {
 						registerUiMoveIntent(move.tabId, move.parentTabId, move.treeOrder);
 					}
+
+					// Persist intent to DB immediately. This ensures tree structure is saved
+					// even if the move doesn't trigger a browser event (e.g. only indentation changed).
+					const existingTabs = await dbOps.getAll<Tab>("tab");
+					const existingMap = new Map<number, Tab>();
+					for (const tab of existingTabs) {
+						existingMap.set(tab.browserTabId, tab);
+					}
+
+					const recordsToUpdate: Tab[] = [];
+					for (const move of moves) {
+						const existing = existingMap.get(move.tabId);
+						if (existing) {
+							recordsToUpdate.push({
+								...existing,
+								parentTabId: move.parentTabId,
+								treeOrder: move.treeOrder,
+							});
+						}
+					}
+
+					if (recordsToUpdate.length > 0) {
+						log(
+							"[Background] Persisting UI move intent to DB:",
+							recordsToUpdate.length,
+							"records",
+						);
+						await dbOps.putItems("tab", recordsToUpdate);
+					}
+
 					// Send acknowledgment back to the client
 					serverTransport.send(client.clientId, {
 						type: "uiMoveIntentAck",
@@ -203,29 +236,24 @@ export default defineBackground(() => {
 				}
 				case "getTabCreatedEvents":
 					// Return tab created events for tests
-					client.port.postMessage([
-						...pack({
-							direction: "toClient",
-							payload: {
-								type: "tabCreatedEvents",
-								events: getTabCreatedEvents(),
-							},
-						}),
-					]);
+					serverTransport.send(client.clientId, {
+						type: "tabCreatedEvents",
+						events: getTabCreatedEvents(),
+					});
 					break;
 				case "clearTabCreatedEvents":
 					// Clear tab created events for tests
 					clearTabCreatedEvents();
 					break;
 				case "enableTestMode":
-					console.log("[Background] Received enable test mode request");
+					log("[Background] Received enable test mode request");
 					// Enable test mode
 					enableTestMode();
 					testModeClientId = client.clientId;
 					log("[Background] Test mode enabled by client:", client.clientId);
 					break;
 				case "disableTestMode":
-					console.log("[Background] Received disable test mode request");
+					log("[Background] Received disable test mode request");
 					// Disable test mode and clear events
 					disableTestMode();
 					if (testModeClientId === client.clientId) {
@@ -375,13 +403,41 @@ export default defineBackground(() => {
 					// Respond to ping to keep connection alive
 					serverTransport.send(client.clientId, { type: "pong" });
 					break;
+				case "patchTab": {
+					const existingTabs = await dbOps.getAll<Tab>("tab");
+					const existing = existingTabs.find(
+						(t) => t.browserTabId === message.tabId,
+					);
+					if (existing) {
+						const updated: Tab = {
+							...existing,
+							titleOverride: message.patch.titleOverride,
+						};
+						await dbOps.putItems("tab", [updated]);
+					}
+					break;
+				}
+				case "patchWindow": {
+					const existingWindows = await dbOps.getAll<Window>("window");
+					const existing = existingWindows.find(
+						(w) => w.browserWindowId === message.windowId,
+					);
+					if (existing) {
+						const updated: Window = {
+							...existing,
+							titleOverride: message.patch.titleOverride,
+						};
+						await dbOps.putItems("window", [updated]);
+					}
+					break;
+				}
 				default:
 					exhaustiveGuard(message);
 					break;
 			}
 		},
 		onDisconnect: (clientId) => {
-			console.log("[Background] Client disconnected:", clientId);
+			log("[Background] Client disconnected:", clientId);
 			// If the test client disconnects, disable test mode
 			if (testModeClientId === clientId) {
 				log("[Background] Test client disconnected, disabling test mode");
@@ -391,30 +447,25 @@ export default defineBackground(() => {
 		},
 	});
 
-	// Wire up broadcast function
-	broadcastSync = (message: IDBProxySyncMessage, excludeClientId?: string) => {
-		serverTransport.broadcast(
-			{ type: "idbSync", payload: message },
-			excludeClientId,
-		);
+	// Wire up broadcast: db-operations sends { type: "sync", storeName, messages } (SyncBroadcastPayload)
+	broadcastSync = (message, excludeClientId?: string) => {
+		serverTransport.broadcast(message, excludeClientId);
 	};
 
-	const server = new IDBProxyServer({
-		transport: {
-			onRequest(handler) {
-				requestHandler = handler;
-			},
-			broadcast: broadcastSync,
-		},
-		onDatabaseInit: async (dbName, database) => {
-			log("[Server] Database initialized:", dbName);
+	// Open DB directly (no proxy); then run initial sync
+	migratingDbCreator(DB_NAME)
+		.then((database) => {
 			db = database;
-			// Perform initial sync once database is ready
-			await performInitialSync(dbOps);
-		},
-		dbCreator: migratingDbCreator,
-	});
-
-	server.start();
-	log("[Background] IDB Proxy Server started");
+			log("[Background] Database initialized:", DB_NAME);
+			return performInitialSync(dbOps);
+		})
+		.then(() => {
+			log("[Background] Initial sync complete");
+		})
+		.finally(() => {
+			dbReadyResolve();
+		})
+		.catch((err) => {
+			console.error("[Background] Failed to open DB or run initial sync:", err);
+		});
 });

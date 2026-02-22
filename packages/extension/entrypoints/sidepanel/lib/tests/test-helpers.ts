@@ -246,6 +246,12 @@ export type UserAction =
 			targetTabId: number;
 	  }
 	| {
+			type: "dragTabToWindowTitle";
+			sourceTabId: number;
+			/** Root slot (0 = first position). Default 0 */
+			slot?: number;
+	  }
+	| {
 			type: "makeTabChildren";
 			parentTabId: number;
 			childTabIds: number[];
@@ -292,6 +298,12 @@ export interface BrowserTestActions {
 	 * This directly calls the underlying logic, bypassing mouse movements
 	 */
 	sendUserAction: (action: UserAction) => Promise<void>;
+
+	/**
+	 * Wait for the next sync batch from the background to be applied (so in-memory state is up to date).
+	 * Use instead of polling; resolves when sync is applied or after timeoutMs.
+	 */
+	waitForSync: (timeoutMs?: number) => Promise<void>;
 }
 
 /**
@@ -325,6 +337,7 @@ export function exposeBrowserTestActions(
 		injectBrowserEvent: (event: InjectBrowserEvent) => void;
 		getTabCreatedEvents: () => Promise<TabCreatedEvent[]>;
 		clearTabCreatedEvents: () => void;
+		waitForNextSync: (timeoutMs?: number) => Promise<void>;
 	},
 	userActionHandler?: (action: UserAction) => Promise<void>,
 ): void {
@@ -368,6 +381,10 @@ export function exposeBrowserTestActions(
 			? async () => {
 					testActions.clearTabCreatedEvents();
 				}
+			: async () => {},
+
+		waitForSync: testActions?.waitForNextSync
+			? (timeoutMs?: number) => testActions.waitForNextSync(timeoutMs)
 			: async () => {},
 
 		sendUserAction: userActionHandler

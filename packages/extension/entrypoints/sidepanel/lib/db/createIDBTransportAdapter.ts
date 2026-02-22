@@ -1,9 +1,4 @@
-import type {
-	IDBProxyClientTransport,
-	IDBProxyRequest,
-	IDBProxyResponse,
-	IDBProxySyncMessage,
-} from "@firtoz/drizzle-indexeddb";
+import type { SyncMessage } from "@firtoz/db-helpers";
 import { fail, type MaybeError, success } from "@firtoz/maybe-error";
 import type { Browser } from "wxt/browser";
 import {
@@ -20,7 +15,7 @@ export type { PendingChildTabData, UiMoveIntentData };
 import { log } from "../../../background/constants";
 
 // ============================================================================
-// Create IDBProxyClientTransport from Extension Transport
+// IDB Transport Adapter: extension port + SyncMessage[] sync (no proxy)
 // ============================================================================
 export interface TabCreatedEvent {
 	tabId: number;
@@ -80,11 +75,25 @@ export interface IDBTransportAdapterOptions {
 	maxRetryDelay?: number;
 }
 
+export type SyncMessagesHandler = (
+	storeName: "tab" | "window",
+	messages: SyncMessage[],
+) => void;
+
 export interface IDBTransportAdapter {
-	transport: IDBProxyClientTransport;
+	/** Register handler for sync messages from background (call collection.utils.receiveSync) */
+	registerSyncHandler: (handler: SyncMessagesHandler) => void;
 	resetDatabase: () => Promise<void>;
 	sendMoveIntent: (moves: UiMoveIntentData[]) => Promise<void>;
 	sendPendingChildIntent: (data: PendingChildTabData) => void;
+	sendPatchTab: (
+		tabId: number,
+		patch: { titleOverride: string | null },
+	) => void;
+	sendPatchWindow: (
+		windowId: number,
+		patch: { titleOverride: string | null },
+	) => void;
 	startManagedWindowMove: (tabIds: number[]) => Promise<void>;
 	endManagedWindowMove: () => void;
 	enableTestMode: () => void;
@@ -99,6 +108,11 @@ export interface IDBTransportAdapter {
 	isReady: () => boolean;
 	/** Manually trigger a reconnection attempt */
 	reconnect: () => void;
+	/**
+	 * Wait for the next sync batch to be received and applied (resolves after syncHandler runs).
+	 * Use in tests to avoid polling; resolves on next sync or after timeoutMs.
+	 */
+	waitForNextSync: (timeoutMs?: number) => Promise<void>;
 }
 
 export function createIDBTransportAdapter(
@@ -124,22 +138,23 @@ export function createIDBTransportAdapter(
 	> | null = null;
 
 	// Pending operations
-	const pendingRequests = new Map<
-		string,
-		{
-			resolve: (response: IDBProxyResponse) => void;
-			reject: (error: Error) => void;
-		}
-	>();
 	const pendingMoveIntents = new Map<string, () => void>();
 	const pendingFaviconRequests = new Map<
 		string,
 		(response: MaybeError<string>) => void
 	>();
-	let syncHandler: ((message: IDBProxySyncMessage) => void) | null = null;
+	let syncHandler: SyncMessagesHandler | null = null;
+	/** Sync messages that arrived before the handler was registered (replay on register) */
+	const syncMessageBuffer: Array<{
+		storeName: "tab" | "window";
+		messages: SyncMessage[];
+	}> = [];
+	let syncStartMs: number | null = null;
 	let resetResolve: (() => void) | null = null;
 	let tabCreatedEventsResolve: ((events: TabCreatedEvent[]) => void) | null =
 		null;
+	/** Waiters for "next sync applied" (FIFO); resolved after syncHandler is called */
+	const syncWaitQueue: Array<() => void> = [];
 
 	const setConnectionState = (newState: typeof connectionState) => {
 		if (connectionState !== newState) {
@@ -182,23 +197,30 @@ export function createIDBTransportAdapter(
 	};
 
 	const handleMessageFromServer = (message: ServerMessage) => {
-		if (message.type === "idbResponse") {
-			const pending = pendingRequests.get(message.payload.id);
-			if (pending) {
-				// Transform dates in the response
-				pending.resolve(message.payload);
-				pendingRequests.delete(message.payload.id);
-			}
-		} else if (message.type === "idbSync") {
-			// Transform dates in the sync message
+		if (message.type === "sync") {
+			if (syncStartMs === null) syncStartMs = Date.now();
+			const startMs = syncStartMs;
+			const ts = () => `[+${((Date.now() - startMs) / 1000).toFixed(2)}s]`;
 			log(
+				ts(),
 				"[Sidepanel] Received sync:",
-				message.payload.type,
-				message.payload.storeName,
+				message.storeName,
+				message.messages.length,
+				"messages",
 			);
-			syncHandler?.(message.payload);
+			if (syncHandler) {
+				syncHandler(message.storeName, message.messages);
+			} else {
+				syncMessageBuffer.push({
+					storeName: message.storeName,
+					messages: message.messages,
+				});
+			}
+			// Resolve one waiter so tests can await "sync applied" instead of polling
+			const resolveOne = syncWaitQueue.shift();
+			if (resolveOne) resolveOne();
 		} else if (message.type === "resetDatabaseComplete") {
-			console.log("[Sidepanel] Database reset complete");
+			log("[Sidepanel] Database reset complete");
 			if (resetResolve) {
 				resetResolve();
 				resetResolve = null;
@@ -214,7 +236,7 @@ export function createIDBTransportAdapter(
 				pendingMoveIntents.delete(message.requestId);
 			}
 		} else if (message.type === "tabCreatedEvents") {
-			console.log("[Sidepanel] Received tab created events");
+			log("[Sidepanel] Received tab created events");
 			if (tabCreatedEventsResolve) {
 				tabCreatedEventsResolve(message.events);
 				tabCreatedEventsResolve = null;
@@ -239,14 +261,8 @@ export function createIDBTransportAdapter(
 	};
 
 	const handleDisconnect = () => {
-		console.log("[Sidepanel] Disconnected from background");
+		log("[Sidepanel] Disconnected from background");
 		setConnectionState("disconnected");
-
-		// Reject all pending requests
-		for (const pending of pendingRequests.values()) {
-			pending.reject(new Error("Connection closed"));
-		}
-		pendingRequests.clear();
 
 		// Resolve all pending move intents so they don't hang
 		for (const resolve of pendingMoveIntents.values()) {
@@ -284,7 +300,7 @@ export function createIDBTransportAdapter(
 			try {
 				currentExtensionTransport.dispose();
 			} catch (e) {
-				console.warn("[Adapter] Error disposing existing transport:", e);
+				log("[Adapter] Error disposing existing transport:", e);
 			}
 		}
 
@@ -321,25 +337,20 @@ export function createIDBTransportAdapter(
 		}
 	};
 
-	const transport: IDBProxyClientTransport = {
-		sendRequest: async (
-			request: IDBProxyRequest,
-		): Promise<IDBProxyResponse> => {
-			if (!currentExtensionTransport || connectionState !== "connected") {
-				throw new Error("Transport not connected");
+	const registerSyncHandler = (handler: SyncMessagesHandler) => {
+		syncHandler = handler;
+		// Replay any sync messages that arrived before the handler was registered
+		if (syncMessageBuffer.length > 0) {
+			log(
+				"[Sidepanel] Replaying",
+				syncMessageBuffer.length,
+				"buffered sync messages",
+			);
+			for (const { storeName, messages } of syncMessageBuffer) {
+				handler(storeName, messages);
 			}
-			const transport = currentExtensionTransport;
-			return new Promise((resolve, reject) => {
-				pendingRequests.set(request.id, { resolve, reject });
-				transport.send({ type: "idbRequest", payload: request });
-			});
-		},
-		onSync: (handler: (message: IDBProxySyncMessage) => void) => {
-			syncHandler = handler;
-		},
-		dispose: () => {
-			// Dispose is handled by the adapter's dispose method
-		},
+			syncMessageBuffer.length = 0;
+		}
 	};
 
 	const resetDatabase = (): Promise<void> => {
@@ -379,7 +390,7 @@ export function createIDBTransportAdapter(
 
 	const enableTestMode = (): void => {
 		if (!currentExtensionTransport) return;
-		console.log("[Sidepanel] Enabling test mode");
+		log("[Sidepanel] Enabling test mode");
 		currentExtensionTransport.send({ type: "enableTestMode" });
 	};
 
@@ -431,6 +442,22 @@ export function createIDBTransportAdapter(
 		currentExtensionTransport.send({ type: "pendingChildTab", data });
 	};
 
+	const sendPatchTab = (
+		tabId: number,
+		patch: { titleOverride: string | null },
+	): void => {
+		if (!currentExtensionTransport) return;
+		currentExtensionTransport.send({ type: "patchTab", tabId, patch });
+	};
+
+	const sendPatchWindow = (
+		windowId: number,
+		patch: { titleOverride: string | null },
+	): void => {
+		if (!currentExtensionTransport) return;
+		currentExtensionTransport.send({ type: "patchWindow", windowId, patch });
+	};
+
 	const dispose = () => {
 		log("[Adapter] Disposing adapter");
 		isDisposed = true;
@@ -446,7 +473,7 @@ export function createIDBTransportAdapter(
 			currentExtensionTransport = null;
 		}
 
-		pendingRequests.clear();
+		syncHandler = null;
 		pendingMoveIntents.clear();
 		pendingFaviconRequests.clear();
 		setConnectionState("disconnected");
@@ -456,6 +483,20 @@ export function createIDBTransportAdapter(
 		log("[Adapter] Manual reconnect triggered");
 		retryCount = 0;
 		connect();
+	};
+
+	const waitForNextSync = (timeoutMs = 5000): Promise<void> => {
+		return new Promise((resolve) => {
+			const resolveOne = () => resolve();
+			syncWaitQueue.push(resolveOne);
+			setTimeout(() => {
+				const i = syncWaitQueue.indexOf(resolveOne);
+				if (i >= 0) {
+					syncWaitQueue.splice(i, 1);
+					resolve();
+				}
+			}, timeoutMs);
+		});
 	};
 
 	const fetchFavicon = (
@@ -491,10 +532,12 @@ export function createIDBTransportAdapter(
 	}
 
 	return {
-		transport,
+		registerSyncHandler,
 		resetDatabase,
 		sendMoveIntent,
 		sendPendingChildIntent,
+		sendPatchTab,
+		sendPatchWindow,
 		startManagedWindowMove,
 		endManagedWindowMove,
 		enableTestMode,
@@ -506,5 +549,6 @@ export function createIDBTransportAdapter(
 		getConnectionState,
 		isReady,
 		reconnect,
+		waitForNextSync,
 	};
 }

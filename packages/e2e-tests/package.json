@@ -11,6 +11,7 @@
 		"test:e2e:headed": "playwright test --headed --reporter=list",
 		"lint": "biome check --write .",
 		"lint:ci": "biome ci .",
-		"format": "biome format . --write ."
+		"format": "biome format . --write .",
+		"test:e2e:db-sync": "playwright test --reporter=list --grep \"db sync\""
 	}
 }

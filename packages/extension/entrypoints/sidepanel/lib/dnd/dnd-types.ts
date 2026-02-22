@@ -15,6 +15,8 @@ export interface DropDataSibling {
 	tabId: number;
 	/** The ancestor tab ID to become a sibling of, or null for root sibling */
 	ancestorId: number | null;
+	/** Insert before the target tab (default true for UI strip). False = insert after (e.g. dragTabAfterTab). */
+	insertBefore?: boolean;
 }
 
 export interface DropDataChild {

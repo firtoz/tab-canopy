@@ -30,6 +30,25 @@ test.describe("Tab Tree Management", () => {
 		await expect(sidepanel).toHaveTitle(/Tab Canopy/i);
 	});
 
+	test("db sync: sidepanel receives windows and tabs from background", async ({
+		treeHelpers,
+	}) => {
+		// Validates that background syncs windows/tabs and sidepanel memory collections receive them.
+		// Fixture already waited for stateReportedPromise, so latestTreeState is set.
+		const helpers = await treeHelpers.getHelpers();
+		const allTabs = helpers.getAllTabs();
+		const allWindows = helpers.getWindows();
+
+		expect(allWindows.length).toBeGreaterThanOrEqual(1);
+		expect(allTabs.length).toBeGreaterThanOrEqual(1);
+
+		// Every tab should belong to a known window
+		const windowIds = new Set(allWindows.map((w) => w.id));
+		for (const tab of allTabs) {
+			expect(windowIds.has(tab.browserWindowId)).toBe(true);
+		}
+	});
+
 	test("new tabs appear in the sidepanel", async ({
 		context,
 		sidepanel,
@@ -299,6 +318,12 @@ test.describe("Tab Movement with Children", () => {
 			await sidepanel.waitForTimeout(500);
 		}
 
+		// Wait for c to be child of b in state (ensures background has persisted before we move b)
+		await treeHelpers.waitForTabParent(
+			cInfo.browserTabId,
+			bInfo.browserTabId,
+			5000,
+		);
 		// Verify c is now a child of b
 		let helpers = await treeHelpers.getHelpers();
 		let updatedC = helpers.getTabById(cInfo.browserTabId);
@@ -337,8 +362,8 @@ test.describe("Tab Movement with Children", () => {
 		// Or we can move b to index 4, which will push c to 3 and b to 4
 		await treeHelpers.moveBrowserTab(bInfo.browserTabId, { index: 4 });
 
-		// Wait for changes to be processed
-		await sidepanel.waitForTimeout(1000);
+		// Wait for c to flatten (no longer child of b) and sync to sidepanel
+		await treeHelpers.waitForTabParent(cInfo.browserTabId, null, 5000);
 
 		// Get and print background logs
 		const backgroundLogs = treeHelpers.getBackgroundLogs();
@@ -376,6 +401,129 @@ test.describe("Tab Movement with Children", () => {
 		expect(updatedA?.depth).toBe(0);
 		expect(updatedB?.depth).toBe(0);
 		expect(updatedC?.depth).toBe(0);
+
+		await tabA.close();
+		await tabB.close();
+		await tabC.close();
+	});
+
+	test("moving parent tab between its child and next tab preserves order (b, a, c)", async ({
+		context,
+		sidepanel,
+		treeHelpers,
+	}) => {
+		// Setup: a, b (child of a), c. Then move a between b and c in native browser.
+		// Expected: b (flattened), a, c. Bug: was showing b, c, a.
+
+		const tabA = await createTab(context, "about:blank?title=a", sidepanel);
+		const tabB = await createTab(context, "about:blank?title=b", sidepanel);
+		const tabC = await createTab(context, "about:blank?title=c", sidepanel);
+
+		const aInfo = await treeHelpers.waitForTab("about:blank?title=a");
+		const bInfo = await treeHelpers.waitForTab("about:blank?title=b");
+		const cInfo = await treeHelpers.waitForTab("about:blank?title=c");
+
+		// Make b a child of a
+		await treeHelpers.dragTabToTab(bInfo.browserTabId, aInfo.browserTabId);
+		await treeHelpers.waitForTabParent(
+			bInfo.browserTabId,
+			aInfo.browserTabId,
+			5000,
+		);
+
+		let helpers = await treeHelpers.getHelpers();
+		const bAsChild = helpers.getTabById(bInfo.browserTabId);
+		expect(bAsChild?.parentTabId).toBe(aInfo.browserTabId);
+
+		// Move a (in browser) between b and c. Browser order is [pinned..., a, b, c].
+		// We want [pinned..., b, a, c], so insert a at b's index (after removing a, b is at bIdx-1; we want a at bIdx).
+		const bIdx = helpers.getTabById(bInfo.browserTabId)?.tabIndex ?? 3;
+		const targetIndex = bIdx; // insert a at b's position → b, a, c
+		await treeHelpers.moveBrowserTab(aInfo.browserTabId, {
+			index: targetIndex,
+		});
+
+		// Wait for b to flatten and sync
+		await treeHelpers.waitForTabParent(bInfo.browserTabId, null, 5000);
+		await sidepanel.waitForTimeout(500);
+
+		helpers = await treeHelpers.getHelpers();
+		const aTab = helpers.getTabById(aInfo.browserTabId);
+		const bTab = helpers.getTabById(bInfo.browserTabId);
+		const cTab = helpers.getTabById(cInfo.browserTabId);
+
+		expect(aTab?.parentTabId).toBeNull();
+		expect(bTab?.parentTabId).toBeNull();
+		expect(cTab?.parentTabId).toBeNull();
+
+		// Display order must be b, a, c (treeOrder: b < a < c)
+		const orderB = bTab?.treeOrder ?? "";
+		const orderA = aTab?.treeOrder ?? "";
+		const orderC = cTab?.treeOrder ?? "";
+		expect(orderB < orderA).toBe(true);
+		expect(orderA < orderC).toBe(true);
+
+		await tabA.close();
+		await tabB.close();
+		await tabC.close();
+	});
+
+	test("drag tab to window title reorders to first (b, a, c)", async ({
+		context,
+		sidepanel,
+		treeHelpers,
+	}) => {
+		// Tabs a, b, c. Drag b onto window title → should become b, a, c.
+		const tabA = await createTab(context, "about:blank?title=a", sidepanel);
+		const tabB = await createTab(context, "about:blank?title=b", sidepanel);
+		const tabC = await createTab(context, "about:blank?title=c", sidepanel);
+
+		const aInfo = await treeHelpers.waitForTab("about:blank?title=a");
+		const bInfo = await treeHelpers.waitForTab("about:blank?title=b");
+		const cInfo = await treeHelpers.waitForTab("about:blank?title=c");
+
+		const windowId = aInfo.browserWindowId;
+
+		// Drag b to window title (slot 0 = first)
+		await treeHelpers.dragTabToWindowTitle(bInfo.browserTabId, 0);
+
+		// Root order should be b, a, c
+		await treeHelpers.waitForRootOrder(windowId, [
+			bInfo.browserTabId,
+			aInfo.browserTabId,
+			cInfo.browserTabId,
+		]);
+
+		await tabA.close();
+		await tabB.close();
+		await tabC.close();
+	});
+
+	test("drag last tab to window title reorders to first (c, a, b)", async ({
+		context,
+		sidepanel,
+		treeHelpers,
+	}) => {
+		// Tabs a, b, c. Drag c onto window title → should become c, a, b.
+		const tabA = await createTab(context, "about:blank?title=a", sidepanel);
+		const tabB = await createTab(context, "about:blank?title=b", sidepanel);
+		const tabC = await createTab(context, "about:blank?title=c", sidepanel);
+
+		const aInfo = await treeHelpers.waitForTab("about:blank?title=a");
+		const bInfo = await treeHelpers.waitForTab("about:blank?title=b");
+		const cInfo = await treeHelpers.waitForTab("about:blank?title=c");
+
+		const windowId = aInfo.browserWindowId;
+
+		// Drag c to window title (slot 0 = first)
+		await treeHelpers.dragTabToWindowTitle(cInfo.browserTabId, 0);
+
+		// Root order should be c, a, b
+		await treeHelpers.waitForRootOrder(windowId, [
+			cInfo.browserTabId,
+			aInfo.browserTabId,
+			bInfo.browserTabId,
+		]);
 
 		await tabA.close();
 		await tabB.close();
@@ -726,25 +874,26 @@ test.describe("Tab Movement with Children", () => {
 		expect(cTab?.depth).toBe(1);
 
 		// Step 3: Move a (in native browser) between b and c
-		// First, get current indices
+		// Chrome move: index = insert position in array *after* removing the moved tab.
+		// We want a to end up right after b: [..., b, a, c, ...].
 		helpers = await treeHelpers.getHelpers();
+		aTab = helpers.getTabById(aInfo.browserTabId);
 		bTab = helpers.getTabById(bInfo.browserTabId);
-		cTab = helpers.getTabById(cInfo.browserTabId);
-
-		// Move a to be after b (which will be between b and c in the tree)
-		const targetIndex = bTab?.tabIndex ?? 1;
+		const aIdx = aTab?.tabIndex ?? 0;
+		const bIdx = bTab?.tabIndex ?? 1;
+		// If a is left of b: after removing a, "after b" = bIdx; if a is right of b: = bIdx + 1.
+		const targetIndex = aIdx < bIdx ? bIdx : bIdx + 1;
 		await treeHelpers.moveBrowserTab(aInfo.browserTabId, {
 			index: targetIndex,
 		});
 
-		// Wait for changes to be processed
-		await sidepanel.waitForTimeout(1000);
-
-		// Verify a is now a child of b
+		// Wait for background to process move and sync to reach sidepanel
+		await sidepanel.waitForTimeout(2000);
 		helpers = await treeHelpers.getHelpers();
-		aTab = helpers.getTabById(aInfo.browserTabId);
-		expect(aTab?.parentTabId).toBe(bInfo.browserTabId);
-		expect(aTab?.depth).toBe(1);
+		const aTabAfterMove = helpers.getTabById(aInfo.browserTabId);
+		expect(aTabAfterMove?.parentTabId).toBe(bInfo.browserTabId);
+		expect(aTabAfterMove?.depth).toBe(1);
+		aTab = aTabAfterMove;
 
 		// Step 4: Move a left again (in native browser) so it should become flat a, b, c
 		// Get a's current index and move it to the left of b
@@ -759,10 +908,12 @@ test.describe("Tab Movement with Children", () => {
 			bIndex: bTab?.tabIndex,
 			newIndex,
 		});
-		await treeHelpers.moveBrowserTab(aInfo.browserTabId, { index: newIndex });
+		await treeHelpers.moveBrowserTab(aInfo.browserTabId, {
+			index: newIndex,
+		});
 
-		// Wait for changes to be processed
-		await sidepanel.waitForTimeout(1000);
+		// Wait for sync after move
+		await sidepanel.waitForTimeout(2000);
 
 		// Verify the final state: a moved to root, b at root, c still child of b
 		helpers = await treeHelpers.getHelpers();
@@ -1236,13 +1387,13 @@ test.describe("Tab Movement with Children", () => {
 
 		// Close the parent tab via browser API (not collapsed)
 		await parentTab.close();
-		await sidepanel.waitForTimeout(500);
 
-		// Verify parent is closed
+		// Wait for background to process remove + promotion and sync to sidepanel (no polling)
+		await sidepanel.waitForTimeout(2000);
+
 		const parentAfter = await treeHelpers.getTabByUrl("about:blank?parent");
 		expect(parentAfter).toBeUndefined();
 
-		// Get updated structure
 		helpers = await treeHelpers.getHelpers();
 		const childAfter = helpers
 			.getAllTabs()
@@ -2299,13 +2450,13 @@ test.describe("Child Tab Ordering Issues", () => {
 		// When tab2 is closed, its children should appear between tab1 and tab3
 
 		const tab1 = await createTab(context, "about:blank?tab1", sidepanel);
-		const tab1Info = await treeHelpers.waitForTab("about:blank?tab1");
+		await treeHelpers.waitForTab("about:blank?tab1");
 
 		const tab2 = await createTab(context, "about:blank?tab2", sidepanel);
 		const tab2Info = await treeHelpers.waitForTab("about:blank?tab2");
 
 		const tab3 = await createTab(context, "about:blank?tab3", sidepanel);
-		const tab3Info = await treeHelpers.waitForTab("about:blank?tab3");
+		await treeHelpers.waitForTab("about:blank?tab3");
 
 		// Create children of tab2
 		const child1 = await createTab(context, "about:blank?child1", sidepanel);
@@ -2371,9 +2522,15 @@ test.describe("Child Tab Ordering Issues", () => {
 		expect(tab3AfterClose?.treeOrder).toBeDefined();
 
 		// Compare treeOrders lexicographically
-		expect(tab1BeforeClose!.treeOrder < updatedChild1!.treeOrder).toBe(true);
-		expect(updatedChild1!.treeOrder < updatedChild2!.treeOrder).toBe(true);
-		expect(updatedChild2!.treeOrder < tab3AfterClose!.treeOrder).toBe(true);
+		expect(
+			(tab1BeforeClose?.treeOrder ?? "") < (updatedChild1?.treeOrder ?? ""),
+		).toBe(true);
+		expect(
+			(updatedChild1?.treeOrder ?? "") < (updatedChild2?.treeOrder ?? ""),
+		).toBe(true);
+		expect(
+			(updatedChild2?.treeOrder ?? "") < (tab3AfterClose?.treeOrder ?? ""),
+		).toBe(true);
 
 		// Cleanup
 		await tab1.close();
@@ -2516,13 +2673,13 @@ test.describe("Child Tab Ordering Issues", () => {
 		// The new tab should get correct treeOrder based on its position
 
 		const tab1 = await createTab(context, "about:blank?tab1", sidepanel);
-		const tab1Info = await treeHelpers.waitForTab("about:blank?tab1");
+		await treeHelpers.waitForTab("about:blank?tab1");
 
 		const tab2 = await createTab(context, "about:blank?tab2", sidepanel);
 		const tab2Info = await treeHelpers.waitForTab("about:blank?tab2");
 
 		const tab3 = await createTab(context, "about:blank?tab3", sidepanel);
-		const tab3Info = await treeHelpers.waitForTab("about:blank?tab3");
+		await treeHelpers.waitForTab("about:blank?tab3");
 
 		// Create a child of tab2
 		const child = await createTab(context, "about:blank?child", sidepanel);

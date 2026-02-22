@@ -1,6 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import type { Tab } from "@/schema/src/schema";
-import { buildTree, flattenTree, getExpectedBrowserOrder } from "./tree-sync";
+import {
+	buildTree,
+	flattenTree,
+	flattenTreeToBrowserOrder,
+	getExpectedBrowserOrder,
+	inferTreeFromBrowserMove,
+	promoteOnRemove,
+} from "./tree-sync";
 
 // Helper to create mock tabs
 function createMockTab(
@@ -95,5 +102,114 @@ describe("getExpectedBrowserOrder", () => {
 		expect(order.get(2)).toBe(1);
 		expect(order.get(3)).toBe(2);
 		expect(order.get(4)).toBe(3);
+	});
+});
+
+describe("flattenTreeToBrowserOrder", () => {
+	test("returns tab IDs in depth-first order", () => {
+		const tabs = [
+			createMockTab(1, null, "a0"),
+			createMockTab(2, 1, "a0"),
+			createMockTab(3, 1, "a1"),
+			createMockTab(4, null, "a1"),
+		];
+		expect(flattenTreeToBrowserOrder(tabs)).toEqual([1, 2, 3, 4]);
+	});
+});
+
+describe("promoteOnRemove", () => {
+	test("promotes only direct children; grandchildren stay under promoted child", () => {
+		// grandparent(1) -> parent(2) -> child(3) -> grandchild(4)
+		const tabs = [
+			createMockTab(1, null, "a0"),
+			createMockTab(2, 1, "a0"),
+			createMockTab(3, 2, "a0"),
+			createMockTab(4, 3, "a0"),
+		];
+		const updates = promoteOnRemove(tabs, 2);
+		// Only tab 3 (direct child of 2) is promoted to parent 1
+		expect(updates.size).toBe(1);
+		expect(updates.get(3)).toEqual({
+			parentTabId: 1,
+			treeOrder: expect.any(String),
+		});
+		// Tab 4 not in updates (stays child of 3)
+		expect(updates.has(4)).toBe(false);
+	});
+
+	test("promotes multiple direct children with treeOrder between siblings", () => {
+		// root(1) -> a(2), b(3). Remove 1 -> promote 2 and 3 to root
+		const tabs = [
+			createMockTab(1, null, "a0"),
+			createMockTab(2, 1, "a0"),
+			createMockTab(3, 1, "a1"),
+		];
+		const updates = promoteOnRemove(tabs, 1);
+		expect(updates.size).toBe(2);
+		expect(updates.get(2)?.parentTabId).toBeNull();
+		expect(updates.get(3)?.parentTabId).toBeNull();
+		const order2 = updates.get(2)?.treeOrder;
+		const order3 = updates.get(3)?.treeOrder;
+		expect(order2).toBeDefined();
+		expect(order3).toBeDefined();
+		expect(order2 && order3 && order2 < order3).toBe(true);
+	});
+
+	test("returns empty map when tab has no children", () => {
+		const tabs = [createMockTab(1, null, "a0"), createMockTab(2, null, "a1")];
+		expect(promoteOnRemove(tabs, 1).size).toBe(0);
+	});
+});
+
+describe("inferTreeFromBrowserMove", () => {
+	test("parent moved after child flattens child and maintains order", () => {
+		// a(1), b(2), c(3) with c child of b -> browser order 1,2,3. Move b to after c -> 1,3,2.
+		// c must flatten to root (sibling of b), b gets new position at end
+		const tabs = [
+			createMockTab(1, null, "a0"),
+			createMockTab(2, null, "a1"),
+			createMockTab(3, 2, "a0"),
+		];
+		// Simulate: move tab 2 to index 2. New order: 1, 3, 2.
+		const { updates, childrenToFlatten } = inferTreeFromBrowserMove(tabs, 2, 2);
+		expect(childrenToFlatten).toContain(3);
+		// Tab 2 at end -> root, treeOrder after tab 3 (which is now root)
+		expect(updates.get(2)?.parentTabId).toBeNull();
+		// Tab 3 flattened to root, before tab 2
+		expect(updates.get(3)?.parentTabId).toBeNull();
+		const t2 = updates.get(2)?.treeOrder;
+		const t3 = updates.get(3)?.treeOrder;
+		expect(t2).toBeDefined();
+		expect(t3).toBeDefined();
+		expect(t3 && t2 && t3 < t2).toBe(true);
+	});
+
+	test("child moved before parent flattens only that child", () => {
+		// a(1), b(2), c(3) with c child of b. Move a (in browser) between b and c -> b, a, c.
+		// a becomes child of b; c stays child of b.
+		const tabs = [
+			createMockTab(1, null, "a0"),
+			createMockTab(2, null, "a1"),
+			createMockTab(3, 2, "a0"),
+		];
+		// Move tab 1 to index 1. New order: 2, 1, 3. Tab after 1 is 3 (parent 2) -> new parent of 1 is 2.
+		const { updates, childrenToFlatten } = inferTreeFromBrowserMove(tabs, 1, 1);
+		expect(childrenToFlatten).toEqual([]);
+		expect(updates.get(1)?.parentTabId).toBe(2);
+		expect(updates.size).toBe(1);
+	});
+
+	test("moving tab back left from between parent and child flattens only that tab", () => {
+		// b(2), a(1), c(3) with a and c children of b. Move a to index 0 -> a, b, c. a flattens to root.
+		const tabs = [
+			createMockTab(1, 2, "a0"),
+			createMockTab(2, null, "a1"),
+			createMockTab(3, 2, "a1"),
+		];
+		// New order: a, b, c. Move tab 1 to index 0.
+		const { updates, childrenToFlatten } = inferTreeFromBrowserMove(tabs, 1, 0);
+		expect(childrenToFlatten).toEqual([]);
+		expect(updates.get(1)?.parentTabId).toBeNull();
+		expect(updates.size).toBe(1);
 	});
 });

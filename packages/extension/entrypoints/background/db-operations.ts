@@ -1,11 +1,15 @@
-import type {
-	IDBDatabaseLike,
-	IDBProxySyncMessage,
-} from "@firtoz/drizzle-indexeddb";
-import { DB_NAME } from "./constants";
+import type { SyncMessage } from "@firtoz/db-helpers";
+import type { IDBDatabaseLike } from "@firtoz/drizzle-indexeddb";
+import { DB_NAME, log } from "./constants";
+
+export type SyncBroadcastPayload = {
+	type: "sync";
+	storeName: "tab" | "window";
+	messages: SyncMessage[];
+};
 
 export type BroadcastSyncFn = (
-	message: IDBProxySyncMessage,
+	message: SyncBroadcastPayload,
 	excludeClientId?: string,
 ) => void;
 
@@ -28,7 +32,9 @@ export interface DbOperations {
 export const createDbOperations = (
 	getDb: () => IDBDatabaseLike | null,
 	getBroadcastSync: () => BroadcastSyncFn,
+	getTs?: () => string,
 ): DbOperations => {
+	const prefix = () => (getTs ? `${getTs()} ` : "");
 	const putItems = async <TId extends string>(
 		storeName: string,
 		items: RecordWithId<TId>[],
@@ -67,26 +73,57 @@ export const createDbOperations = (
 
 		await db.put(storeName, itemsWithTimestamps);
 
-		// Broadcast the change
-		getBroadcastSync()({
-			dbName: DB_NAME,
-			storeName,
-			type: "sync:put",
-			items: itemsWithTimestamps,
+		// Build SyncMessage[] for broadcast (insert for new, update for existing)
+		const messages: SyncMessage[] = itemsWithTimestamps.map((item, i) => {
+			const existing = existingRecords[i];
+			if (existing) {
+				return {
+					type: "update" as const,
+					value: item,
+					previousValue: existing as RecordWithId<TId> & RecordWithTimestamps,
+				};
+			}
+			return { type: "insert" as const, value: item };
 		});
+		if (messages.length > 0) {
+			log(
+				prefix(),
+				"[Background] Sync broadcast (put):",
+				storeName,
+				messages.length,
+				"messages",
+			);
+			getBroadcastSync()({
+				type: "sync",
+				storeName: storeName as "tab" | "window",
+				messages,
+			});
+		}
 	};
 
 	const deleteItems = async (storeName: string, keys: string[]) => {
 		const db = getDb();
 		if (!db) return;
 		await db.delete(storeName, keys);
-		// Broadcast the change
-		getBroadcastSync()({
-			dbName: DB_NAME,
-			storeName,
-			type: "sync:delete",
-			keys,
-		});
+		// Broadcast the change as SyncMessage[]
+		const messages: SyncMessage[] = keys.map((key) => ({
+			type: "delete" as const,
+			key,
+		}));
+		if (messages.length > 0) {
+			log(
+				prefix(),
+				"[Background] Sync broadcast (delete):",
+				storeName,
+				messages.length,
+				"keys",
+			);
+			getBroadcastSync()({
+				type: "sync",
+				storeName: storeName as "tab" | "window",
+				messages,
+			});
+		}
 	};
 
 	const getAll = async <T>(storeName: string): Promise<T[]> => {

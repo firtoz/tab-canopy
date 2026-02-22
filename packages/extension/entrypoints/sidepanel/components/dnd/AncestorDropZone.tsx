@@ -23,6 +23,7 @@ export function AncestorDropZone({
 		windowId,
 		tabId,
 		ancestorId,
+		insertBefore: true, // Strip left of tab = insert before this tab
 	};
 
 	const { setNodeRef, isOver } = useDroppable({

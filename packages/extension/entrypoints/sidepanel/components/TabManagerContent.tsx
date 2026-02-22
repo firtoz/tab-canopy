@@ -7,8 +7,6 @@ import {
 	useSensor,
 	useSensors,
 } from "@dnd-kit/core";
-// import { sortableKeyboardCoordinates } from "@dnd-kit/sortable";
-import { useDrizzleIndexedDB } from "@firtoz/drizzle-indexeddb";
 import { exhaustiveGuard } from "@firtoz/maybe-error";
 import { useLiveQuery } from "@tanstack/react-db";
 import { generateNKeysBetween } from "fractional-indexing";
@@ -18,6 +16,8 @@ import { browser } from "wxt/browser";
 import type * as schema from "@/schema/src/schema";
 import { cn } from "../lib/cn";
 import { useIdbAdapter } from "../lib/db/IdbTransportAdapterProvider";
+// import { sortableKeyboardCoordinates } from "@dnd-kit/sortable";
+import { useTabcanopyDB } from "../lib/db/MemoryCollectionProvider";
 import { isDropData } from "../lib/dnd/dnd-types";
 import {
 	exposeBrowserTestActions,
@@ -46,7 +46,7 @@ import { WindowGroup } from "./WindowGroup";
 // Inner App Component (uses collections)
 // ============================================================================
 export const TabManagerContent = () => {
-	const { useCollection } = useDrizzleIndexedDB<typeof schema>();
+	const { useCollection } = useTabcanopyDB();
 	const windowCollection = useCollection("windowTable");
 	const tabCollection = useCollection("tabTable");
 	const adapter = useIdbAdapter();
@@ -54,13 +54,23 @@ export const TabManagerContent = () => {
 	const { setCollections } = useTabActions();
 
 	// Reactive queries for windows and tabs
-	const { data: windows, isLoading: windowsLoading } = useLiveQuery((q) =>
-		q.from({ window: windowCollection }),
+	const { data: rawWindows, isLoading: windowsLoading } = useLiveQuery((q) =>
+		q.from({ window: windowCollection as any }),
 	);
-
-	const { data: tabs, isLoading: tabsLoading } = useLiveQuery((q) =>
-		q.from({ tab: tabCollection }),
+	const { data: rawTabs, isLoading: tabsLoading } = useLiveQuery((q) =>
+		q.from({ tab: tabCollection as any }),
 	);
+	// Normalize: useLiveQuery may return { window: T[] } or T[]; ensure typed arrays
+	const windows = (
+		Array.isArray(rawWindows)
+			? rawWindows
+			: ((rawWindows as { window?: schema.Window[] } | undefined)?.window ?? [])
+	) as schema.Window[];
+	const tabs = (
+		Array.isArray(rawTabs)
+			? rawTabs
+			: ((rawTabs as { tab?: schema.Tab[] } | undefined)?.tab ?? [])
+	) as schema.Tab[];
 
 	// Provide collections to Zustand store
 	useEffect(() => {
@@ -69,12 +79,16 @@ export const TabManagerContent = () => {
 			windowCollection,
 			adapter.sendMoveIntent,
 			adapter.sendPendingChildIntent,
+			adapter.sendPatchTab,
+			adapter.sendPatchWindow,
 		);
 	}, [
 		tabCollection,
 		windowCollection,
 		adapter.sendMoveIntent,
 		adapter.sendPendingChildIntent,
+		adapter.sendPatchTab,
+		adapter.sendPatchWindow,
 		setCollections,
 	]);
 
@@ -353,8 +367,8 @@ export const TabManagerContent = () => {
 				if (!targetTab) return;
 
 				if (ancestorId === null) {
-					// Becoming a root sibling - drop after the target tab's root ancestor
-					// Find the root ancestor of targetTab
+					// Becoming a root sibling: insert before or after the target's root ancestor
+					// (strip to the left of a tab = "before that tab"; insertBefore defaults true for UI)
 					let rootAncestor = targetTab;
 					while (rootAncestor.parentTabId !== null) {
 						const parent = tabsForTreeCalc.find(
@@ -363,8 +377,9 @@ export const TabManagerContent = () => {
 						if (!parent) break;
 						rootAncestor = parent;
 					}
+					const insertBefore = finalDropData.insertBefore !== false;
 					treeDropPosition = {
-						type: "after",
+						type: insertBefore ? "before" : "after",
 						targetTabId: rootAncestor.browserTabId,
 					};
 				} else {
@@ -420,22 +435,23 @@ export const TabManagerContent = () => {
 			}> = [];
 
 			// For multiple tabs, generate proper order keys using fractional-indexing
-			// Find the next sibling to determine the upper bound
+			// Upper bound must be the tab we're inserting BEFORE (so new keys sort before it),
+			// not the tab after that (which would allow keys after the "before" tab and wrong order)
 			const siblings = tabsForTreeCalc
 				.filter((t) => t.parentTabId === newParentId)
 				.toSorted(treeOrderSort);
 			const firstTabIndex = siblings.findIndex(
 				(s) => s.treeOrder >= firstTreeOrder,
 			);
-			const nextSibling =
-				firstTabIndex >= 0 && firstTabIndex < siblings.length - 1
-					? siblings[firstTabIndex + 1]
+			const tabWeAreInsertingBefore =
+				firstTabIndex >= 0 && firstTabIndex < siblings.length
+					? siblings[firstTabIndex]
 					: undefined;
+			const upperBoundTreeOrder = tabWeAreInsertingBefore?.treeOrder ?? null;
 
-			// Generate N keys between the first position and the next sibling
 			const newTreeOrders = generateNKeysBetween(
 				firstTreeOrder,
-				nextSibling?.treeOrder || null,
+				upperBoundTreeOrder,
 				validDraggedTabIds.length,
 			);
 
@@ -629,6 +645,14 @@ export const TabManagerContent = () => {
 				return;
 			}
 
+			// Get the source tab first (needed for dropData in some cases)
+			const sourceTab = currentTabs.find(
+				(t) => t.browserTabId === action.sourceTabId,
+			);
+			if (!sourceTab) {
+				throw new Error(`Source tab ${action.sourceTabId} not found`);
+			}
+
 			// Simulate the drop data based on the action type
 			let dropData:
 				| { type: "child"; tabId: number; windowId: number }
@@ -637,7 +661,9 @@ export const TabManagerContent = () => {
 						tabId: number;
 						windowId: number;
 						ancestorId: number | null;
+						insertBefore?: boolean;
 				  }
+				| { type: "gap"; windowId: number; slot: number }
 				| { type: "new-window" };
 
 			switch (action.type) {
@@ -653,7 +679,7 @@ export const TabManagerContent = () => {
 					break;
 				}
 				case "dragTabAfterTab": {
-					// Drop after target as a sibling
+					// Drop after target as a sibling (insertAfter)
 					const targetTab = currentTabs.find(
 						(t) => t.browserTabId === action.targetTabId,
 					);
@@ -662,6 +688,16 @@ export const TabManagerContent = () => {
 						tabId: action.targetTabId,
 						windowId: targetTab?.browserWindowId ?? 0,
 						ancestorId: targetTab?.parentTabId ?? null,
+						insertBefore: false,
+					};
+					break;
+				}
+				case "dragTabToWindowTitle": {
+					// Drop on window title = root slot (e.g. slot 0 = first in window)
+					dropData = {
+						type: "gap" as const,
+						windowId: sourceTab.browserWindowId,
+						slot: action.slot ?? 0,
 					};
 					break;
 				}
@@ -673,14 +709,6 @@ export const TabManagerContent = () => {
 				default:
 					exhaustiveGuard(action);
 					break;
-			}
-
-			// Get the source tab to build the correct ID format
-			const sourceTab = currentTabs.find(
-				(t) => t.browserTabId === action.sourceTabId,
-			);
-			if (!sourceTab) {
-				throw new Error(`Source tab ${action.sourceTabId} not found`);
 			}
 
 			// Create a synthetic drag event with correct ID format: tab-${windowId}-${tabId}
@@ -787,6 +815,13 @@ export const TabManagerContent = () => {
 							}
 						};
 						checkState();
+					});
+					break;
+				}
+				case "dragTabToWindowTitle": {
+					// Wait for root reorder to be applied (poll until stable)
+					await new Promise<void>((resolve) => {
+						setTimeout(resolve, 300);
 					});
 					break;
 				}

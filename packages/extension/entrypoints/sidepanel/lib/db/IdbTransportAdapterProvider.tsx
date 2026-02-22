@@ -53,7 +53,8 @@ export function useIdbTransportAdapter(
 		if (!enabled) {
 			// Dispose existing adapter if disabled
 			if (adapterRef.current) {
-				console.log("[useIdbTransportAdapter] Disposing adapter (disabled)");
+				if (import.meta.env?.DEV)
+					console.log("[useIdbTransportAdapter] Disposing adapter (disabled)");
 				adapterRef.current.dispose();
 				adapterRef.current = null;
 				setConnectionState("disconnected");

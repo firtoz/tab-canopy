@@ -6,6 +6,9 @@ export default defineConfig({
 	modules: ["@wxt-dev/module-react"],
 	vite: () => ({
 		plugins: [tailwindcss()],
+		resolve: {
+			dedupe: ["@tanstack/db", "@tanstack/react-db"],
+		},
 	}),
 	manifest: ({ command, browser }) => ({
 		permissions: [
