@@ -1,5 +1,41 @@
 # @tabcanopy/extension
 
+## 0.3.0
+
+### Minor Changes
+
+- [`1a5658f`](https://github.com/firtoz/tab-canopy/commit/1a5658fb4e9b589611885e261d5277e31fdb7856) Thanks [@firtoz](https://github.com/firtoz)! - Re-architect tab sync and tree logic (intent-first, pure functions, single reconciler)
+
+  - **Single reconciliation loop**: New `reconciler.ts` is the only writer to DB; handlers enqueue events to `tab-sync-events.ts` types; reconciler drains queue and applies tree-sync + DB writes. Replaces scattered handler writes with one ordered flow.
+  - **Pure tree module** ([tree-sync.ts](packages/extension/entrypoints/background/tree-sync.ts)): Add `inferTreeFromBrowserMove`, `promoteOnRemove`, `inferTreeFromBrowserCreate`, `flattenTreeToBrowserOrder`; keep `calculateTreePositionFromBrowserMove` as legacy wrapper.
+  - **handleTabMoved**: Use `inferTreeFromBrowserMove` for full updates map; single `putItems` for all tabs in window (intent-first, then infer).
+  - **handleTabRemoved**: Use `promoteOnRemove(existingTabs, tabId)` for direct-children promotion; remove inline sibling/child logic.
+  - **handleTabCreated / handleTabAttached**: Use `inferTreeFromBrowserCreate` (with optional browser indices) for new-tab tree position.
+  - E2E: "moving parent tab in native browser after its child maintains correct order" passes; new "moving parent tab between its child and next tab" and "db sync" tests; two tests may still be flaky (promotion sync timing, move-before-parent sync).
+
+- [`1a5658f`](https://github.com/firtoz/tab-canopy/commit/1a5658fb4e9b589611885e261d5277e31fdb7856) Thanks [@firtoz](https://github.com/firtoz)! - Title override persistence and test robustness
+
+  - **Title override persistence**: Renaming a tab or window in the sidepanel now persists to the background IDB. Added `patchTab` and `patchWindow` client messages; background merges `titleOverride` and broadcasts sync. Sidepanel sends patch after local collection update in `renameTab`/`renameWindow`.
+  - **Close test**: Wait for parent tab to disappear from sidepanel before asserting promotion; poll for promoted child; preserve `titleOverride` and `isCollapsed` when promoting children in `handleTabRemoved`.
+  - **Move test**: Clarified comment that moving tab to `bTab.tabIndex` yields [b, a, c] (Chrome move index semantics).
+
+- [`1a5658f`](https://github.com/firtoz/tab-canopy/commit/1a5658fb4e9b589611885e261d5277e31fdb7856) Thanks [@firtoz](https://github.com/firtoz)! - Update firtoz packages and migrate off IDB proxy
+
+  - Bump @firtoz/drizzle-indexeddb to ^1.0.0, @firtoz/drizzle-utils to ^1.0.0
+  - Add @firtoz/db-helpers ^1.0.0 and @standard-schema/spec ^1.1.0
+  - Remove IDB proxy usage: sidepanel now uses memory collections with SyncMessage[] sync over extension port
+  - Background emits SyncMessage[] on put/delete and on initial load; sidepanel calls collection.utils.receiveSync(messages)
+  - Add Vite resolve.dedupe for @tanstack/db and @tanstack/react-db to avoid duplicate instance errors
+
+### Patch Changes
+
+- [`1a5658f`](https://github.com/firtoz/tab-canopy/commit/1a5658fb4e9b589611885e261d5277e31fdb7856) Thanks [@firtoz](https://github.com/firtoz)! - Fix second update overwriting parent: handleTabUpdated no longer overwrites tree structure
+
+  - Tree structure (parentTabId, treeOrder) is owned only by create/move/remove handlers
+  - handleTabUpdated re-reads up to twice when tab is missing so it does not overwrite a just-written row from handleTabMoved or handleTabRemoved
+  - handleTabUpdated skips writing when it would write parentTabId null (unless UI intent), so promoted/moved tabs are never reverted to root
+  - updateTabIndicesInWindow re-reads once when tabs are missing from the initial map to preserve promoted children
+
 ## 0.2.8
 
 ### Patch Changes
