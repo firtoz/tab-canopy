@@ -1,6 +1,6 @@
 # Releasing Tab Canopy
 
-Tab Canopy uses [Changesets](https://github.com/changesets/changesets) for automated versioning and publishing, similar to [@firtoz/fullstack-toolkit](https://github.com/firtoz/fullstack-toolkit).
+Tab Canopy uses [Changesets](https://changesets.dev) v3 for automated versioning and publishing, similar to [@firtoz/fullstack-toolkit](https://github.com/firtoz/fullstack-toolkit).
 
 ## How It Works
 
