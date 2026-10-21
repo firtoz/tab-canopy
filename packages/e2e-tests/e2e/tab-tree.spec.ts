@@ -2465,13 +2465,13 @@ test.describe("Child Tab Ordering Issues", () => {
 		const child2 = await createTab(context, "about:blank?child2", sidepanel);
 		const child2Info = await treeHelpers.waitForTab("about:blank?child2");
 
-		// Make children be children of tab2
+		// Child drops prepend, so move child2 first to establish child1 < child2.
 		await treeHelpers.dragTabToTab(
-			child1Info.browserTabId,
+			child2Info.browserTabId,
 			tab2Info.browserTabId,
 		);
 		await treeHelpers.dragTabToTab(
-			child2Info.browserTabId,
+			child1Info.browserTabId,
 			tab2Info.browserTabId,
 		);
 
@@ -2480,6 +2480,11 @@ test.describe("Child Tab Ordering Issues", () => {
 		let updatedChild2 = await treeHelpers.getTabByUrl("about:blank?child2");
 		expect(updatedChild1?.parentTabId).toBe(tab2Info.browserTabId);
 		expect(updatedChild2?.parentTabId).toBe(tab2Info.browserTabId);
+		expect(updatedChild1?.treeOrder).toBeDefined();
+		expect(updatedChild2?.treeOrder).toBeDefined();
+		expect(
+			(updatedChild1?.treeOrder ?? "") < (updatedChild2?.treeOrder ?? ""),
+		).toBe(true);
 
 		// Get tab2's treeOrder to compare later
 		const tab2BeforeClose = await treeHelpers.getTabByUrl("about:blank?tab2");
