@@ -29,4 +29,6 @@ jobs:
       - run: bun install --frozen-lockfile
       - run: bun run build
       - run: bun run typecheck
+      - name: Install the locked Playwright Chromium and system dependencies
+        run: bun run --cwd packages/e2e-tests playwright install --with-deps chromium
       - run: bun run test
