@@ -28,6 +28,9 @@ jobs:
           bun-version: "1.4.4"
       - run: bun install --frozen-lockfile
       - run: bun run build
+      - run: bun run build:firefox
+      - name: Validate Firefox artifact
+        run: bun run --bun web-ext lint --source-dir packages/extension/.output/firefox-mv2 --self-hosted
       - run: bun run typecheck
       - name: Install the locked Playwright Chromium and system dependencies
         run: bun run --cwd packages/e2e-tests playwright install --with-deps chromium
