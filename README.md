@@ -103,7 +103,7 @@ Tab Canopy is currently in **alpha** and is **not available** on the Chrome Web 
 ### For End Users
 
 **Requirements:**
-- [Bun](https://bun.sh/) 1.3.3 or higher
+- [Bun](https://bun.sh/) 1.4.3 or higher
 - Basic comfort with command line
 
 **Steps:**
@@ -172,7 +172,7 @@ bun dev:firefox        # Firefox
 
 ### Prerequisites
 
-- [Bun](https://bun.sh/) 1.3.3 or higher
+- [Bun](https://bun.sh/) 1.4.3 or higher
 - Node.js (for Playwright)
 
 ## Development Scripts
@@ -311,4 +311,4 @@ WXT provides automatic hot reload during development:
 
 ### Build failures
 - Clear node_modules and reinstall: `rm -rf node_modules bun.lock && bun install`
-- Check Bun version: `bun --version` (should be 1.3.3+)
+- Check Bun version: `bun --version` (should be 1.4.3+)
