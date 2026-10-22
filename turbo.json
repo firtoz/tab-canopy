@@ -1,4 +1,5 @@
 {
+  "globalDependencies": ["package.json", ".nvmrc"],
   "$schema": "./node_modules/turbo/schema.json",
   "tasks": {
     "build": {},
