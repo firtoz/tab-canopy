@@ -1,0 +1,19 @@
+{
+	"schemaVersion": 1,
+	"state": "ACCEPTED",
+	"repository": "firtoz/tab-canopy",
+	"expiresAt": "2026-10-30T00:00:00Z",
+	"lockSha256": "1012375130615789c6dacc19d9088bff29b69337f229f22612c2ba977899b901",
+	"exceptions": [
+		{
+			"package": "node-forge",
+			"url": "https://github.com/advisories/GHSA-86w9-cpqp-85rv",
+			"severity": "high",
+			"vulnerable_versions": "<=1.4.0",
+			"installed_version": "1.4.0",
+			"risk": "RSA PKCS#1v1.5 verification can accept forged signatures with certain low-exponent keys."
+		}
+	],
+	"approvalMeaning": "Repository owner explicitly accepted these specific remaining risks temporarily so tested fixes for all other findings can land. These vulnerabilities are not fixed.",
+	"approvedAt": "2026-10-23"
+}

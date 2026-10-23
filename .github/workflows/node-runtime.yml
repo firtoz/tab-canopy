@@ -20,15 +20,22 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: "24.22.1"
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
-          bun-version: "1.4.3"
+          bun-version: "1.4.4"
       - run: bun install --frozen-lockfile
       - run: bun run build
+      - run: bun run build:firefox
+      - name: Validate Firefox artifact
+        run: bun run --bun web-ext lint --source-dir packages/extension/.output/firefox-mv2 --self-hosted
       - run: bun run typecheck
       - name: Install the locked Playwright Chromium and system dependencies
         run: bun run --cwd packages/e2e-tests playwright install --with-deps chromium
       - run: bun run test
+      - name: Verify dependency audit gate
+        run: node --test scripts/security/audit.test.mjs
+      - name: Audit dependency security (reviewed exception expires 2026-10-30)
+        run: node scripts/security/audit.mjs

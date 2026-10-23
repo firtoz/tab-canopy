@@ -84,3 +84,9 @@ We'll work with you to understand and address any issues.
 - [ ] IndexedDB access patterns and data isolation
 
 **Contributions welcome** to address any of these areas!
+
+## Temporary dependency risk acceptance (expires 30 October 2026)
+
+The repository owner approved one remaining dependency finding on 23 October 2026: [node-forge GHSA-86w9-cpqp-85rv](https://github.com/advisories/GHSA-86w9-cpqp-85rv), installed version 1.4.0. Certain low-exponent RSA keys can allow forged PKCS#1 v1.5 signatures to verify. This vulnerability remains; the exception permits the tested fixes for other advisories to land while an upstream fix is pending.
+
+CI runs the real `bun audit --json` through `node scripts/security/audit.mjs`. The reviewed exception in `scripts/security/exceptions.json` expires at **2026-10-30T00:00:00Z** and is tied to the exact `bun.lock` SHA-256. The gate rejects every unaccepted finding, changed severity or affected range, changed lockfile, expired policy, failed or malformed audit, and stale exception. It prints the accepted risk explicitly. Updating dependencies requires reviewing the policy again; remove this exception when an upstream fixed release becomes available. Gate regression tests run with `node --test scripts/security/audit.test.mjs`.
