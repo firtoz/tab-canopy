@@ -35,4 +35,7 @@ jobs:
       - name: Install the locked Playwright Chromium and system dependencies
         run: bun run --cwd packages/e2e-tests playwright install --with-deps chromium
       - run: bun run test
-      - run: bun audit
+      - name: Verify dependency audit gate
+        run: node --test scripts/security/audit.test.mjs
+      - name: Audit dependency security (reviewed exception expires 2026-10-30)
+        run: node scripts/security/audit.mjs
