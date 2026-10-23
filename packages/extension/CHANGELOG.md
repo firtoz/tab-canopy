@@ -1,5 +1,11 @@
 # @tabcanopy/extension
 
+## 0.3.1
+
+### Patch Changes
+
+- [#20](https://github.com/firtoz/tab-canopy/pull/20) [`804669c`](https://github.com/firtoz/tab-canopy/commit/804669cc74a0aeb379fa1cabc6bd99e5fa2d10a4) Thanks [@firtoz](https://github.com/firtoz)! - Update Bun to 1.4.4 and refresh extension build and Firefox tooling to address published dependency security fixes. Track the remaining upstream node-forge advisory with a blocking audit check.
+
 ## 0.3.0
 
 ### Minor Changes
